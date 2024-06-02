@@ -1,0 +1,61 @@
+version: '3.9'
+services:
+
+  database:
+    container_name: portflowdb
+    image: postgres:latest
+    user: root
+    environment:
+      # Environment variables are defined in the .env file
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+    logging:
+      driver: "none"
+    restart: unless-stopped
+    volumes:
+    # Volume path is also defined in the .env file for better flexibility
+      - ${VOLUME_PATH}:/var/lib/postgresql/data:rw,Z
+    networks:
+      - net-portflow
+      # - net-pgadmin
+
+
+  portflow:
+    container_name: portflow
+    image: localhost/portflow:latest
+    #user: root
+    build:
+      context: . # Context for the build, pointing to the current directory
+      dockerfile: Dockerfile # Path to the Dockerfile, relative to the context
+    # Uncomment to map ports. For example, map port 8080 of the host to port 80 of the container
+    ports:
+      - "8080:80"
+    networks:
+      # - net-traefik
+      - net-portflow
+    # Uncomment to mount volumes. Here, mount the project directory from the host to /app in the container for development
+    # volumes:
+    #   - /root/GitHub/Portflow:/app:ro,Z
+    # labels:
+    #   - "traefik.enable=true" # Enables Traefik for this container
+    #   - "traefik.http.routers.portflow.entrypoints=websecure" # Defines the entrypoint for HTTPS traffic
+    #   - "traefik.http.routers.portflow.tls=true" # Enables TLS for the router
+    #   - "traefik.http.routers.portflow.rule=Host(`${TRAEFIK_HOSTNAME}`)" # Routing rule based on the host
+
+
+
+
+networks:
+  # net-pgadmin:
+  #   external: true
+  # net-traefik:
+  #   external: true
+  net-portflow:
+
+# The `external` flag in a network configuration determines how the network is managed in relation to the Docker/Podman environment.
+# When set to `true`, it indicates that the network is already created outside of the current Compose file and should be used as-is. 
+# This is useful for sharing a network across multiple projects or services that are not all defined within the same Compose file.
+# On the other hand, if set to `false` or omitted (defaults to `false`), Docker/Podman will create a new network as part of the project setup.
+# This new network is scoped to the project and is ideal for services that need to communicate within the same Compose project.
+
