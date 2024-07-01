@@ -2,7 +2,8 @@
     "role": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "caption": "VARCHAR(255) NOT NULL",
-        "description": "TEXT"
+        "description": "TEXT",
+        "PRIMARY KEY": "(uuid)"
     },
     "users": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
