@@ -28,7 +28,7 @@
     "access": {
         "resource": "VARCHAR(255) NOT NULL",
         "role": "UUID NOT NULL",
-        "right": "INT",
+        "access_right": "INT",
         "PRIMARY KEY": "(resource)",
         "FOREIGN KEY": "(role) REFERENCES role(uuid)"
     },
@@ -54,7 +54,7 @@
         "size_x": "FLOAT",
         "size_y": "FLOAT",
         "size_z": "FLOAT",
-        "group": "UUID",
+        "item_group": "UUID",
         "PRIMARY KEY": "(uuid)",
         "FOREIGN KEY": "(location) REFERENCES location(uuid)"
     },
@@ -82,7 +82,7 @@
         "crossover": "BOOLEAN",
         "status": "INT",
         "speed": "FLOAT",
-        "group": "UUID",
+        "item_group": "UUID",
         "PRIMARY KEY": "(uuid)",
         "FOREIGN KEY": "(device_port_source) REFERENCES device_port(uuid)",
         "FOREIGN KEY": "(device_port_destination) REFERENCES device_port(uuid)"
