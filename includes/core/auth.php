@@ -462,8 +462,16 @@ class Auth {
             // check if first user
             $query = "SELECT uuid FROM users";
             $result = $this->db_adapter->db_query($query);
-            (empty($result)) ? $this->role = 'admin' : NULL;
-        
+            if (empty($result)) {
+                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description)";
+                $result = $this->db_adapter->db_query($query, ['caption' => 'admin', 'description' => 'administrator role created by portflow']);
+                $this->logger->log('creating admin role', 1);
+
+                $query = "SELECT uuid FROM role WHERE caption = :caption";
+                $result = $this->db_adapter->db_query($query, ['caption' => 'admin']);
+                $this->role = $result[0]['uuid'];
+            }
+
             // check if user exists
             $query = "SELECT uuid FROM users WHERE username = :username OR email = :email";
         
