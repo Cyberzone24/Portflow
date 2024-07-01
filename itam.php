@@ -1,4 +1,3 @@
-IT Asset-Management
 <?php
     ini_set('display_errors', 1);
     ini_set('display_startup_errors', 1);
@@ -79,5 +78,36 @@ IT Asset-Management
         <a href="connection" class="bg-white py-2 px-4 rounded-lg mr-4"><li>Connection</li></a>
         <a href="vlan" class="bg-white py-2 px-4 rounded-lg mr-4"><li>VLAN</li></a>
     </ul>
-    <div class="h-full basis-5/6 flex bg-white rounded-lg"></div>
+    <div class="h-full basis-5/6 flex bg-white rounded-lg">
+        <?php
+            if (isset($_GET['table'])) {
+                $table = $_GET['table'];
+                $results = $db_adapter->db_query("SELECT * FROM $table");
+                $columns = $db_adapter->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$table'");
+                $columns = array_map(function($column) {
+                    return $column['column_name'];
+                }, $columns);
+                $columns = array_diff($columns, ['uuid']);
+
+                echo '<table class="w-full h-fit text-left">';
+                echo '<thead>';
+                echo '<tr>';
+                foreach ($columns as $column) {
+                    echo "<th>$column</th>";
+                }
+                echo '</tr>';
+                echo '</thead>';
+                echo '<tbody>';
+                foreach ($results as $result) {
+                    echo '<tr>';
+                    foreach ($columns as $column) {
+                        echo "<td>$result[$column]</td>";
+                    }
+                    echo '</tr>';
+                }
+                echo '</tbody>';
+                echo '</table>';
+            }
+        ?>
+    </div>
 </div>
