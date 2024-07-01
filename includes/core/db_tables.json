@@ -6,10 +6,11 @@
     },
     "users": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "login_provider": "VARCHAR(255)",
         "role": "UUID",
         "username": "VARCHAR(255) NOT NULL UNIQUE",
-        "password": "VARCHAR(255) NOT NULL",
-        "email": "VARCHAR(320) NOT NULL UNIQUE",
+        "password": "VARCHAR(255)",
+        "email": "VARCHAR(320) UNIQUE",
         "activation_code": "VARCHAR(255)",
         "tfa_secret": "VARCHAR(255)",
         "notification_provider": "INT",

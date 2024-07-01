@@ -202,6 +202,7 @@ class Auth {
             $this->logger->log('CSRF token not correct', 2, echoToWeb: true);
             throw new \Exception('CSRF token not correct');
         }
+
         // try local_signin
         $local_signin_result = $this->local_signin();
         if ($local_signin_result) {
@@ -212,12 +213,14 @@ class Auth {
         }
 
         // Try ldap_signin
-        $ldap_signin_result = $this->ldap_signin();
-        if ($ldap_signin_result) {
-            return true;
-        } else {
-            // Log the failure of ldap_signin
-            $this->logger->log("ldap_signin of '$this->username' failed", 3);
+        if (LDAP_ENABLED == TRUE) {
+            $ldap_signin_result = $this->ldap_signin();
+            if ($ldap_signin_result) {
+                return true;
+            } else {
+                // Log the failure of ldap_signin
+                $this->logger->log("ldap_signin of '$this->username' failed", 3);
+            }
         }
 
         // If both methods fail, redirect to the URI returned by PORTFLOW_HOSTNAME

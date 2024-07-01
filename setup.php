@@ -353,6 +353,10 @@ function displayForm($step) {
                     <h1 class='text-4xl font-bold'>LDAP Configuration (Optional)</h1>
                 </div>
                 <div class='pb-6'>
+                    <label class='block mb-2' for='ldap_enabled'>Enable LDAP Module</label>
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_enabled' name='ldap_enabled' value='false'>
+                </div>
+                <div class='pb-6'>
                     <label class='block mb-2' for='ldap_server'>LDAP Server</label>
                     <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_server' name='ldap_server' placeholder='ldap.domain.tld'>
                 </div>
@@ -478,6 +482,7 @@ if (isset($_SESSION['step'])) {
         }
     } elseif ($step === 6) {
         // LDAP settings
+        $config['LDAP_ENABLED'] = isset($_POST['ldap_enabled']) ? 'TRUE' : 'FALSE';
         $config['LDAP_SERVER'] = isset($_POST['ldap_server']) ? filter_var($_POST['ldap_server'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
         $config['LDAP_PORT'] = isset($_POST['ldap_port']) ? filter_var($_POST['ldap_port'], FILTER_SANITIZE_NUMBER_INT) : NULL;
         $config['LDAP_BASEDN'] = isset($_POST['ldap_basedn']) ? filter_var($_POST['ldap_basedn'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
@@ -551,6 +556,7 @@ const MAIL_PASSWORD = '{$config['MAIL_PASSWORD']}';
 const MAIL_PORT = '{$config['MAIL_PORT']}';
 const MAIL_SMTPAUTH = {$config['MAIL_SMTPAUTH']};
 const MAIL_SMTPSECURE = '{$config['MAIL_SMTPSECURE']}';
+const LDAP_ENABLED = '{$config['LDAP_ENABLED']}';
 const LDAP_SERVER = '{$config['LDAP_SERVER']}';
 const LDAP_PORT = '{$config['LDAP_PORT']}';
 const LDAP_BASEDN = '{$config['LDAP_BASEDN']}';

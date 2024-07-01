@@ -233,8 +233,8 @@
         }
     }
 ?>
-<div class="relative overflow-x-clip mx-4">
-    <div class="flex justify-between my-4">
+<div class="h-full relative overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
+    <div class="flex justify-between mb-4">
         <p id="count"></p>
         <div class="flex flex-row">        
             <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
