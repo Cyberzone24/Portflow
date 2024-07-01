@@ -4,7 +4,7 @@
         "caption": "VARCHAR(255) NOT NULL",
         "description": "TEXT"
     },
-    "user": {
+    "users": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "login_provider": "VARCHAR(255)",
         "role": "UUID",
