@@ -28,7 +28,7 @@ class Auth {
     private $username;
     private $password;
     private $email;
-    private $account_level;
+    private $role;
     // local_signin / local_signup
     private $uuid;
     private $password_db;
@@ -45,10 +45,10 @@ class Auth {
     public function __construct() {
         // define post variables
         $this->csrf = $_POST['csrf'] ?? NULL;
-        $this->username = $_POST['username'] ?? null;
-        $this->password = $_POST['password'] ?? null;
-        $this->email = $_POST['email'] ?? null;
-        $this->account_level = $_POST['account_level'] ?? 0;
+        $this->username = $_POST['username'] ?? NULL;
+        $this->password = $_POST['password'] ?? NULL;
+        $this->email = $_POST['email'] ?? NULL;
+        $this->role = $_POST['role'] ?? NULL;
 
         // create logger and db_adapter
         $this->logger = new Logger();
@@ -458,6 +458,11 @@ class Auth {
             }
             // check post data
             $this->local_signon('signup');
+
+            // check if first user
+            $query = "SELECT uuid FROM users";
+            $result = $this->db_adapter->db_query($query);
+            (empty($result)) ? $this->role = 'admin' : NULL;
         
             // check if user exists
             $query = "SELECT uuid FROM users WHERE username = :username OR email = :email";
@@ -475,7 +480,7 @@ class Auth {
             $this->logger->log('user does not exist', 1);
 
             // create user account
-            $query = "INSERT INTO users (username, password, email, activation_code, account_level, notification_setting, language, ip_address, created, last_changed) VALUES (:username, :password, :email, :activation_code, :account_level, :notification_setting, :language, :ip_address, :created, :last_changed)"; 
+            $query = "INSERT INTO users (login_provider, role, username, password, email, activation_code, language, ip_address, created, last_changed) VALUES (:login_provider, :role, :username, :password, :email, :activation_code, :language, :ip_address, :created, :last_changed)"; 
 
             // prepare vars for query
             $activation_code = $this->random_string(10);
@@ -487,12 +492,12 @@ class Auth {
 
             // execute query
             $params = [
+                'login_provider' => 'local',
+                'role' => $this->role,
                 'username' => $this->username,
                 'password' => $this->password,
                 'email' => $this->email,
                 'activation_code' => $activation_code,
-                'account_level' => $this->account_level,
-                'notification_setting' => 5,
                 'language' => $language,
                 'ip_address' => $this->ip(),
                 'created' => 'NOW()',
