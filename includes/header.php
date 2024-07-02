@@ -1,16 +1,17 @@
 <?php
     $active_page = basename($_SERVER['PHP_SELF'], ".php");
-
-    function signout() {
-        // destroy session
-        session_start();
-        $_SESSION['loggedin'] = FALSE;
-        session_destroy();
-        header('Location: ' . defined('PORTFLOW_HOSTNAME') ? PORTFLOW_HOSTNAME : $_SERVER['HTTP_HOST']);
-    }
     
     if (isset($_GET['signout'])) {
-        signout();
+        // destroy session
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        $_SESSION['loggedin'] = FALSE;
+        session_unset();
+        session_destroy();
+        $signout = defined('PORTFLOW_HOSTNAME') ? PORTFLOW_HOSTNAME : $_SERVER['HTTP_HOST'];
+        header('Location: ' . $signout);
+        die();
     }
 
     // Import alert function

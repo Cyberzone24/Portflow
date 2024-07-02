@@ -11,7 +11,8 @@ foreach ($_COOKIE as $name => $value) {
 // Display alerts if cookie exists
 if ($alertCookieExists) {
     echo <<<HTML
-    <div class='fixed top-0 z-50 w-full max-w-lg'>
+    <div class='max-w-lg w-full fixed top-0 left-1/2 transform -translate-x-1/2 z-50'>
+        <div class="flex justify-center">
     HTML;
 
     // Iterate through alert cookies
@@ -41,7 +42,7 @@ if ($alertCookieExists) {
 
             // Display alert div
             echo <<<HTML
-            <div class='my-2 rounded-3xl shadow-lg $bgColor bg-opacity-80 text-white text-center py-2 relative group' onclick='this.remove()'>
+            <div class='w-full my-2 rounded-3xl shadow-lg $bgColor bg-opacity-80 text-white text-center py-2 relative group' onclick='this.remove()'>
                 $value
                 <span class='rounded-3xl $bgColor text-white text-center left-1/2 transform -translate-x-1/2 absolute top-0 py-2 group w-full opacity-0 group-hover:opacity-100 transition duration-200 ease-in-out'>
                     Click to remove
@@ -55,6 +56,6 @@ if ($alertCookieExists) {
         }
     }
 
-    echo '</div>';
+    echo '</div></div>';
 }
 ?>

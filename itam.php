@@ -127,7 +127,8 @@
             $(this).removeClass('rounded-lg mr-4').addClass('rounded-l-lg pr-0');
         });
     });
-    // sort table
+    // sort table 
+    /*
     $(document).ready(function() {
         var currentSort = '';
         var currentOrder = '';
@@ -230,7 +231,7 @@
 
         // Clone the pagination to 'pagination_bottom'
         $('#pagination_bottom').html($('#pagination').clone(true));
-    }
+    } */
     // load table
     function loadTable(table = 'location', query = '', limit = 100, page = 1, sort = 'created', order = 'DESC') {
         var url = '?action=get&table=' + table +'&search=' + encodeURIComponent(query) + '&limit=' + limit + '&page=' + page + '&sort=' + sort + '&order=' + order;
