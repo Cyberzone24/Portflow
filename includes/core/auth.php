@@ -224,7 +224,7 @@ class Auth {
         }
 
         // If both methods fail, redirect to the URI returned by PORTFLOW_HOSTNAME
-        $this->logger->log('all available signin methods failed. redirecting to ' . PORTFLOW_HOSTNAME, 0);
+        $this->logger->log('all available signin methods failed', 0, echoToWeb: true);
         header("Location: " . PORTFLOW_HOSTNAME);
         exit();
     }

@@ -38,11 +38,11 @@
     </div>
     <ul class="basis-1/6 flex justify-center gap-8">
         <li class="flex items-end">
-            <a class="<?= ($active_page == 'itam') ? 'bg-gray-100 rounded-t-xl py-2 px-4 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-1.5 px-4 text-gray-500 hover:text-gray-800'; ?>"
+            <a class="<?= ($active_page == 'itam') ? 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800'; ?>"
                 href="itam.php">ITAM</a>
         </li>
         <li class="flex items-end">
-            <a class="<?= ($active_page == 'portview') ? 'bg-gray-100 rounded-t-xl py-2 px-4 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-1.5 px-4 text-gray-500 hover:text-gray-800'; ?>"
+            <a class="<?= ($active_page == 'portview') ? 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800'; ?>"
                 href="portview.php">Portview</a>
         </li>
     </ul>
