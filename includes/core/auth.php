@@ -268,6 +268,7 @@ class Auth {
                         $_SESSION['loggedin'] = TRUE;
                         $_SESSION['name'] = $this->username;
                         $_SESSION['uuid'] = $this->uuid;
+                        $_SESSION['language'] = $this->language;
 
                         // update database
                         $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
