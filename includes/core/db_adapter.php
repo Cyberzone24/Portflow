@@ -58,7 +58,7 @@ class DatabaseAdapter {
             $stmt = $this->pdo->prepare("SELECT to_regclass('public.$tableName')");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
             if ($result && $result['to_regclass'] === null) {
                 $this->logger->log('table ' . $tableName . ' does not exist.', 3, echoToWeb: true);
                 // Die Tabelle existiert nicht
