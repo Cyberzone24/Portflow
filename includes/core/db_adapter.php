@@ -110,10 +110,6 @@ class DatabaseAdapter {
             $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
             foreach ($columns as $column => $columnType) {
                 $query .= "$column $columnType, ";
-        foreach ($dbTables as $dbTable => $columns) {
-            $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
-            foreach ($columns as $column => $columnType) {
-                $query .= "$column $columnType, ";
             }
             $query = rtrim($query, ', ') . ');';
 
@@ -137,3 +133,4 @@ class DatabaseAdapter {
         }
     }
 }
+
