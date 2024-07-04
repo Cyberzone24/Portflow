@@ -35,16 +35,16 @@ class DatabaseAdapter {
 
     private function db_conn(){
         // server settings
-        $db_type = DB_TYPE;
-        $db_server = DB_SERVER;
-        $db_port = DB_PORT;
-        $db_dbname = DB_NAME;
-        $db_username = DB_USER;
-        $db_password = DB_PASSWORD;
+        $dbType = DB_TYPE;
+        $dbServer = DB_SERVER;
+        $dbPort = DB_PORT;
+        $dbName = DB_NAME;
+        $dbUsername = DB_USER;
+        $dbPassword = DB_PASSWORD;
 
         // create and check connection
         try {
-            $this->pdo = new PDO("$db_type:host=$db_server;port=$db_port;dbname=$db_dbname", $db_username, $db_password);
+            $this->pdo = new PDO("$dbType:host=$dbServer;port=$dbPort;dbname=$dbName", $dbUsername, $dbPassword);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->logger->log('pdo connection established', 0);
         } catch (PDOException $e) {
@@ -96,13 +96,13 @@ class DatabaseAdapter {
 
     public function db_init() {
         // get content of db_tables.json, convert to array
-        $db_tables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
+        $dbTables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
 
         // iterate over array and create tables
-        foreach ($db_tables as $db_table => $columns) {
-            $query = "CREATE TABLE IF NOT EXISTS $db_table (";
-            foreach ($columns as $column => $column_type) {
-                $query .= "$column $column_type, ";
+        foreach ($dbTables as $dbTable => $columns) {
+            $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
+            foreach ($columns as $column => $columnType) {
+                $query .= "$column $columnType, ";
             }
             $query = rtrim($query, ', ') . ');';
 
@@ -116,7 +116,7 @@ class DatabaseAdapter {
                 // commit transaction
                 $this->pdo->commit();
 
-                $this->logger->log("finished for $db_table");
+                $this->logger->log("finished for $dbTable");
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
