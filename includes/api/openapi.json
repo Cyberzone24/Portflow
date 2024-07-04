@@ -1,0 +1,20 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Portflow API",
+        "description": "Restful API following the OpenAPI 3.1.0 specification",
+        "version": "0.1.0"
+    },
+    "paths": {},
+    "components": {
+        "schemas": {},
+        "responses": {},
+        "parameters": {},
+        "examples": {},
+        "requestBodies": {},
+        "headers": {},
+        "securitySchemes": {},
+        "links": {},
+        "callbacks": {}
+    }
+}

@@ -1,0 +1,8 @@
+RewriteEngine On
+
+# Stellt sicher, dass Anfragen an Dateien oder Verzeichnisse direkt bedient werden
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Leitet alle anderen Anfragen an die index.php Datei weiter
+RewriteRule ^(.*)$ index.php [QSA,L]
