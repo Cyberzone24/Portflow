@@ -5,7 +5,102 @@
         "description": "Restful API following the OpenAPI 3.1.0 specification",
         "version": "0.1.0"
     },
-    "paths": {},
+    "paths": {
+        "/users": {
+            "get": {
+                "summary": "Fetch all users",
+                "responses": {
+                    "200": {
+                        "description": "List of users",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "uuid": {
+                                                "type": "string",
+                                                "description": "UUID DEFAULT gen_random_uuid() NOT NULL"
+                                            },
+                                            "login_provider": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255)"
+                                            },
+                                            "role": {
+                                                "type": "string",
+                                                "description": "UUID"
+                                            },
+                                            "username": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255) NOT NULL UNIQUE"
+                                            },
+                                            "password": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255)"
+                                            },
+                                            "email": {
+                                                "type": "string",
+                                                "description": "VARCHAR(320) UNIQUE"
+                                            },
+                                            "activation_code": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255)"
+                                            },
+                                            "tfa_secret": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255)"
+                                            },
+                                            "notification_provider": {
+                                                "type": "integer",
+                                                "description": "INT"
+                                            },
+                                            "notification_setting": {
+                                                "type": "integer",
+                                                "description": "INT"
+                                            },
+                                            "language": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255)"
+                                            },
+                                            "ip_address": {
+                                                "type": "string",
+                                                "description": "VARCHAR(255)"
+                                            },
+                                            "last_login": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "description": "TIMESTAMP WITH TIME ZONE"
+                                            },
+                                            "last_login_attempt": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "description": "TIMESTAMP WITH TIME ZONE"
+                                            },
+                                            "login_attempts": {
+                                                "type": "integer",
+                                                "description": "INT"
+                                            },
+                                            "created": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "description": "TIMESTAMP WITH TIME ZONE"
+                                            },
+                                            "last_changed": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "description": "TIMESTAMP WITH TIME ZONE"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
     "components": {
         "schemas": {},
         "responses": {},

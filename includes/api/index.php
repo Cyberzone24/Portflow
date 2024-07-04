@@ -7,7 +7,7 @@ error_reporting(E_ALL);
 
 // define APP_NAME (----------- Why tf is const not working??? -----------)
 define('APP_NAME', 'Portflow');
-const APP_NAME = 'Portflow';
+#const APP_NAME = 'Portflow';
 
 # ================================================================================================= .htaccess config has to be replicated for lighttpd conf, just for testing with apache
 
@@ -73,6 +73,95 @@ class API {
         $this->routeRequest();
     }
 
+    private function routeRequest() {
+        $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
+        $requestUri = explode('/includes/api/', $requestUri)[1] ?? $requestUri;
+
+        $this->logger->log("Request URI: $requestUri", 0);
+
+        $routes = [
+            'resource/{id}' => 'handleResourceById',
+            'users' => 'handleUsers',
+            'other-endpoint' => 'handleOtherEndpoint'
+        ];
+
+        foreach ($routes as $route => $method) {
+            $pattern = '@^' . preg_replace('/\{[^\}]+\}/', '([^/]+)', $route) . '$@';
+            $this->logger->log("Checking pattern: $pattern", 0);
+
+            if (preg_match($pattern, $requestUri, $matches)) {
+                array_shift($matches);
+                $this->$method($matches);
+                return;
+            }
+        }
+
+        http_response_code(404);
+        echo json_encode(['error' => 'Not Found']);
+    }
+
+    private function handleUsers() {
+        switch ($_SERVER['REQUEST_METHOD']) {
+            case 'GET':
+                $this->getUsers();
+                break;
+            default:
+                http_response_code(405);
+                echo json_encode(['error' => 'Method Not Allowed']);
+                break;
+        }
+    }
+
+    private function getUsers() {
+        try {
+            $users = $this->db_adapter->db_query("SELECT * FROM users");
+            http_response_code(200);
+            echo json_encode($users);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Internal Server Error']);
+        }
+    }
+
+    private function handleResourceById($params) {
+        $id = $params[0];
+
+        switch ($_SERVER['REQUEST_METHOD']) {
+            case 'POST':
+                http_response_code(201);
+                echo json_encode(['message' => 'Resource created', 'id' => $id]);
+                break;
+            case 'GET':
+                http_response_code(200);
+                echo json_encode(['message' => 'Resource fetched', 'id' => $id]);
+                break;
+            case 'PUT':
+                http_response_code(200);
+                echo json_encode(['message' => 'Resource updated', 'id' => $id]);   
+                break;
+            case 'DELETE':
+                http_response_code(200);
+                echo json_encode(['message' => 'Resource deleted', 'id' => $id]);
+                break;
+            case 'OPTIONS':
+                http_response_code(200);
+                echo json_encode(['message' => 'Resource options', 'id' => $id]);
+                break;
+            case 'PATCH':
+                http_response_code(418); // I'm a teapot
+                echo json_encode(['error' => "I'm a teapot"]);
+                break;
+            case 'HEAD':
+                http_response_code(418); // I'm a teapot
+                echo json_encode(['error' => "I'm a teapot"]);
+                break;
+            default:
+                http_response_code(405);
+                echo json_encode(['error' => 'Method Not Allowed']);
+                break;
+        }
+    }
+
     private function checkMediaTypes($allowedContentTypes, $allowedAcceptTypes) {
         $contentType = isset($_SERVER['CONTENT_TYPE']) ? trim($_SERVER['CONTENT_TYPE']) : '';
         $acceptType = isset($_SERVER['HTTP_ACCEPT']) ? trim($_SERVER['HTTP_ACCEPT']) : '';
@@ -111,42 +200,6 @@ class API {
                 echo json_encode(['error' => 'Not Acceptable']);
                 exit;
             }
-        }
-    }
-
-    private function routeRequest() {
-        $requestUri = $_SERVER['REQUEST_URI'];
-        $requestUri = strtok($requestUri, '?');
-        $requestUri = trim($requestUri, '/');
-
-        switch ($_SERVER['REQUEST_METHOD']) {
-            case 'POST':
-                http_response_code(201);
-                echo json_encode(['message' => 'Resource created']);
-                break;
-            case 'GET':
-                http_response_code(200);
-                echo json_encode(['message' => 'Resource fetched']);
-                break;
-            case 'PUT':
-                http_response_code(204); // No Content
-                break;
-            case 'DELETE':
-                http_response_code(204); // No Content
-                break;
-            case 'OPTIONS':
-                http_response_code(204); // No Content
-                break;
-            case 'PATCH':
-                http_response_code(418); // I'm a teapot
-                break;
-            case 'HEAD':
-                http_response_code(418); // I'm a teapot
-                break;
-            default:
-                http_response_code(405); // Method Not Allowed
-                echo json_encode(['error' => 'Method Not Allowed']);
-                break;
         }
     }
 }
