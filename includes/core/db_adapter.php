@@ -41,9 +41,16 @@ class DatabaseAdapter {
         $dbName = DB_NAME;
         $dbUsername = DB_USER;
         $dbPassword = DB_PASSWORD;
+        $dbType = DB_TYPE;
+        $dbServer = DB_SERVER;
+        $dbPort = DB_PORT;
+        $dbName = DB_NAME;
+        $dbUsername = DB_USER;
+        $dbPassword = DB_PASSWORD;
 
         // create and check connection
         try {
+            $this->pdo = new PDO("$dbType:host=$dbServer;port=$dbPort;dbname=$dbName", $dbUsername, $dbPassword);
             $this->pdo = new PDO("$dbType:host=$dbServer;port=$dbPort;dbname=$dbName", $dbUsername, $dbPassword);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->logger->log('pdo connection established', 0);
@@ -103,6 +110,10 @@ class DatabaseAdapter {
             $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
             foreach ($columns as $column => $columnType) {
                 $query .= "$column $columnType, ";
+        foreach ($dbTables as $dbTable => $columns) {
+            $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
+            foreach ($columns as $column => $columnType) {
+                $query .= "$column $columnType, ";
             }
             $query = rtrim($query, ', ') . ');';
 
@@ -116,6 +127,7 @@ class DatabaseAdapter {
                 // commit transaction
                 $this->pdo->commit();
 
+                $this->logger->log("finished for $dbTable");
                 $this->logger->log("finished for $dbTable");
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
