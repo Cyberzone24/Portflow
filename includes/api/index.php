@@ -23,24 +23,19 @@ if (!in_array(__DIR__ . '/../core/session.php', get_included_files())) {
 include_once __DIR__ . '/../core/db_adapter.php';
 use Portflow\Core\DatabaseAdapter;
 
-// use API
 $api = new API();
 $api->handleRequest();
 
-// class API
 class API {
-    // define class variables
     private $logger;
     private $db_adapter;
     private $allowedContentTypes;
     private $allowedAcceptTypes;
 
     public function __construct() {
-        // create logger and db_adapter
         $this->logger = new Logger();
         $this->db_adapter = new DatabaseAdapter();
 
-        // initialize headers and define allowed types
         $this->initializeHeaders();
         $this->defineAllowedTypes();
     }
@@ -65,7 +60,47 @@ class API {
             'application/vnd.github.v3.diff',
             'application/vnd.github.v3.patch'
         ];
-        $this->allowedAcceptTypes = $this->allowedContentTypes; // Da alle Content Types auch als Accept Types gültig sind
+        $this->allowedAcceptTypes = $this->allowedContentTypes;
+    }
+
+    private function checkAccessRights($resource, $method) {
+        $userRole = $this->getUserRole(); // Implement this to get the current user's role
+        $accessRight = $this->getAccessRight($resource, $userRole);
+
+        switch ($_SERVER['REQUEST_METHOD']) {
+            case 'GET':
+                return ($accessRight & 4) == 4; // Read permission
+            case 'POST':
+                return ($accessRight & 2) == 2; // Write permission
+            case 'PUT':
+                return false; // ====================================== Implement this
+            case 'PATCH':
+                return ($accessRight & 2) == 2; // Write permission
+            case 'DELETE':
+                return ($accessRight & 1) == 1; // Delete permission
+            default:
+                return false;
+        }
+    }
+
+    private function getUserRole() {
+        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
+        $query = "SELECT role FROM users WHERE uuid = :uuid";
+        $params = ['uuid' => $_SESSION['uuid']];
+        $result = $this->db_adapter->db_query($query, $params);
+        return $result[0]['role'] ?? 'NULL';
+    }
+
+    private function getAccessRight($resource, $role) {
+        $query = "SELECT access_right FROM access WHERE resource = :resource AND role = :role";
+        $params = ['resource' => 'includes/api/' . $resource, 'role' => $role];
+        $result = $this->db_adapter->db_query($query, $params);
+        return $result[0]['access_right'] ?? 0;
+        /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
+            resource      |                 role                 | access_right 
+            -------------------+--------------------------------------+--------------
+            includes/core/api | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
+        */
     }
 
     public function handleRequest() {
@@ -81,8 +116,7 @@ class API {
 
         $routes = [
             'resource/{id}' => 'handleResourceById',
-            'users' => 'handleUsers',
-            'other-endpoint' => 'handleOtherEndpoint'
+            '{table}' => 'handleTableRequest'
         ];
 
         foreach ($routes as $route => $method) {
@@ -91,7 +125,12 @@ class API {
 
             if (preg_match($pattern, $requestUri, $matches)) {
                 array_shift($matches);
-                $this->$method($matches);
+                if ($this->checkAccessRights($requestUri, $method)) {
+                    $this->$method($matches);
+                } else {
+                    http_response_code(403);
+                    echo json_encode(['error' => 'Forbidden']);
+                }
                 return;
             }
         }
@@ -100,10 +139,12 @@ class API {
         echo json_encode(['error' => 'Not Found']);
     }
 
-    private function handleUsers() {
+    private function handleTableRequest($params) {
+        $table = $params[0];
+
         switch ($_SERVER['REQUEST_METHOD']) {
             case 'GET':
-                $this->getUsers();
+                $this->getTableData($table);
                 break;
             default:
                 http_response_code(405);
@@ -112,14 +153,15 @@ class API {
         }
     }
 
-    private function getUsers() {
+    private function getTableData($table) {
         try {
-            $users = $this->db_adapter->db_query("SELECT * FROM users");
+            $query = "SELECT * FROM " . preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+            $results = $this->db_adapter->db_query($query);
             http_response_code(200);
-            echo json_encode($users);
+            echo json_encode($results);
         } catch (\Exception $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Internal Server Error']);
+            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
         }
     }
 
@@ -137,7 +179,7 @@ class API {
                 break;
             case 'PUT':
                 http_response_code(200);
-                echo json_encode(['message' => 'Resource updated', 'id' => $id]);   
+                echo json_encode(['message' => 'Resource updated', 'id' => $id]);
                 break;
             case 'DELETE':
                 http_response_code(200);
@@ -165,12 +207,11 @@ class API {
     private function checkMediaTypes($allowedContentTypes, $allowedAcceptTypes) {
         $contentType = isset($_SERVER['CONTENT_TYPE']) ? trim($_SERVER['CONTENT_TYPE']) : '';
         $acceptType = isset($_SERVER['HTTP_ACCEPT']) ? trim($_SERVER['HTTP_ACCEPT']) : '';
-    
-        // Überprüfung für Content-Type bei POST und PUT Anfragen
+
         if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT'])) {
             $isValidContentType = false;
             foreach ($allowedContentTypes as $type) {
-                if (strpos($contentType, $type) === 0) { // Prüft, ob der Content-Type mit einem der erlaubten Typen beginnt
+                if (strpos($contentType, $type) === 0) {
                     $isValidContentType = true;
                     break;
                 }
@@ -181,9 +222,8 @@ class API {
                 exit;
             }
         }
-    
-        // Überprüfung für Accept Header
-        if (!empty($acceptType) && $acceptType !== '*/*') { // Ignoriert die Überprüfung, wenn '*/*' gesendet wird
+
+        if (!empty($acceptType) && $acceptType !== '*/*') {
             $acceptTypes = explode(',', $acceptType);
             $acceptMatch = false;
             foreach ($acceptTypes as $type) {
@@ -191,7 +231,7 @@ class API {
                 foreach ($allowedAcceptTypes as $allowedType) {
                     if (strpos($type, $allowedType) === 0 || $type == '*/*') {
                         $acceptMatch = true;
-                        break 2; // Beendet beide Schleifen
+                        break 2;
                     }
                 }
             }
