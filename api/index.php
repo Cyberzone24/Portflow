@@ -43,7 +43,7 @@ class API {
     private function initializeHeaders() {
         header("Content-Type: application/json");
         header("Access-Control-Allow-Origin: *");
-        header("Access-Control-Allow-Methods: GET, POST, PATCH, DELETE");
+        header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE");
         header("Access-Control-Allow-Headers: Content-Type, Authorization");
     }
 
@@ -72,6 +72,8 @@ class API {
                 return ($accessRight & 2) == 2; // Write permission
             case 'GET': // READ
                 return ($accessRight & 4) == 4; // Read permission
+            case 'PUT': // UPDATE
+                return ($accessRight & 2) == 2; // Write permission
             case 'PATCH': // UPDATE
                 return ($accessRight & 2) == 2; // Write permission
             case 'DELETE': // DELETE
@@ -124,7 +126,14 @@ class API {
                 echo json_encode(['error' => 'Invalid resource name']);
                 return;
             }
-    
+
+            // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist
+            if (!array_key_exists($resource, json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true))) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Invalid resource name']);
+                return;
+            }
+
             // Prüfen, ob die UUID (falls vorhanden) dem korrekten Format entspricht
             $uuidPattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
             if ($uuid && !preg_match($uuidPattern, $uuid)) {
@@ -169,6 +178,9 @@ class API {
             case 'GET': // READ
                 $this->get($resource);
                 break;
+            case 'PUT': // UPDATE
+                $this->put($resource, $uuid, $data);
+                break;
             case 'PATCH': // UPDATE
                 $this->patch($resource, $uuid, $data);
                 break;
@@ -206,12 +218,29 @@ class API {
         }
     }
 
+    private function put($resource, $uuid, $data) {
+        try {
+            $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
+                return $key . ' = :' . $key;
+            }, array_keys($data))) . " WHERE uuid = :uuid RETURNING *";
+            $params = $data;
+            $params['uuid'] = $uuid;
+            $results = $this->db_adapter->db_query($query, $params);
+            http_response_code(200);
+            echo json_encode($results);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+        }
+    }
+
     private function patch($resource, $uuid, $data) {
         try {
             $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
                 return $key . ' = :' . $key;
-            }, array_keys($data))) . " WHERE uuid = '$uuid' RETURNING " . implode(', ', array_keys($data));
+            }, array_keys($data))) . " WHERE uuid = :uuid RETURNING " . implode(', ', array_keys($data));
             $params = $data;
+            $params['uuid'] = $uuid;
             $results = $this->db_adapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
@@ -223,8 +252,9 @@ class API {
 
     private function delete($resource, $uuid) {
         try {
-            $query = "DELETE FROM $resource WHERE uuid = '$uuid' RETURNING *";
-            $results = $this->db_adapter->db_query($query);
+            $query = "DELETE FROM $resource WHERE uuid = :uuid RETURNING *";
+            $params['uuid'] = $uuid;
+            $results = $this->db_adapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
         } catch (\Exception $e) {
