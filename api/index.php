@@ -13,14 +13,14 @@ define('APP_NAME', 'Portflow');
 
 // check if session exists
 /*
-include_once __DIR__ . '/../core/session.php';
-if (!in_array(__DIR__ . '/../core/session.php', get_included_files())) {
+include_once __DIR__ . '/../includes/core/session.php';
+if (!in_array(__DIR__ . '/../includes/core/session.php', get_included_files())) {
     die('could not verify session');
 }
 */
 
 // import db_adapter
-include_once __DIR__ . '/../core/db_adapter.php';
+include_once __DIR__ . '/../includes/core/db_adapter.php';
 use Portflow\Core\DatabaseAdapter;
 
 $api = new API();
@@ -43,7 +43,7 @@ class API {
     private function initializeHeaders() {
         header("Content-Type: application/json");
         header("Access-Control-Allow-Origin: *");
-        header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+        header("Access-Control-Allow-Methods: GET, POST, PATCH, DELETE");
         header("Access-Control-Allow-Headers: Content-Type, Authorization");
     }
 
@@ -63,20 +63,18 @@ class API {
         $this->allowedAcceptTypes = $this->allowedContentTypes;
     }
 
-    private function checkAccessRights($resource, $method) {
+    private function checkAccessRights($resource) {
         $userRole = $this->getUserRole(); // Implement this to get the current user's role
         $accessRight = $this->getAccessRight($resource, $userRole);
 
-        switch ($_SERVER['REQUEST_METHOD']) {
-            case 'GET':
+        switch ($_SERVER['REQUEST_METHOD']) { // CRUD
+            case 'POST': // CREATE
+                return ($accessRight & 2) == 2; // Write permission
+            case 'GET': // READ
                 return ($accessRight & 4) == 4; // Read permission
-            case 'POST':
+            case 'PATCH': // UPDATE
                 return ($accessRight & 2) == 2; // Write permission
-            case 'PUT':
-                return false; // ====================================== Implement this
-            case 'PATCH':
-                return ($accessRight & 2) == 2; // Write permission
-            case 'DELETE':
+            case 'DELETE': // DELETE
                 return ($accessRight & 1) == 1; // Delete permission
             default:
                 return false;
@@ -84,7 +82,7 @@ class API {
     }
 
     private function getUserRole() {
-        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
+        $_SESSION['uuid'] = '05e2bbe5-d3e5-48e9-a8a8-0023ff315ab9'; // ====================================== JUST FOR TESTING
         $query = "SELECT role FROM users WHERE uuid = :uuid";
         $params = ['uuid' => $_SESSION['uuid']];
         $result = $this->db_adapter->db_query($query, $params);
@@ -93,13 +91,13 @@ class API {
 
     private function getAccessRight($resource, $role) {
         $query = "SELECT access_right FROM access WHERE resource = :resource AND role = :role";
-        $params = ['resource' => 'includes/api/' . $resource, 'role' => $role];
+        $params = ['resource' => 'api/' . $resource, 'role' => $role];
         $result = $this->db_adapter->db_query($query, $params);
         return $result[0]['access_right'] ?? 0;
         /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
             resource      |                 role                 | access_right 
             -------------------+--------------------------------------+--------------
-            includes/core/api | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
+            api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
         */
     }
 
@@ -110,41 +108,72 @@ class API {
 
     private function routeRequest() {
         $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
-        $requestUri = explode('/includes/api/', $requestUri)[1] ?? $requestUri;
-
-        $this->logger->log("Request URI: $requestUri", 0);
-
-        $routes = [
-            'resource/{id}' => 'handleResourceById',
-            '{table}' => 'handleTableRequest'
-        ];
-
-        foreach ($routes as $route => $method) {
-            $pattern = '@^' . preg_replace('/\{[^\}]+\}/', '([^/]+)', $route) . '$@';
-            $this->logger->log("Checking pattern: $pattern", 0);
-
-            if (preg_match($pattern, $requestUri, $matches)) {
-                array_shift($matches);
-                if ($this->checkAccessRights($requestUri, $method)) {
-                    $this->$method($matches);
-                } else {
-                    http_response_code(403);
-                    echo json_encode(['error' => 'Forbidden']);
-                }
+        $requestUri = explode('/', explode('/api/', $requestUri)[1] ?? $requestUri);
+    
+        $resource = $requestUri[0] ?? NULL;
+        $uuid = $requestUri[1] ?? NULL;
+    
+        $this->logger->log("Request URI: {$resource}", 0);
+    
+        // Prüfen, ob der Tabellenname vorhanden ist
+        if ($resource) {
+            // Optional: Prüfen, ob der Tabellenname einem bestimmten Pattern entspricht
+            $resourcePattern = '/^[a-zA-Z_][a-zA-Z0-9_]*$/'; // Beispiel für ein einfaches Pattern
+            if (!preg_match($resourcePattern, $resource)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Invalid resource name']);
                 return;
             }
+    
+            // Prüfen, ob die UUID (falls vorhanden) dem korrekten Format entspricht
+            $uuidPattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
+            if ($uuid && !preg_match($uuidPattern, $uuid)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Invalid UUID format']);
+                return;
+            }
+    
+            // Verwenden von tableName für die Rechteprüfung
+            if ($this->checkAccessRights($resource)) {
+                $this->handleTableRequest($resource, $uuid ?? NULL);
+            } else {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+            }
+        } else {
+            http_response_code(200);
+            echo json_encode(file_get_contents(__DIR__ . '/openapi.json'));
         }
-
-        http_response_code(404);
-        echo json_encode(['error' => 'Not Found']);
     }
 
-    private function handleTableRequest($params) {
-        $table = $params[0];
+    private function handleTableRequest($resource, $uuid = NULL) {
+        if (isset($_GET)) {
+            $data = $_GET;
+            // sanitize data
+            $data = array_map(function($value) {
+                return htmlspecialchars($value);
+            }, $data);
+            $data = array_map(function($value) {
+                return strip_tags($value);
+            }, $data);
+            $data = array_map(function($value) {
+                return trim($value);
+            }, $data);
+            var_dump($data); // ===================================== JUST FOR TESTING
+        }
 
-        switch ($_SERVER['REQUEST_METHOD']) {
-            case 'GET':
-                $this->getTableData($table);
+        switch ($_SERVER['REQUEST_METHOD']) { // CRUD
+            case 'POST': // CREATE
+                $this->post($resource, $data);
+                break;
+            case 'GET': // READ
+                $this->get($resource);
+                break;
+            case 'PATCH': // UPDATE
+                $this->patch($resource, $uuid, $data);
+                break;
+            case 'DELETE': // DELETE
+                $this->delete($resource, $uuid);
                 break;
             default:
                 http_response_code(405);
@@ -153,9 +182,21 @@ class API {
         }
     }
 
-    private function getTableData($table) {
+    private function post($resource, $data) {
         try {
-            $query = "SELECT * FROM " . preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+            $query = "INSERT INTO $resource (" . implode(', ', array_keys($data)) . ") VALUES (:" . implode(', :', array_keys($data)) . ") RETURNING *";
+            $results = $this->db_adapter->db_query($query, $data);
+            http_response_code(200);
+            echo json_encode($results);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+        }
+    }
+
+    private function get($resource) {
+        try {
+            $query = "SELECT * FROM $resource";
             $results = $this->db_adapter->db_query($query);
             http_response_code(200);
             echo json_encode($results);
@@ -165,42 +206,30 @@ class API {
         }
     }
 
-    private function handleResourceById($params) {
-        $id = $params[0];
+    private function patch($resource, $uuid, $data) {
+        try {
+            $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
+                return $key . ' = :' . $key;
+            }, array_keys($data))) . " WHERE uuid = '$uuid' RETURNING " . implode(', ', array_keys($data));
+            $params = $data;
+            $results = $this->db_adapter->db_query($query, $params);
+            http_response_code(200);
+            echo json_encode($results);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+        }
+    }
 
-        switch ($_SERVER['REQUEST_METHOD']) {
-            case 'POST':
-                http_response_code(201);
-                echo json_encode(['message' => 'Resource created', 'id' => $id]);
-                break;
-            case 'GET':
-                http_response_code(200);
-                echo json_encode(['message' => 'Resource fetched', 'id' => $id]);
-                break;
-            case 'PUT':
-                http_response_code(200);
-                echo json_encode(['message' => 'Resource updated', 'id' => $id]);
-                break;
-            case 'DELETE':
-                http_response_code(200);
-                echo json_encode(['message' => 'Resource deleted', 'id' => $id]);
-                break;
-            case 'OPTIONS':
-                http_response_code(200);
-                echo json_encode(['message' => 'Resource options', 'id' => $id]);
-                break;
-            case 'PATCH':
-                http_response_code(418); // I'm a teapot
-                echo json_encode(['error' => "I'm a teapot"]);
-                break;
-            case 'HEAD':
-                http_response_code(418); // I'm a teapot
-                echo json_encode(['error' => "I'm a teapot"]);
-                break;
-            default:
-                http_response_code(405);
-                echo json_encode(['error' => 'Method Not Allowed']);
-                break;
+    private function delete($resource, $uuid) {
+        try {
+            $query = "DELETE FROM $resource WHERE uuid = '$uuid' RETURNING *";
+            $results = $this->db_adapter->db_query($query);
+            http_response_code(200);
+            echo json_encode($results);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
         }
     }
 
@@ -208,7 +237,7 @@ class API {
         $contentType = isset($_SERVER['CONTENT_TYPE']) ? trim($_SERVER['CONTENT_TYPE']) : '';
         $acceptType = isset($_SERVER['HTTP_ACCEPT']) ? trim($_SERVER['HTTP_ACCEPT']) : '';
 
-        if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT'])) {
+        if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PATCH'])) {
             $isValidContentType = false;
             foreach ($allowedContentTypes as $type) {
                 if (strpos($contentType, $type) === 0) {

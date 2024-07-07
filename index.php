@@ -56,7 +56,7 @@
         if (isset($_GET['signup'])) {
           echo '
             <div class="pb-6">
-              <label class="block mb-2" for="mail">
+              <label class="block mb-2" for="email">
                 E-Mail
               </label>
               <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email">

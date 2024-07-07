@@ -78,8 +78,62 @@
             <li onclick="loadTable('device')" class="bg-white py-2 px-4 rounded-lg mr-4">Configuration</li>
         </ul>
     </div>
-    <div class="h-full basis-5/6 flex bg-white rounded-lg">
-        <div class="h-fit w-full p-4"><pre>
+    <div class="h-full basis-5/6 flex flex-col gap-6 bg-white rounded-lg p-4">
+        <div class="h-fit max-w-lg">
+            <div class="pb-6">
+                <label class="block mb-2" for="username">
+                    New username
+                </label>
+                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="username" name="username">
+            </div>
+            <div class="pb-6">
+                <label class="block mb-2" for="password">
+                    Password
+                </label>
+                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password">
+            </div>
+            <div class="pt-6 flex justify-between items-center">
+                <!-- <input type="hidden" name="csrf" value="<?php #echo $auth->csrf(); ?>"> -->
+                <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+            </div>
+        </div>
+        <div class="h-fit max-w-lg">
+            <div class="pb-6">
+                <label class="block mb-2" for="password">
+                    New password
+                </label>
+                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password">
+            </div>
+            <div class="pb-6">
+                <label class="block mb-2" for="password">
+                    Old password
+                </label>
+                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password">
+            </div>
+            <div class="pt-6 flex justify-between items-center">
+                <!-- <input type="hidden" name="csrf" value="<?php #echo $auth->csrf(); ?>"> -->
+                <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+            </div>
+        </div>
+        <div class="h-fit max-w-lg">
+            <div class="pb-6">
+                <label class="block mb-2" for="email">
+                    E-Mail
+                </label>
+                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email">
+                </div>
+            <div class="pb-6">
+                <label class="block mb-2" for="password">
+                    Password
+                </label>
+                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password">
+            </div>
+            <div class="pt-6 flex justify-between items-center">
+                <!-- <input type="hidden" name="csrf" value="<?php #echo $auth->csrf(); ?>"> -->
+                <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+            </div>
+        </div>
+        <div class="h-fit max-w-lg"><pre>
             Account: Nutzername, Passwort, E-Mail-Adresse, Sprache
             Appearance: Farbschema, Schriftart, Schriftgröße
             Notifications: Benachrichtigungen

@@ -33,6 +33,16 @@
         "PRIMARY KEY": "(resource)",
         "FOREIGN KEY": "(role) REFERENCES role(uuid)"
     },
+    "api": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "caption": "VARCHAR(255)",
+        "description": "TEXT",
+        "user": "UUID",
+        "token": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "created": "TIMESTAMP WITH TIME ZONE",
+        "PRIMARY KEY": "(uuid)",
+        "FOREIGN KEY": "(user) REFERENCES users(uuid)"
+    },
     "location": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "parent_location": "UUID",
