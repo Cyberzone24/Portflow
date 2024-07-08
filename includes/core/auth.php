@@ -196,7 +196,7 @@ class Auth {
 
     public function signin() {
         // check csrf token
-        if ($this->csrf_check($_POST['csrf'])) {
+        if ($this->csrf_check()) {
             $this->logger->log('CSRF token correct', 1);
         } else {
             $this->logger->log('CSRF token not correct', 2, echoToWeb: true);
@@ -579,4 +579,3 @@ class Auth {
         }
     }
 }
-?>

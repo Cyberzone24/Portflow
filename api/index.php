@@ -84,24 +84,46 @@ class API {
     }
 
     private function getUserRole() {
-        $_SESSION['uuid'] = '05e2bbe5-d3e5-48e9-a8a8-0023ff315ab9'; // ====================================== JUST FOR TESTING
-        $query = "SELECT role FROM users WHERE uuid = :uuid";
-        $params = ['uuid' => $_SESSION['uuid']];
-        $result = $this->db_adapter->db_query($query, $params);
-        return $result[0]['role'] ?? 'NULL';
+        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
+
+        if (isset($_SESSION['uuid']) && !empty($_SESSION['uuid'])) { 
+            $query = "SELECT role FROM users WHERE uuid = :uuid";
+            $params = ['uuid' => $_SESSION['uuid']];
+            $result = $this->db_adapter->db_query($query, $params);
+            return $result[0]['role'] ?? 'NULL';
+        } else {
+            http_response_code(400); 
+            echo json_encode([
+                'error' => 'Bad Request',
+                'message' => 'No UUID provided in session.'
+            ]);
+            die;
+        }
     }
 
     private function getAccessRight($resource, $role) {
-        $query = "SELECT access_right FROM access WHERE resource = :resource AND role = :role";
-        $params = ['resource' => 'api/' . $resource, 'role' => $role];
+        // Versuche, eine spezifische Berechtigung für die angefragte Ressource zu finden
+        $query = "SELECT resource, access_right FROM access WHERE resource iLIKE :resource AND role = :role";
+        $params = ['resource' => 'api/%', 'role' => $role];
         $result = $this->db_adapter->db_query($query, $params);
-        return $result[0]['access_right'] ?? 0;
-        /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
-            resource      |                 role                 | access_right 
-            -------------------+--------------------------------------+--------------
-            api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
-        */
+
+        if (!empty($result)) {
+            if ($result[0]['resource'] == 'api/*') {
+                return $result[0]['access_right'];
+            } elseif ($result[0]['resource'] == 'api/' . $resource) {
+                return $result[0]['access_right'];
+            } else {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
     }
+    /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
+        resource      |                 role                 | access_right 
+        -------------------+--------------------------------------+--------------
+        api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
+    */
 
     public function handleRequest() {
         $this->checkMediaTypes($this->allowedContentTypes, $this->allowedAcceptTypes);
@@ -110,13 +132,13 @@ class API {
 
     private function routeRequest() {
         $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
-        $requestUri = explode('/', explode('/api/', $requestUri)[1] ?? $requestUri);
-    
-        $resource = $requestUri[0] ?? NULL;
-        $uuid = $requestUri[1] ?? NULL;
-    
+        $requestUri = explode('/', explode('/api', $requestUri)[1] ?? $requestUri);
+
+        $resource = $requestUri[1] ?? NULL;
+        $uuid = $requestUri[2] ?? NULL;
+
         $this->logger->log("Request URI: {$resource}", 0);
-    
+
         // Prüfen, ob der Tabellenname vorhanden ist
         if ($resource) {
             // Optional: Prüfen, ob der Tabellenname einem bestimmten Pattern entspricht
@@ -127,8 +149,12 @@ class API {
                 return;
             }
 
-            // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist
-            if (!array_key_exists($resource, json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true))) {
+            // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist und nicht 'access' oder 'api' ist
+            if (in_array($resource, ['access', 'api'])) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+                return;
+            } elseif (!array_key_exists($resource, json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true))) {
                 http_response_code(400);
                 echo json_encode(['error' => 'Invalid resource name']);
                 return;
@@ -141,7 +167,7 @@ class API {
                 echo json_encode(['error' => 'Invalid UUID format']);
                 return;
             }
-    
+
             // Verwenden von tableName für die Rechteprüfung
             if ($this->checkAccessRights($resource)) {
                 $this->handleTableRequest($resource, $uuid ?? NULL);
@@ -151,7 +177,7 @@ class API {
             }
         } else {
             http_response_code(200);
-            echo json_encode(file_get_contents(__DIR__ . '/openapi.json'));
+            echo file_get_contents(__DIR__ . '/openapi.json');
         }
     }
 

@@ -27,10 +27,11 @@
         "FOREIGN KEY": "(role) REFERENCES role(uuid)"
     },
     "access": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "resource": "VARCHAR(255) NOT NULL",
         "role": "UUID NOT NULL",
         "access_right": "INT",
-        "PRIMARY KEY": "(resource)",
+        "PRIMARY KEY": "(uuid)",
         "FOREIGN KEY": "(role) REFERENCES role(uuid)"
     },
     "api": {
@@ -55,19 +56,41 @@
     "device": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "location": "UUID NOT NULL",
+        "device_model": "UUID",
         "caption": "VARCHAR(255)",
         "description": "TEXT",
-        "type": "VARCHAR(255)",
         "mac_address": "VARCHAR(255)",
         "hostname": "VARCHAR(255)",
         "serial": "VARCHAR(255)",
+        "manufacturer": "VARCHAR(255)",
+        "model": "VARCHAR(255)",
+        "specification": "TEXT",
+        "type": "VARCHAR(255)",
+        "anc": "BOOLEAN",
         "position": "FLOAT",
         "size_x": "FLOAT",
         "size_y": "FLOAT",
         "size_z": "FLOAT",
         "item_group": "UUID",
         "PRIMARY KEY": "(uuid)",
-        "FOREIGN KEY": "(location) REFERENCES location(uuid)"
+        "FOREIGN KEY": "(location) REFERENCES location(uuid)",
+        "FOREIGN KEY": "(device_model) REFERENCES device_model(uuid)"
+    },
+    "device_model": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "caption": "VARCHAR(255)",
+        "description": "TEXT",
+        "manufacturer": "VARCHAR(255)",
+        "model": "VARCHAR(255)",
+        "specification": "TEXT",
+        "type": "VARCHAR(255)",
+        "anc": "BOOLEAN",
+        "position": "FLOAT",
+        "size_x": "FLOAT",
+        "size_y": "FLOAT",
+        "size_z": "FLOAT",
+        "item_group": "UUID",
+        "PRIMARY KEY": "(uuid)"
     },
     "device_port": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -106,12 +129,12 @@
         "tagged": "BOOLEAN",
         "PRIMARY KEY": "(uuid)"
     },
-    "connection_vlan": {
+    "device_port_vlan": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "connection": "UUID NOT NULL",
+        "device_port": "UUID NOT NULL",
         "vlan": "UUID NOT NULL",
         "PRIMARY KEY": "(uuid)",
-        "FOREIGN KEY": "(connection) REFERENCES connection(uuid)",
+        "FOREIGN KEY": "(device_port) REFERENCES device_port(uuid)",
         "FOREIGN KEY": "(vlan) REFERENCES vlan(uuid)"
     }
 }
