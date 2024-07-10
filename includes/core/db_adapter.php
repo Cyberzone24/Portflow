@@ -105,11 +105,26 @@ class DatabaseAdapter {
         // get content of db_tables.json, convert to array
         $dbTables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
 
+        // Store foreign keys for view creation
+        $foreignKeys = [];
+
         // iterate over array and create tables
         foreach ($dbTables as $dbTable => $columns) {
             $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
             foreach ($columns as $column => $columnType) {
                 $query .= "$column $columnType, ";
+
+                // Check for foreign key definition
+                if (stripos($columnType, 'FOREIGN KEY') !== false) {
+                    preg_match('/FOREIGN KEY \(([^)]+)\) REFERENCES ([^ ]+) \(([^)]+)\)/i', $columnType, $matches);
+                    if ($matches) {
+                        $foreignKeys[$dbTable][] = [
+                            'column' => $matches[1],
+                            'referenced_table' => $matches[2],
+                            'referenced_column' => $matches[3]
+                        ];
+                    }
+                }
             }
             $query = rtrim($query, ', ') . ');';
 
@@ -124,13 +139,75 @@ class DatabaseAdapter {
                 $this->pdo->commit();
 
                 $this->logger->log("finished for $dbTable");
-                $this->logger->log("finished for $dbTable");
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
                 $this->logger->log('error during initialization of database: ' . $e->getMessage());
             }
         }
-    }
-}
 
+        // Create views based on foreign keys
+        foreach ($foreignKeys as $mainTable => $fks) {
+            // Initialize the base SELECT clause and the JOIN clauses
+            $selectClause = [];
+            $joinClauses = [];
+            $mainTableAlias = 'm';
+
+            // Get columns of the main table
+            $mainColumnsQuery = $this->pdo->query("SELECT column_name FROM information_schema.columns WHERE table_name = '$mainTable'");
+            $mainColumns = $mainColumnsQuery->fetchAll(PDO::FETCH_COLUMN);
+
+            // Add main table columns to the select clause
+            foreach ($mainColumns as $column) {
+                $selectClause[] = "$mainTableAlias.$column AS $column";
+            }
+
+            // Process each foreign key and create join clauses
+            foreach ($fks as $index => $fk) {
+                $referencedTable = $fk['referenced_table'];
+                $referencedTableAlias = 'r' . $index;
+
+                // Get columns of the referenced table
+                $referencedColumnsQuery = $this->pdo->query("SELECT column_name FROM information_schema.columns WHERE table_name = '$referencedTable'");
+                $referencedColumns = $referencedColumnsQuery->fetchAll(PDO::FETCH_COLUMN);
+
+                // Add referenced table columns to the select clause
+                foreach ($referencedColumns as $column) {
+                    $selectClause[] = "$referencedTableAlias.$column AS {$referencedTable}_$column";
+                }
+
+                // Add join clause for the foreign key
+                $joinClauses[] = "LEFT JOIN $referencedTable $referencedTableAlias ON $mainTableAlias.{$fk['column']} = $referencedTableAlias.{$fk['referenced_column']}";
+            }
+
+            // Combine all parts to create the view query
+            $selectClause = implode(', ', $selectClause);
+            $joinClauses = implode(' ', $joinClauses);
+            $viewName = "{$mainTable}_join_" . implode('_', array_column($fks, 'referenced_table'));
+
+            $createViewQuery = "
+                CREATE VIEW $viewName AS
+                SELECT $selectClause
+                FROM $mainTable $mainTableAlias
+                $joinClauses;
+            ";
+
+            try {
+                // start transaction
+                $this->pdo->beginTransaction();
+
+                // execute view creation query
+                $this->db_query($createViewQuery, []);
+
+                // commit transaction
+                $this->pdo->commit();
+
+                $this->logger->log("View $viewName created");
+            } catch (\Exception $e) {
+                // roll back transaction if there was an error
+                $this->pdo->rollBack();
+                $this->logger->log('error during creation of view: ' . $e->getMessage());
+            }
+        }
+    }    
+}
