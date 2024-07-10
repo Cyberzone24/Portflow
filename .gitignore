@@ -1,2 +1,3 @@
 .vscode
 podman-compose.override.yml
+includes/core/config.php
