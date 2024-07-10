@@ -10,63 +10,9 @@
         die('could not verify session');
     }
 
-    // import database adapter
-    include_once __DIR__ . '/includes/core/db_adapter.php';
-    use Portflow\Core\DatabaseAdapter;
+    include_once __DIR__ . '/includes/header.php';
 
-    $db_adapter = new DatabaseAdapter();
-
-    if (!isset($_GET['action'])) {
-        include_once __DIR__ . '/includes/header.php';
-        $limit = isset($_COOKIE['table_limit']) ? $_COOKIE['table_limit'] : 100;
-        $page = isset($_GET['page']) ? $_GET['page'] : 1;
-        $offset = ($page - 1) * $limit;
-    } elseif ($_GET['action'] === 'get') {
-        $limit = isset($_GET['limit']) ? $_GET['limit'] : 100;
-        $limit = isset($_COOKIE['table_limit']) ? $_COOKIE['table_limit'] : 100;
-        $page = isset($_GET['page']) ? $_GET['page'] : 1;
-        $offset = ($page - 1) * $limit;
-        #$sort = isset($_GET['sort']) ? $_GET['sort'] : '';
-        #$order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
-        $table = isset($_GET['table']) ? $_GET['table'] : 'location';
-
-        if (empty($_GET['search'])) {
-            $columns = $db_adapter->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$table'");
-
-            $results = $db_adapter->db_query("SELECT * FROM $table LIMIT $limit OFFSET $offset");
-            $totalResults = $db_adapter->db_query("SELECT COUNT(*) FROM $table");
-        } else {
-            $search = $_GET['search'];
-
-            // Tabellenspalten abfragen
-            $columns = $db_adapter->db_query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$table'");
-            $textColumns = array_filter($columns, function($column) {
-                return in_array($column['data_type'], ['text', 'character varying']);
-            });
-
-            // Bedingung für die Suchabfrage erstellen
-            $searchConditions = [];
-            foreach ($textColumns as $column) {
-                $searchConditions[] = "{$column['column_name']} iLIKE '%$search%'";
-            }
-            $searchCondition = implode(' OR ', $searchConditions);
-
-            // Suchabfrage ausführen
-            $results = $db_adapter->db_query("SELECT * FROM $table WHERE $searchCondition LIMIT $limit OFFSET $offset");
-            $totalResults = $db_adapter->db_query("SELECT COUNT(*) FROM $table WHERE $searchCondition");
-        }
-
-        $data = array(
-            'columns' => array_map(function($column) { return $column['column_name']; }, $columns),
-            'results' => $results,
-            'totalResults' => $totalResults[0],
-            'limit' => $limit,
-            'currentPage' => $page
-        );
-        
-        echo json_encode($data);
-        die();
-    }
+    $limit = $_COOKIE['table_limit'] ?? 100;
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6">  
