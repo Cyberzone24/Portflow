@@ -51,7 +51,6 @@ class DatabaseAdapter {
         // create and check connection
         try {
             $this->pdo = new PDO("$dbType:host=$dbServer;port=$dbPort;dbname=$dbName", $dbUsername, $dbPassword);
-            $this->pdo = new PDO("$dbType:host=$dbServer;port=$dbPort;dbname=$dbName", $dbUsername, $dbPassword);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->logger->log('pdo connection established', 0);
         } catch (PDOException $e) {
@@ -78,7 +77,6 @@ class DatabaseAdapter {
             return false;
         }
     }
-
 
     public function db_query($query, $params = []){
         $this->logger->log("starting query: $query", 0);
@@ -154,8 +152,8 @@ class DatabaseAdapter {
             $mainTableAlias = 'm';
 
             // Get columns of the main table
-            $mainColumnsQuery = $this->pdo->query("SELECT column_name FROM information_schema.columns WHERE table_name = '$mainTable'");
-            $mainColumns = $mainColumnsQuery->fetchAll(PDO::FETCH_COLUMN);
+            $mainColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$mainTable'");
+            $mainColumns = array_column($mainColumnsQuery, 'column_name');
 
             // Add main table columns to the select clause
             foreach ($mainColumns as $column) {
@@ -168,8 +166,8 @@ class DatabaseAdapter {
                 $referencedTableAlias = 'r' . $index;
 
                 // Get columns of the referenced table
-                $referencedColumnsQuery = $this->pdo->query("SELECT column_name FROM information_schema.columns WHERE table_name = '$referencedTable'");
-                $referencedColumns = $referencedColumnsQuery->fetchAll(PDO::FETCH_COLUMN);
+                $referencedColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$referencedTable'");
+                $referencedColumns = array_column($referencedColumnsQuery, 'column_name');
 
                 // Add referenced table columns to the select clause
                 foreach ($referencedColumns as $column) {
