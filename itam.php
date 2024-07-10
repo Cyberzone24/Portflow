@@ -175,7 +175,7 @@
     document.getElementById('table_limit_2').addEventListener('change', function() {
         document.getElementById('table_limit_1').value = this.value;
         setTableLimit(this.value);
-    });
+    });*/
     // generate pagination
     function generatePagination(totalPages, currentPage, query, limit) {
         var pagesPerGroup = 10;
@@ -231,59 +231,58 @@
 
         // Clone the pagination to 'pagination_bottom'
         $('#pagination_bottom').html($('#pagination').clone(true));
-    } */
+    } 
     // load table
-    function loadTable(table = 'location', query = '', limit = 100, page = 1, sort = 'created', order = 'DESC') {
-        var url = '?action=get&table=' + table +'&search=' + encodeURIComponent(query) + '&limit=' + limit + '&page=' + page + '&sort=' + sort + '&order=' + order;
+    function loadTable(table = 'location', query = '', limit = 100, page = 1) {
+        var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
         $.ajax({
-            url: url,
-            type: 'GET',
+            url: configUrl,
             dataType: 'json',
-            success: function(data) {
-                var tableHead = $('.static thead');
-                var tableBody = $('.static tbody');
-                tableHead.empty();
-                tableBody.empty();
+            success: function(config) {
+                var columnsConfig = config[table];
+                var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + table;
+                $.ajax({
+                    url: url,
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(data) {
+                        var tableHead = $('.static thead');
+                        var tableBody = $('.static tbody');
+                        tableHead.empty();
+                        tableBody.empty();
 
-                // Create table head based on columns
-                var trHead = $('<tr class="border-b bg-gray-200">');
-                data.columns.forEach(function(column) {
-                    var th = $('<th scope="col" class="p-2" data-sort="' + column + '">').text(column).append('<span class="sort-icon"></span>');
-                    trHead.append(th);
+                        var trHead = $('<tr class="border-b bg-gray-200">');
+                        Object.keys(columnsConfig).forEach(function(key) {
+                            var th = $('<th scope="col" class="p-2" data-sort="' + key + '">').text(columnsConfig[key]);
+                            trHead.append(th);
+                        });
+                        tableHead.append(trHead);
+
+                        var results = data.items;
+                        $('#count').text('Datensätze: ' + parseInt(data.pageInfo.totalResults));
+
+                        results.forEach(function(row) {
+                            var tr = $('<tr class="hover:bg-gray-200">');
+                            Object.keys(columnsConfig).forEach(function(key) {
+                                var td = $('<td class="p-2 border-b max-w-lg overflow-auto">').text(row[key] || '--');
+                                tr.append(td);
+                            });
+                            tableBody.append(tr);
+                        });
+
+                        generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, query, limit);
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.log('Error:', jqXHR.responseText);
+                    }
                 });
-                tableHead.append(trHead);
-
-                var results = data.results;
-                var totalResults = parseInt(data.totalResults.count);
-                var totalPages = Math.ceil(totalResults / data.limit);
-                var currentPage = data.currentPage;
-
-                // assign totalResults to the #count
-                $('#count').text('Datensätze: ' + totalResults);
-
-                results.forEach(function(row) {
-                    var tr = $('<tr class="hover:bg-gray-200">');
-
-                    // Loop through each column in the row
-                    data.columns.forEach(function(column) {
-                        var td = $('<td class="p-2 border-b max-w-lg overflow-auto">').text(row[column] || '--');
-                        tr.append(td);
-                    });
-
-                    // Append the row to the table body
-                    tableBody.append(tr);
-                });
-
-                generatePagination(totalPages, currentPage, query, limit);
             },
             error: function(jqXHR, textStatus, errorThrown) {
-                console.log('Error:', jqXHR.responseText);
+                console.log('Error loading table config:', jqXHR.responseText);
             }
         });
     }
-    $(document).ready(function() {
-        loadTable();
-    });
+    loadTable();
     // search
     $(document).ready(function() {
         $('#searchForm').on('submit', function(event) {

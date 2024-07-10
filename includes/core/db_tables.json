@@ -39,7 +39,7 @@
         "caption": "VARCHAR(255)",
         "description": "TEXT",
         "user": "UUID",
-        "token": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "token": "VARCHAR(255) NOT NULL",
         "created": "TIMESTAMP WITH TIME ZONE",
         "PRIMARY KEY": "(uuid)",
         "FOREIGN KEY": "(user) REFERENCES users(uuid)"

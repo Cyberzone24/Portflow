@@ -38,7 +38,7 @@ class Logger {
     public function __construct($logLevel = 1) {
         $this->logFile = '/var/log/portflow/portflow.log'; // Pfad zur Log-Datei
         // Überprüfe, ob LOG_LEVEL definiert ist; wenn nicht, verwende den Standardwert oder den übergebenen Wert
-        $this->logLevel = defined('LOG_LEVEL') ? constant('LOG_LEVEL') : $logLevel;
+        $this->logLevel = defined('LOG_LEVEL') ? LOG_LEVEL : $logLevel;
     }
 
     public function log($msg, $level = 1, $echoToWeb = false) {

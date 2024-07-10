@@ -17,24 +17,8 @@
     // import alert function
     include_once __DIR__ . '/alert.php';
 
-    // lanuage
-    if(isset($_SESSION['language'])){
-        $language = $_SESSION['language'];
-        if($language == 'de-DE' || $language == 'de'){              include_once __DIR__ . '/lang/de-DE.php';   }
-        elseif($language == 'en-EN' || $language == 'en'){          include_once __DIR__ . '/lang/en-EN.php';   }
-        elseif($language == 'en-US' || $language == 'en'){          include_once __DIR__ . '/lang/en-EN.php';   }
-        else{                                                       include_once __DIR__ . '/lang/en-EN.php';   }
-
-    }elseif(isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])){
-        $language = explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE']);
-        if($language[0] == 'de-DE' || $language[0] == 'de'){        include_once __DIR__ . '/lang/de-DE.php';   }
-        elseif($language[0] == 'en-EN' || $language[0] == 'en'){    include_once __DIR__ . '/lang/en-EN.php';   }
-        elseif($language[0] == 'en-US' || $language[0] == 'en'){    include_once __DIR__ . '/lang/en-EN.php';   }
-        else{                                                       include_once __DIR__ . '/lang/en-EN.php';   }
-
-    }else{
-        include_once __DIR__ . '/lang/en-EN.php';
-    }
+    // import lanuage file
+    include_once __DIR__ . '/lang.php';
 ?>
 <!DOCTYPE html>
 <html lang="de">

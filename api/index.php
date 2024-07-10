@@ -19,22 +19,22 @@ if (!in_array(__DIR__ . '/../includes/core/session.php', get_included_files())) 
 }
 */
 
-// import db_adapter
+// import dbAdapter
 include_once __DIR__ . '/../includes/core/db_adapter.php';
 use Portflow\Core\DatabaseAdapter;
 
 $api = new API();
-$api->handleRequest();
+$api->route();
 
 class API {
     private $logger;
-    private $db_adapter;
+    private $dbAdapter;
     private $allowedContentTypes;
     private $allowedAcceptTypes;
 
     public function __construct() {
         $this->logger = new Logger();
-        $this->db_adapter = new DatabaseAdapter();
+        $this->dbAdapter = new DatabaseAdapter();
 
         $this->initializeHeaders();
         $this->defineAllowedTypes();
@@ -63,9 +63,48 @@ class API {
         $this->allowedAcceptTypes = $this->allowedContentTypes;
     }
 
+    private function getAccessRights($resource) {
+        // get the current user's role
+        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
+
+        if (isset($_SESSION['uuid']) && !empty($_SESSION['uuid'])) { 
+            $query = "SELECT role FROM users WHERE uuid = :uuid";
+            $params = ['uuid' => $_SESSION['uuid']];
+            $result = $this->dbAdapter->db_query($query, $params);
+            $role = $result[0]['role'] ?? 'NULL';
+
+            // get access rights for the user's role
+            $query = "SELECT resource, access_right FROM access WHERE resource iLIKE :resource AND role = :role";
+            $params = ['resource' => 'api/%', 'role' => $role];
+            $result = $this->dbAdapter->db_query($query, $params);
+
+            if (!empty($result)) {
+                if ($result[0]['resource'] == 'api/*') {
+                    return $result[0]['access_right'];
+                } elseif ($result[0]['resource'] == 'api/' . $resource) {
+                    return $result[0]['access_right'];
+                } else {
+                    return 0;
+                }
+            } else {
+                return 0;
+            }
+            /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
+                resource      |                 role                 | access_right 
+                -------------------+--------------------------------------+--------------
+                api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
+            */
+        } else {
+            http_response_code(400); 
+            echo json_encode([
+                'error' => 'Bad Request',
+                'message' => 'No UUID provided in session.'
+            ]);
+            die;
+        }
+    }
     private function checkAccessRights($resource) {
-        $userRole = $this->getUserRole(); // Implement this to get the current user's role
-        $accessRight = $this->getAccessRight($resource, $userRole);
+        $accessRight = $this->getAccessRights($resource);
 
         switch ($_SERVER['REQUEST_METHOD']) { // CRUD
             case 'POST': // CREATE
@@ -83,54 +122,11 @@ class API {
         }
     }
 
-    private function getUserRole() {
-        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
-
-        if (isset($_SESSION['uuid']) && !empty($_SESSION['uuid'])) { 
-            $query = "SELECT role FROM users WHERE uuid = :uuid";
-            $params = ['uuid' => $_SESSION['uuid']];
-            $result = $this->db_adapter->db_query($query, $params);
-            return $result[0]['role'] ?? 'NULL';
-        } else {
-            http_response_code(400); 
-            echo json_encode([
-                'error' => 'Bad Request',
-                'message' => 'No UUID provided in session.'
-            ]);
-            die;
-        }
-    }
-
-    private function getAccessRight($resource, $role) {
-        // Versuche, eine spezifische Berechtigung für die angefragte Ressource zu finden
-        $query = "SELECT resource, access_right FROM access WHERE resource iLIKE :resource AND role = :role";
-        $params = ['resource' => 'api/%', 'role' => $role];
-        $result = $this->db_adapter->db_query($query, $params);
-
-        if (!empty($result)) {
-            if ($result[0]['resource'] == 'api/*') {
-                return $result[0]['access_right'];
-            } elseif ($result[0]['resource'] == 'api/' . $resource) {
-                return $result[0]['access_right'];
-            } else {
-                return 0;
-            }
-        } else {
-            return 0;
-        }
-    }
-    /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
-        resource      |                 role                 | access_right 
-        -------------------+--------------------------------------+--------------
-        api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
-    */
-
-    public function handleRequest() {
+    public function route() {
+        // check media types
         $this->checkMediaTypes($this->allowedContentTypes, $this->allowedAcceptTypes);
-        $this->routeRequest();
-    }
 
-    private function routeRequest() {
+        // Parse the request URI
         $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
         $requestUri = explode('/', explode('/api', $requestUri)[1] ?? $requestUri);
 
@@ -150,7 +146,7 @@ class API {
             }
 
             // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist und nicht 'access' oder 'api' ist
-            if (in_array($resource, ['access', 'api'])) {
+            if (in_array($resource, ['access', 'api', 'users'])) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Forbidden']);
                 return;
@@ -194,7 +190,7 @@ class API {
             $data = array_map(function($value) {
                 return trim($value);
             }, $data);
-            var_dump($data); // ===================================== JUST FOR TESTING
+            #var_dump($data); // ===================================== JUST FOR TESTING
         }
 
         switch ($_SERVER['REQUEST_METHOD']) { // CRUD
@@ -202,7 +198,7 @@ class API {
                 $this->post($resource, $data);
                 break;
             case 'GET': // READ
-                $this->get($resource);
+                $this->get($resource, $data);
                 break;
             case 'PUT': // UPDATE
                 $this->put($resource, $uuid, $data);
@@ -223,7 +219,7 @@ class API {
     private function post($resource, $data) {
         try {
             $query = "INSERT INTO $resource (" . implode(', ', array_keys($data)) . ") VALUES (:" . implode(', :', array_keys($data)) . ") RETURNING *";
-            $results = $this->db_adapter->db_query($query, $data);
+            $results = $this->dbAdapter->db_query($query, $data);
             http_response_code(200);
             echo json_encode($results);
         } catch (\Exception $e) {
@@ -232,18 +228,49 @@ class API {
         }
     }
 
-    private function get($resource) {
+    private function get($resource, $data = NULL) {
         try {
-            $query = "SELECT * FROM $resource";
-            $results = $this->db_adapter->db_query($query);
+            $limit = $_COOKIE['table_limit'] ?? ($data['limit'] ?? 100);
+            $page = $data['page'] ?? 1;
+            $offset = ($page - 1) * $limit;
+
+            if (isset($data['search']) && !empty($data['search'])) {
+               // Tabellenspalten abfragen
+                $columns = $this->dbAdapter->db_query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'");
+                $textColumns = array_filter($columns, function($column) {
+                    return in_array($column['data_type'], ['text', 'character varying']);
+                });
+                // Bedingung für die Suchabfrage erstellen
+                $searchConditions = [];
+                foreach ($textColumns as $column) {
+                    $searchConditions[] = "{$column['column_name']} iLIKE '%{$data['search']}%'";
+                }
+                $searchCondition = implode(' OR ', $searchConditions);
+
+                // define query and queryTotal
+                $query = "SELECT * FROM $resource WHERE $searchCondition LIMIT $limit OFFSET $offset";
+                $queryTotal = "SELECT COUNT(*) FROM $resource WHERE $searchCondition";
+            } else {
+                $query = "SELECT * FROM $resource LIMIT $limit OFFSET $offset";
+                $queryTotal = "SELECT COUNT(*) FROM $resource";
+            }
+            $results = $this->dbAdapter->db_query($query);
+            $totalResults = $this->dbAdapter->db_query($queryTotal);
+            $response = [
+                'pageInfo' => [
+                    'totalResults' => $totalResults[0]['count'] ?? 0,
+                    'resultsPerPage' => $limit,
+                    'currentPage' => $page
+                ],
+                'items' => $results
+            ];
             http_response_code(200);
-            echo json_encode($results);
+            echo json_encode($response);
         } catch (\Exception $e) {
             http_response_code(500);
             echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
         }
     }
-
     private function put($resource, $uuid, $data) {
         try {
             $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
@@ -251,7 +278,7 @@ class API {
             }, array_keys($data))) . " WHERE uuid = :uuid RETURNING *";
             $params = $data;
             $params['uuid'] = $uuid;
-            $results = $this->db_adapter->db_query($query, $params);
+            $results = $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
         } catch (\Exception $e) {
@@ -267,7 +294,7 @@ class API {
             }, array_keys($data))) . " WHERE uuid = :uuid RETURNING " . implode(', ', array_keys($data));
             $params = $data;
             $params['uuid'] = $uuid;
-            $results = $this->db_adapter->db_query($query, $params);
+            $results = $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
         } catch (\Exception $e) {
@@ -280,7 +307,7 @@ class API {
         try {
             $query = "DELETE FROM $resource WHERE uuid = :uuid RETURNING *";
             $params['uuid'] = $uuid;
-            $results = $this->db_adapter->db_query($query, $params);
+            $results = $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
         } catch (\Exception $e) {

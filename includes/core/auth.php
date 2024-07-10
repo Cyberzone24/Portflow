@@ -248,7 +248,7 @@ class Auth {
             # $result = $this->db_adapter->db_query($query, ['username' => $this->username]);
             $result = !empty($result) ? $result[0] : null;
             $this->logger->log('checking if user exists and account is activated');
-        
+
             if (!empty($result)) {
                 $this->logger->log('user exists and account is activated', 1);
 
