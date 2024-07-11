@@ -178,22 +178,55 @@ class API {
     }
 
     private function handleTableRequest($resource, $uuid = NULL) {
-        if (isset($_GET)) {
-            $data = $_GET;
-            // sanitize data
-            $data = array_map(function($value) {
-                return htmlspecialchars($value);
-            }, $data);
-            $data = array_map(function($value) {
-                return strip_tags($value);
-            }, $data);
-            $data = array_map(function($value) {
-                return trim($value);
-            }, $data);
-            #var_dump($data); // ===================================== JUST FOR TESTING
+        // Bestimmen der Datenquelle basierend auf der Request-Methode
+        switch ($_SERVER['REQUEST_METHOD']) {
+            case 'POST':
+            case 'PUT':
+            case 'PATCH':
+                // Content-Type der Anfrage ermitteln
+                $contentType = $_SERVER["CONTENT_TYPE"] ?? '';
+                $inputData = file_get_contents('php://input');
+
+                // Verarbeitung basierend auf Content-Type
+                if (strpos($contentType, 'json') !== false) {
+                    // Behandlung von JSON Content-Types
+                    $data = json_decode($inputData, true);
+                    if (!is_array($data)) {
+                        http_response_code(400); // Bad Request
+                        echo json_encode(['error' => 'Bad Request', 'details' => 'Invalid JSON format.']);
+                        return;
+                    }
+                } elseif ($contentType === 'text/plain; charset=utf-8') {
+                    // Behandlung von text/plain Content-Type
+                    $data = $_GET;
+                } else {
+                    // Behandlung anderer Content-Types
+                    // Hier können Sie spezifische Verarbeitungslogiken für andere Content-Types implementieren
+                } 
+                break;
+            case 'GET':
+            case 'DELETE':
+                // Daten aus $_GET verwenden für GET und DELETE
+                $data = $_GET;
+                break;
+            default:
+                http_response_code(405);
+                echo json_encode(['error' => 'Method Not Allowed']);
+                return;
         }
 
-        switch ($_SERVER['REQUEST_METHOD']) { // CRUD
+        // Sanitize data
+        $data = array_map(function($value) {
+            if (is_string($value)) {
+                $value = trim($value);
+                $value = strip_tags($value);
+                return htmlspecialchars($value);
+            }
+            return $value; // Für nicht-String-Werte keine Sanitization durchführen
+        }, $data);
+
+        // Aufrufen der entsprechenden Methode basierend auf der Request-Methode
+        switch ($_SERVER['REQUEST_METHOD']) {
             case 'POST': // CREATE
                 $this->post($resource, $data);
                 break;
@@ -234,8 +267,12 @@ class API {
             $page = $data['page'] ?? 1;
             $offset = ($page - 1) * $limit;
 
+            // Initialisiere Bedingungsliste
+            $conditions = [];
+
+            // Überprüfe auf Suchparameter
             if (isset($data['search']) && !empty($data['search'])) {
-               // Tabellenspalten abfragen
+                // Tabellenspalten abfragen
                 $columns = $this->dbAdapter->db_query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'");
                 $textColumns = array_filter($columns, function($column) {
                     return in_array($column['data_type'], ['text', 'character varying']);
@@ -245,17 +282,37 @@ class API {
                 foreach ($textColumns as $column) {
                     $searchConditions[] = "{$column['column_name']} iLIKE '%{$data['search']}%'";
                 }
-                $searchCondition = implode(' OR ', $searchConditions);
-
-                // define query and queryTotal
-                $query = "SELECT * FROM $resource WHERE $searchCondition LIMIT $limit OFFSET $offset";
-                $queryTotal = "SELECT COUNT(*) FROM $resource WHERE $searchCondition";
-            } else {
-                $query = "SELECT * FROM $resource LIMIT $limit OFFSET $offset";
-                $queryTotal = "SELECT COUNT(*) FROM $resource";
+                $conditions[] = '(' . implode(' OR ', $searchConditions) . ')';
             }
+
+            // Überprüfe auf zusätzliche WHERE-Parameter
+            foreach ($data as $key => $value) {
+                if (!in_array($key, ['limit', 'page', 'search'])) {
+                    // Überprüfe auf Vergleichsparameter
+                    if (preg_match('/^(.*?)(Min|Max)$/', $key, $matches)) {
+                        $column = $matches[1];
+                        $operator = ($matches[2] === 'Min') ? '>' : '<';
+                        $conditions[] = "$column $operator '{$value}'";
+                    } else {
+                        // Standardgleichheitsbedingung
+                        $conditions[] = "$key = '{$value}'";
+                    }
+                }
+            }
+
+            // Erstelle WHERE-Klausel
+            $whereClause = '';
+            if (!empty($conditions)) {
+                $whereClause = 'WHERE ' . implode(' AND ', $conditions);
+            }
+
+            // Erstelle die Abfragen
+            $query = "SELECT * FROM $resource $whereClause LIMIT $limit OFFSET $offset";
+            $queryTotal = "SELECT COUNT(*) FROM $resource $whereClause";
+
             $results = $this->dbAdapter->db_query($query);
             $totalResults = $this->dbAdapter->db_query($queryTotal);
+
             $response = [
                 'pageInfo' => [
                     'totalResults' => $totalResults[0]['count'] ?? 0,
@@ -264,13 +321,15 @@ class API {
                 ],
                 'items' => $results
             ];
+
             http_response_code(200);
             echo json_encode($response);
         } catch (\Exception $e) {
             http_response_code(500);
             echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
         }
-    }
+    }    
+
     private function put($resource, $uuid, $data) {
         try {
             $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {

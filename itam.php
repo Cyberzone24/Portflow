@@ -25,7 +25,130 @@
             <li onclick="loadTable('vlan')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
         </ul>
     </div>
-    <div class="h-full basis-5/6 flex bg-white rounded-lg">
+    <div class="h-full basis-5/6 flex bg-white rounded-lg relative">
+        <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2">
+            <div class="flex justify-between pb-6">
+                <div class="text-xl">
+                    Add new Location
+                </div>
+                <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
+                    <button type="button" onclick="cancel_new_entry(this)" class="text-2xl text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <form id="new_location">
+                <div class="flex gap-4 justify-between">
+                    <div class="pb-6 h-fit w-full max-w-lg ">
+                        <label class="block mb-2" for="type">
+                            Type
+                        </label>
+                        <select id="type" name="type" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                            <option value="0">Building complex</option>
+                            <option value="2">Building</option>
+                            <option value="4">Room</option>
+                            <option value="6">Rack</option>
+                            <option value="8">Device</option>
+                        </select>
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg relative">
+                        <label class="block mb-2" for="type">
+                            Parent Location
+                        </label>
+                        <input type="text" id="search" placeholder="Parent Location" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                        <input type="hidden" id="parent_location" name="parent_location" value="">
+                        <div id="location_search" class="absolute z-3 w-full bg-white mt-2 rounded-3xl shadow-lg border leading-tight hidden"></div>
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg">
+                        <label class="block mb-2" for="type">
+                            Caption
+                        </label>
+                        <input type="text" name="caption" placeholder="Caption" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg">
+                        <label class="block mb-2" for="type">
+                            Description
+                        </label>
+                        <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                    </div>
+                </div>
+                <div class="h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
+                    <button type="submit" class="text-2xl text-white"><i class="fa-solid fa-check"></i></button>
+                </div>
+                <script>
+                $(document).ready(function() {
+                    $('#type').on('change', function() {
+                        var typeValue = $(this).val();
+                        var searchQuery = 'typeMax=' + typeValue;
+                        loadDropdown(searchQuery);
+                    });
+
+                    $('#search').on('input', function() {
+                        var search = $(this).val();
+                        var typeValue = $('#type').val();
+                        var searchQuery = 'typeMax=' + typeValue + '&search=' + search;
+                        loadDropdown(searchQuery);
+                    });
+
+                    $('#new_location').on('submit', function(event) {
+                        event.preventDefault(); // Verhindert das Standard-Submit-Verhalten
+
+                        var formDataArray = $(this).serializeArray(); // Sammelt die Daten des Formulars als Array
+                        var formDataObj = {};
+                        $.each(formDataArray, function(index, item) {
+                            formDataObj[item.name] = item.value;
+                        });
+
+                        $.ajax({
+                            url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/', // Die URL, an die der POST-Request gesendet wird
+                            type: 'POST',
+                            contentType: 'application/json', // Setzt den Content-Type auf application/json
+                            data: JSON.stringify(formDataObj), // Konvertiert das Objekt in einen JSON-String
+                            success: function(response) {
+                                console.log('Erfolg:', response);
+                                // Hier können Sie z.B. eine Erfolgsmeldung anzeigen oder die Seite aktualisieren
+                            },
+                            error: function(jqXHR, textStatus, errorThrown) {
+                                console.log('Fehler beim Senden der Daten:', jqXHR.responseText);
+                                // Hier können Sie z.B. eine Fehlermeldung anzeigen
+                            }
+                        });
+                    });
+                });
+
+                function loadDropdown(search) {
+                    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
+                    $.ajax({
+                        url: url,
+                        type: 'GET',
+                        dataType: 'json',
+                        success: function(data) {
+                            var dropdown = $('#location_search');
+                            dropdown.empty(); // Vorhandene Optionen löschen
+
+                            if (data && data.items && data.items.length > 0) {
+                                data.items.forEach(function(item) {
+                                    var option = $('<div class="hover:bg-gray-100 py-2 px-4 rounded-3xl cursor-pointer">').text(item.caption).attr('data-value', item.uuid);
+                                    dropdown.append(option);
+
+                                    option.on('click', function() {
+                                        $('#search').val(item.caption); // Den Wert des Suchfelds aktualisieren
+                                        $('#parent_location').val(item.uuid); // Den Wert des versteckten Feldes aktualisieren
+                                        dropdown.hide(); // Dropdown ausblenden
+                                    });
+                                });
+                                dropdown.show(); // Dropdown anzeigen, wenn Optionen hinzugefügt wurden
+                            } else {
+                                dropdown.append($('<div class="p-2 text-gray-500">').text('Keine Ergebnisse gefunden'));
+                                dropdown.show();
+                            }
+                        },
+                        error: function(jqXHR, textStatus, errorThrown) {
+                            console.log('Error loading dropdown data:', jqXHR.responseText);
+                        }
+                    });
+                }
+                </script>
+            </form>
+        </div>
         <div class="h-fit w-full p-4">
             <div class="flex justify-between mb-4">
                 <p id="count"></p>
@@ -123,7 +246,7 @@
         setTableLimit(this.value);
     });*/
     // generate pagination
-    function generatePagination(totalPages, currentPage, query, limit) {
+    function generatePagination(totalPages, currentPage, search, limit) {
         var pagesPerGroup = 10;
         var pageGroup = Math.floor((currentPage - 1) / pagesPerGroup);
 
@@ -137,7 +260,7 @@
         var prevButton = $('<div class="mr-2 cursor-pointer">&larr;</div>');
         if (pageGroup > 0) {
             prevButton.click(function() {
-                generatePagination(totalPages, (pageGroup - 1) * pagesPerGroup + 1, query, limit);
+                generatePagination(totalPages, (pageGroup - 1) * pagesPerGroup + 1, search, limit);
             });
         } else {
             prevButton.css('visibility', 'hidden');
@@ -157,7 +280,7 @@
 
             // Fügen Sie einen Klick-Event-Handler hinzu, der die Funktion loadTable aufruft
             pageDiv.click(function() {
-                loadTable(query, limit, $(this).text());
+                loadTable(table, search, limit, $(this).text());
             });
 
             // Fügen Sie die Seitenzahl zur Paginierungsleiste hinzu
@@ -168,7 +291,7 @@
         var nextButton = $('<div class="mr-2 cursor-pointer">&rarr;</div>');
         if ((pageGroup + 1) * pagesPerGroup < totalPages) {
             nextButton.click(function() {
-                generatePagination(totalPages, (pageGroup + 1) * pagesPerGroup + 1, query, limit);
+                generatePagination(totalPages, (pageGroup + 1) * pagesPerGroup + 1, search, limit);
             });
         } else {
             nextButton.css('visibility', 'hidden');
@@ -179,7 +302,7 @@
         $('#pagination_bottom').html($('#pagination').clone(true));
     } 
     // load table
-    function loadTable(table = 'location', query = '', limit = 100, page = 1) {
+    function loadTable(table = 'location', search = '', limit = 100, page = 1) {
         var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
         $.ajax({
             url: configUrl,
@@ -216,7 +339,7 @@
                             tableBody.append(tr);
                         });
 
-                        generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, query, limit);
+                        generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
                     },
                     error: function(jqXHR, textStatus, errorThrown) {
                         console.log('Error:', jqXHR.responseText);
@@ -231,10 +354,10 @@
     loadTable();
     // search
     $(document).ready(function() {
-        $('#searchForm').on('submit', function(event) {
+        $('#searchForm').on('change', function(event) {
             event.preventDefault();
-            var query = $(this).find('input[name="search"]').val();
-            loadTable(query);
+            var search = $(this).find('input[name="search"]').val();
+            loadTable(table = 'location', search);
         });
     });
 </script>

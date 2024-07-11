@@ -236,7 +236,7 @@
 <div class="h-full relative overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="flex justify-between mb-4">
         <p id="count"></p>
-        <div class="flex flex-row">        
+        <div class="flex flex-row">
             <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
                 <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
                 <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
