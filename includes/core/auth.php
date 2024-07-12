@@ -443,7 +443,7 @@ class Auth {
             // Log the exception message with ERROR level
             $this->logger->log($e->getMessage(), 3);
             return false;
-         } finally {
+        } finally {
             // Dieser Block wird ausgeführt, egal ob eine Ausnahme aufgetreten ist oder nicht.
             // Schließen Sie hier die LDAP-Verbindung
             if (isset($ldap_connection)) {
@@ -464,13 +464,11 @@ class Auth {
             $query = "SELECT uuid FROM users";
             $result = $this->db_adapter->db_query($query);
             if (empty($result)) {
-                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description)";
-                $result = $this->db_adapter->db_query($query, ['caption' => 'admin', 'description' => 'administrator role created by portflow']);
-                $this->logger->log('creating admin role', 1);
-
-                $query = "SELECT uuid FROM role WHERE caption = :caption";
-                $result = $this->db_adapter->db_query($query, ['caption' => 'admin']);
+                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
+                $params = ['caption' => 'admin', 'description' => 'administrator role created by portflow'];
+                $result = $this->db_adapter->db_query($query, $params);
                 $this->role = $result[0]['uuid'];
+                $this->logger->log('creating admin role and retrieving uuid', 1);
             }
 
             // check if user exists
