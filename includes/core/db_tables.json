@@ -38,11 +38,11 @@
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "caption": "VARCHAR(255)",
         "description": "TEXT",
-        "user": "UUID",
+        "users": "UUID",
         "token": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "created": "TIMESTAMP WITH TIME ZONE",
         "PRIMARY KEY": "(uuid)",
-        "FOREIGN KEY": "(user) REFERENCES users(uuid)"
+        "FOREIGN KEY": "(users) REFERENCES users(uuid)"
     },
     "location": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -52,6 +52,19 @@
         "type": "FLOAT",
         "PRIMARY KEY": "(uuid)",
         "FOREIGN KEY": "(parent_location) REFERENCES location(uuid)"
+    },
+    "device_model": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "caption": "VARCHAR(255)",
+        "description": "TEXT",
+        "manufacturer": "VARCHAR(255)",
+        "model": "VARCHAR(255)",
+        "specification": "TEXT",
+        "type": "VARCHAR(255)",
+        "anc": "BOOLEAN",
+        "size": "TEXT",
+        "item_group": "UUID",
+        "PRIMARY KEY": "(uuid)"
     },
     "device": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -74,19 +87,6 @@
         "PRIMARY KEY": "(uuid)",
         "FOREIGN KEY": "(location) REFERENCES location(uuid)",
         "FOREIGN KEY": "(device_model) REFERENCES device_model(uuid)"
-    },
-    "device_model": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "caption": "VARCHAR(255)",
-        "description": "TEXT",
-        "manufacturer": "VARCHAR(255)",
-        "model": "VARCHAR(255)",
-        "specification": "TEXT",
-        "type": "VARCHAR(255)",
-        "anc": "BOOLEAN",
-        "size": "TEXT",
-        "item_group": "UUID",
-        "PRIMARY KEY": "(uuid)"
     },
     "device_port": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
