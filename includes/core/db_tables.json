@@ -85,8 +85,10 @@
         "size": "TEXT",
         "item_group": "UUID",
         "PRIMARY KEY": "(uuid)",
-        "FOREIGN KEY": "(location) REFERENCES location(uuid)",
-        "FOREIGN KEY": "(device_model) REFERENCES device_model(uuid)"
+        "FOREIGN KEYS": [
+            {"key": "(location) REFERENCES location(uuid)"},
+            {"key": "(device_model) REFERENCES device_model(uuid)"}
+        ]
     },
     "device_port": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -94,6 +96,8 @@
         "caption": "VARCHAR(255)",
         "description": "TEXT",
         "type": "VARCHAR(255)",
+        "status": "INT",
+        "speed": "FLOAT",
         "size": "TEXT",
         "position": "TEXT",
         "rotation": "INT",
@@ -114,8 +118,10 @@
         "speed": "FLOAT",
         "item_group": "UUID",
         "PRIMARY KEY": "(uuid)",
-        "FOREIGN KEY": "(device_port_source) REFERENCES device_port(uuid)",
-        "FOREIGN KEY": "(device_port_destination) REFERENCES device_port(uuid)"
+        "FOREIGN KEYS": [
+            {"key": "(device_port_source) REFERENCES device_port(uuid)"},
+            {"key": "(device_port_destination) REFERENCES device_port(uuid)"}
+        ]
     },
     "vlan": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -130,7 +136,9 @@
         "device_port": "UUID NOT NULL",
         "vlan": "UUID NOT NULL",
         "PRIMARY KEY": "(uuid)",
-        "FOREIGN KEY": "(device_port) REFERENCES device_port(uuid)",
-        "FOREIGN KEY": "(vlan) REFERENCES vlan(uuid)"
+        "FOREIGN KEYS": [
+            {"key": "(device_port) REFERENCES device_port(uuid)"},
+            {"key": "(vlan) REFERENCES vlan(uuid)"}
+        ]
     }
 }

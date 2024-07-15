@@ -92,11 +92,15 @@ class DatabaseAdapter {
             $stmt->bindValue(':'.$param, $value);
         }
 
-        $stmt->execute();
-
-        // fetch results and return
-        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        return $results;
+        try {
+            $stmt->execute();
+            // Fetch results and return
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return $results;
+        } catch (\Exception $e) {
+            $this->logger->log('error during query execution: ' . $query . ' - ' . $e->getMessage());
+            throw $e;
+        }
     }
 
     public function db_init() {
@@ -113,8 +117,8 @@ class DatabaseAdapter {
                 $query .= "$column $columnType, ";
 
                 // Check for foreign key definition
-                if (stripos($columnType, 'FOREIGN KEY') !== false) {
-                    preg_match('/FOREIGN KEY \(([^)]+)\) REFERENCES ([^ ]+) \(([^)]+)\)/i', $columnType, $matches);
+                if (strpos($columnType, 'REFERENCES') !== false) {
+                    preg_match('/\(([^)]+)\) REFERENCES ([^ ]+)\(([^)]+)\)/i', $columnType, $matches);
                     if ($matches) {
                         $foreignKeys[$dbTable][] = [
                             'column' => $matches[1],
@@ -136,7 +140,7 @@ class DatabaseAdapter {
                 // commit transaction
                 $this->pdo->commit();
 
-                $this->logger->log("finished for $dbTable");
+                $this->logger->log("Created table $dbTable");
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
@@ -184,7 +188,7 @@ class DatabaseAdapter {
             $viewName = "{$mainTable}_join_" . implode('_', array_column($fks, 'referenced_table'));
 
             $createViewQuery = "
-                CREATE VIEW $viewName AS
+                CREATE OR REPLACE VIEW $viewName AS
                 SELECT $selectClause
                 FROM $mainTable $mainTableAlias
                 $joinClauses;
@@ -200,12 +204,12 @@ class DatabaseAdapter {
                 // commit transaction
                 $this->pdo->commit();
 
-                $this->logger->log("View $viewName created");
+                $this->logger->log("Created view $viewName");
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
                 $this->logger->log('error during creation of view: ' . $e->getMessage());
             }
         }
-    }    
+    }
 }

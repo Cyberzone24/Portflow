@@ -67,7 +67,7 @@
                         <label class="block mb-2" for="type">
                             Description
                         </label>
-                        <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                        <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
                     </div>
                 </div>
                 <div class="h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
