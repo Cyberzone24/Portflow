@@ -65,7 +65,7 @@ class API {
 
     private function getAccessRights($resource) {
         // get the current user's role
-        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
+        $_SESSION['uuid'] = '36adb622-0bb4-411b-9921-40c33949993d'; // ====================================== JUST FOR TESTING
 
         if (isset($_SESSION['uuid']) && !empty($_SESSION['uuid'])) { 
             $query = "SELECT role FROM users WHERE uuid = :uuid";
@@ -138,19 +138,29 @@ class API {
         // Prüfen, ob der Tabellenname vorhanden ist
         if ($resource) {
             // Optional: Prüfen, ob der Tabellenname einem bestimmten Pattern entspricht
-            $resourcePattern = '/^[a-zA-Z_][a-zA-Z0-9_]*$/'; // Beispiel für ein einfaches Pattern
+            $resourcePattern = '/^[a-z]+(_join_[a-z]+)*$/'; // Beispiel für ein einfaches Pattern
             if (!preg_match($resourcePattern, $resource)) {
                 http_response_code(400);
                 echo json_encode(['error' => 'Invalid resource name']);
                 return;
             }
 
+            function isValidResourceName($resource) {
+                $dbTables = json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true);
+                if (strpos($resource, '_join_') !== false) {
+                    list($table1, $table2) = explode('_join_', $resource);
+                    return isset($dbTables[$table1]) && isset($dbTables[$table2]);
+                }
+                return isset($dbTables[$resource]);
+            }
+            
             // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist und nicht 'access' oder 'api' ist
             if (in_array($resource, ['access', 'api', 'users'])) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Forbidden']);
                 return;
-            } elseif (!array_key_exists($resource, json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true))) {
+            } elseif (!isValidResourceName($resource)) {
+                var_dump();
                 http_response_code(400);
                 echo json_encode(['error' => 'Invalid resource name']);
                 return;
@@ -216,14 +226,17 @@ class API {
         }
 
         // Sanitize data
-        $data = array_map(function($value) {
+        $data = array_filter(array_map(function($value) {
             if (is_string($value)) {
                 $value = trim($value);
                 $value = strip_tags($value);
-                return htmlspecialchars($value);
+                $value = htmlspecialchars($value);
             }
             return $value; // Für nicht-String-Werte keine Sanitization durchführen
-        }, $data);
+        }, $data), function($value) {
+            // Entfernen Sie nur Werte, wenn sie leere Strings sind
+            return !is_string($value) || ($value !== '');
+        });
 
         // Aufrufen der entsprechenden Methode basierend auf der Request-Methode
         switch ($_SERVER['REQUEST_METHOD']) {
