@@ -91,7 +91,7 @@ class DatabaseAdapter {
             }
             $stmt->bindValue(':'.$param, $value);
         }
-
+    
         try {
             $stmt->execute();
             // Fetch results and return
@@ -102,7 +102,7 @@ class DatabaseAdapter {
             throw $e;
         }
     }
-
+    
     public function db_init() {
         // get content of db_tables.json, convert to array
         $dbTables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
@@ -115,13 +115,14 @@ class DatabaseAdapter {
             $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
             foreach ($columns as $column => $columnType) {
                 $query .= "$column $columnType, ";
+                $this->logger->log("Column $column with type $columnType added to table $dbTable", 0);
 
                 // Check for foreign key definition
                 if (strpos($columnType, 'REFERENCES') !== false) {
-                    preg_match('/\(([^)]+)\) REFERENCES ([^ ]+)\(([^)]+)\)/i', $columnType, $matches);
+                    preg_match('/([a-zA-Z0-9_]+) REFERENCES ([a-zA-Z0-9_]+)\(([^)]+)\)/i', $columnType, $matches);
                     if ($matches) {
                         $foreignKeys[$dbTable][] = [
-                            'column' => $matches[1],
+                            'column' => $column,
                             'referenced_table' => $matches[2],
                             'referenced_column' => $matches[3]
                         ];
@@ -144,7 +145,7 @@ class DatabaseAdapter {
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
-                $this->logger->log('error during initialization of database: ' . $e->getMessage());
+                $this->logger->log('Error during initialization of database: ' . $e->getMessage());
             }
         }
 
@@ -173,9 +174,9 @@ class DatabaseAdapter {
                 $referencedColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$referencedTable'");
                 $referencedColumns = array_column($referencedColumnsQuery, 'column_name');
 
-                // Add referenced table columns to the select clause
+                // Add referenced table columns to the select clause with aliases
                 foreach ($referencedColumns as $column) {
-                    $selectClause[] = "$referencedTableAlias.$column AS {$referencedTable}_$column";
+                    $selectClause[] = "$referencedTableAlias.$column AS {$referencedTable}_{$column}_$index";
                 }
 
                 // Add join clause for the foreign key
@@ -208,8 +209,9 @@ class DatabaseAdapter {
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
-                $this->logger->log('error during creation of view: ' . $e->getMessage());
+                $this->logger->log('Error during creation of view: ' . $e->getMessage());
             }
         }
+        $this->logger->log("DB initialized");
     }
-}
+}    

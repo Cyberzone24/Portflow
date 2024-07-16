@@ -65,7 +65,7 @@ class API {
 
     private function getAccessRights($resource) {
         // get the current user's role
-        $_SESSION['uuid'] = '01aa4ead-2941-4181-af37-65b3a91d7071'; // ====================================== JUST FOR TESTING
+        $_SESSION['uuid'] = 'b0640677-630f-4a8f-800e-75976263f220'; // ====================================== JUST FOR TESTING
 
         if (isset($_SESSION['uuid']) && !empty($_SESSION['uuid'])) { 
             $query = "SELECT role FROM users WHERE uuid = :uuid";

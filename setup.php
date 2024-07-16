@@ -92,8 +92,8 @@ function displayForm($step) {
             });
         </script>
     </head>
-    <body>
-        <div class="flex flex-col items-center justify-center h-screen bg-gray-200">
+    <body class="bg-gray-300">
+        <div class="flex flex-col items-center justify-center h-screen">
             <div class="bg-white shadow-lg rounded-2xl p-12 w-full max-w-lg">
     HTML;
 
