@@ -18,9 +18,9 @@
     <div class="basis-1/6 flex flex-col gap-6">  
         <p>IT Asset-Management</p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <li onclick="loadTable('location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
-            <li onclick="loadTable('device')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
-            <li onclick="loadTable('device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
+            <li onclick="loadTable('location_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
+            <li onclick="loadTable('device_join_location_device_model')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
+            <li onclick="loadTable('device_port_join_device')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
             <li onclick="loadTable('connection')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
             <li onclick="loadTable('vlan')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
         </ul>
@@ -302,7 +302,7 @@
         $('#pagination_bottom').html($('#pagination').clone(true));
     } 
     // load table
-    function loadTable(table = 'location', search = '', limit = 100, page = 1) {
+    function loadTable(table = 'location_join_location', search = '', limit = 100, page = 1) {
         var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
         $.ajax({
             url: configUrl,

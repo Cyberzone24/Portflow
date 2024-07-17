@@ -65,43 +65,36 @@ class API {
 
     private function getAccessRights($resource) {
         // get the current user's role
-        $_SESSION['uuid'] = '36adb622-0bb4-411b-9921-40c33949993d'; // ====================================== JUST FOR TESTING
+        $_SESSION['uuid'] = '33af4acf-7e6c-484a-a49b-ccd135ef172d'; // ====================================== JUST FOR TESTING
 
-        if (isset($_SESSION['uuid']) && !empty($_SESSION['uuid'])) { 
-            $query = "SELECT role FROM users WHERE uuid = :uuid";
-            $params = ['uuid' => $_SESSION['uuid']];
-            $result = $this->dbAdapter->db_query($query, $params);
-            $role = $result[0]['role'] ?? 'NULL';
-
-            // get access rights for the user's role
-            $query = "SELECT resource, access_right FROM access WHERE resource iLIKE :resource AND role = :role";
-            $params = ['resource' => 'api/%', 'role' => $role];
-            $result = $this->dbAdapter->db_query($query, $params);
-
-            if (!empty($result)) {
-                if ($result[0]['resource'] == 'api/*') {
-                    return $result[0]['access_right'];
-                } elseif ($result[0]['resource'] == 'api/' . $resource) {
-                    return $result[0]['access_right'];
-                } else {
-                    return 0;
-                }
-            } else {
-                return 0;
-            }
-            /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
-                resource      |                 role                 | access_right 
-                -------------------+--------------------------------------+--------------
-                api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
-            */
-        } else {
+        if (empty($_SESSION['uuid'])) {
             http_response_code(400); 
-            echo json_encode([
-                'error' => 'Bad Request',
-                'message' => 'No UUID provided in session.'
-            ]);
+            echo json_encode(['error' => 'Bad Request', 'message' => 'No UUID provided in session.']);
             die;
         }
+
+        $query = "SELECT role FROM users WHERE uuid = :uuid";
+        $params = ['uuid' => $_SESSION['uuid']];
+        $result = $this->dbAdapter->db_query($query, $params);
+        $role = $result[0]['role'] ?? 'NULL';
+
+        if (empty($role)) {
+            return 0;
+        }
+
+        $query = "SELECT resource, access_right FROM access WHERE resource iLIKE :resource AND role = :role";
+        $params = ['resource' => 'api/%', 'role' => $role];
+        $result = $this->dbAdapter->db_query($query, $params);
+        /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
+            resource      |                 role                 | access_right 
+            -------------------+--------------------------------------+--------------
+            api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
+        */
+
+        if (!empty($result[0]) && ($result[0]['resource'] === 'api/*' || $result[0]['resource'] === 'api/' . $resource)) {
+            return $result[0]['access_right'];
+        }
+        return 0;
     }
     private function checkAccessRights($resource) {
         $accessRight = $this->getAccessRights($resource);

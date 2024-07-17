@@ -16,7 +16,7 @@
         "tfa_secret": "VARCHAR(255)",
         "notification_provider": "VARCHAR(255)",
         "notification_setting": "INT",
-        "language": "VARCHAR(255)",
+        "settings": "TEXT",
         "ip_address": "VARCHAR(255)",
         "last_login": "TIMESTAMP WITH TIME ZONE",
         "last_login_attempt": "TIMESTAMP WITH TIME ZONE",
@@ -115,13 +115,13 @@
         "caption": "VARCHAR(255)",
         "description": "TEXT",
         "vlan": "INT NOT NULL",
-        "tagged": "BOOLEAN",
         "PRIMARY KEY": "(uuid)"
     },
     "device_port_vlan": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "device_port": "UUID NOT NULL REFERENCES device_port(uuid)",
         "vlan": "UUID NOT NULL REFERENCES vlan(uuid)",
+        "tagged": "BOOLEAN",
         "PRIMARY KEY": "(uuid)"
     }
 }
