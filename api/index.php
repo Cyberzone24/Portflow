@@ -65,7 +65,7 @@ class API {
 
     private function getAccessRights($resource) {
         // get the current user's role
-        $_SESSION['uuid'] = '33af4acf-7e6c-484a-a49b-ccd135ef172d'; // ====================================== JUST FOR TESTING
+        $_SESSION['uuid'] = '70cca591-b80a-4fe8-a3cd-7d8ad2996ac4'; // ====================================== JUST FOR TESTING
 
         if (empty($_SESSION['uuid'])) {
             http_response_code(400); 
@@ -76,7 +76,7 @@ class API {
         $query = "SELECT role FROM users WHERE uuid = :uuid";
         $params = ['uuid' => $_SESSION['uuid']];
         $result = $this->dbAdapter->db_query($query, $params);
-        $role = $result[0]['role'] ?? 'NULL';
+        $role = $result[0]['role'] ?? FALSE;
 
         if (empty($role)) {
             return 0;
@@ -131,7 +131,7 @@ class API {
         // Prüfen, ob der Tabellenname vorhanden ist
         if ($resource) {
             // Optional: Prüfen, ob der Tabellenname einem bestimmten Pattern entspricht
-            $resourcePattern = '/^[a-z]+(_join_[a-z]+)*$/'; // Beispiel für ein einfaches Pattern
+            $resourcePattern = '/^[a-z]+(_join_[a-z]+)*(_[a-z]+)*$/';
             if (!preg_match($resourcePattern, $resource)) {
                 http_response_code(400);
                 echo json_encode(['error' => 'Invalid resource name']);
@@ -140,11 +140,12 @@ class API {
 
             function isValidResourceName($resource) {
                 $dbTables = json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true);
-                if (strpos($resource, '_join_') !== false) {
-                    list($table1, $table2) = explode('_join_', $resource);
-                    return isset($dbTables[$table1]) && isset($dbTables[$table2]);
+                foreach (explode('_join_', $resource) as $part) {
+                    if (!isset($dbTables[$part])) {
+                        return false;
+                    }
                 }
-                return isset($dbTables[$resource]);
+                return true;
             }
             
             // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist und nicht 'access' oder 'api' ist
@@ -153,7 +154,6 @@ class API {
                 echo json_encode(['error' => 'Forbidden']);
                 return;
             } elseif (!isValidResourceName($resource)) {
-                var_dump();
                 http_response_code(400);
                 echo json_encode(['error' => 'Invalid resource name']);
                 return;

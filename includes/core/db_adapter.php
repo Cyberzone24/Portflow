@@ -186,7 +186,11 @@ class DatabaseAdapter {
             // Combine all parts to create the view query
             $selectClause = implode(', ', $selectClause);
             $joinClauses = implode(' ', $joinClauses);
-            $viewName = "{$mainTable}_join_" . implode('_', array_column($fks, 'referenced_table'));
+
+            // Create the view name by adding '_join_' before each table
+            $viewNameParts = array_column($fks, 'referenced_table');
+            array_unshift($viewNameParts, $mainTable);
+            $viewName = implode('_join_', $viewNameParts);
 
             $createViewQuery = "
                 CREATE OR REPLACE VIEW $viewName AS

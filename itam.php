@@ -19,20 +19,52 @@
         <p>IT Asset-Management</p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
             <li onclick="loadTable('location_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
-            <li onclick="loadTable('device_join_location_device_model')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
+            <li onclick="loadTable('device_join_location_join_device_model')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
             <li onclick="loadTable('device_port_join_device')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
-            <li onclick="loadTable('connection')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
+            <li onclick="loadTable('connection_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
             <li onclick="loadTable('vlan')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative">
-        <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2">
+        <div class="h-fit w-full p-4">
+            <div class="flex justify-between mb-4">
+                <p id="count"></p>
+                <div class="flex flex-row">
+                    <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
+                        <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
+                        <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
+                            <button type="submit" class="text-2xl text-white"><i class="fa-solid fa-magnifying-glass"></i></button>
+                        </div>
+                    </form>
+                    <div class="h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
+                        <button form="" onclick="newEntry()" class="new_entry_button text-2xl text-white"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-between my-4">
+                <div id="pagination" class="flex flex-row"></div>
+                <div class="flex flex-row">
+                    <p class="mr-4">Anzahl:</p>
+                    <select id="table_limit_1" name="limit" class="bg-transparent" onchange="setTableLimit(this.value)">
+                        <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
+                        <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
+                        <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
+                        <option value="1000" <?php if ($limit == 1000) echo 'selected'; ?>>1000</option>
+                    </select>
+                </div>
+            </div>
+            <table class="static rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md">
+                <thead class="text-gray-800"></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_location">
             <div class="flex justify-between pb-6">
                 <div class="text-xl">
                     Add new Location
                 </div>
                 <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
-                    <button type="button" onclick="cancel_new_entry(this)" class="text-2xl text-white"><i class="fa-solid fa-xmark"></i></button>
+                    <button type="button" onclick="cancelNewEntry(this)" class="text-2xl text-white"><i class="fa-solid fa-xmark"></i></button>
                 </div>
             </div>
             <form id="new_location">
@@ -42,11 +74,11 @@
                             Type
                         </label>
                         <select id="type" name="type" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                            <option value="0">Building complex</option>
-                            <option value="2">Building</option>
-                            <option value="4">Room</option>
-                            <option value="6">Rack</option>
-                            <option value="8">Device</option>
+                            <option value="0">Region</option>
+                            <option value="2">Building complex</option>
+                            <option value="4">Building</option>
+                            <option value="6">Room</option>
+                            <option value="8">Rack</option>
                         </select>
                     </div>
                     <div class="pb-6 h-fit w-full max-w-lg relative">
@@ -115,7 +147,7 @@
                 });
 
                 function loadDropdown(search) {
-                    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
+                    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
                     $.ajax({
                         url: url,
                         type: 'GET',
@@ -149,41 +181,13 @@
                 </script>
             </form>
         </div>
-        <div class="h-fit w-full p-4">
-            <div class="flex justify-between mb-4">
-                <p id="count"></p>
-                <div class="flex flex-row">
-                    <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
-                        <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
-                        <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
-                            <button type="submit" class="text-2xl text-white"><i class="fa-solid fa-magnifying-glass"></i></button>
-                        </div>
-                    </form>
-                    <div class="h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                        <button form="" onclick="spawn_new_entry()" class="new_entry_button text-2xl text-white"><i class="fa-solid fa-plus"></i></button>
-                    </div>
-                </div>
-            </div>
-            <div class="flex justify-between my-4">
-                <div id="pagination" class="flex flex-row"></div>
-                <div class="flex flex-row">
-                    <p class="mr-4">Anzahl:</p>
-                    <select id="table_limit_1" name="limit" class="bg-transparent" onchange="setTableLimit(this.value)">
-                        <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
-                        <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
-                        <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
-                        <option value="1000" <?php if ($limit == 1000) echo 'selected'; ?>>1000</option>
-                    </select>
-                </div>
-            </div>
-            <table class="static rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md">
-                <thead class="text-gray-800"></thead>
-                <tbody></tbody>
-            </table>
-        </div>
     </div>
 </div>
 <script>
+    // Globale Variable, um den Namen der zuletzt geladenen Tabelle zu speichern
+    let currentTable = 'location_join_location';
+
+    // Navigation
     $(document).ready(function() {
         // Markieren Sie das 'Location'-Element (das erste klickbare Element) standardmäßig als ausgewählt
         $('#itam_nav > li:first-child').addClass('rounded-l-lg pr-0').removeClass('rounded-lg mr-4');
@@ -196,6 +200,44 @@
             $(this).removeClass('rounded-lg mr-4').addClass('rounded-l-lg pr-0');
         });
     });
+
+    // Funktion, um das entsprechende DIV basierend auf der aktuellen Tabelle einzublenden
+    function newEntry() {
+        // Bestimmen der ID des DIVs basierend auf dem Namen der aktuellen Tabelle
+        let divId = '';
+        switch (currentTable) {
+            case 'location_join_location':
+                divId = 'location_join_location';
+                break;
+            // Fügen Sie hier weitere Fälle hinzu, falls erforderlich
+            default:
+                console.log('Kein passendes DIV gefunden für: ' + currentTable);
+                return; // Frühzeitiger Abbruch, wenn keine passende ID gefunden wurde
+        }
+
+        // Ein- oder Ausblenden des DIVs, wenn eine ID gefunden wurde
+        if (divId) {
+            const divElement = document.getElementById(divId);
+            if (divElement.classList.contains('hidden')) {
+                // Wenn das DIV versteckt ist, zeigen wir es an
+                divElement.classList.remove('hidden');
+                divElement.classList.add('block');
+            } else {
+                // Wenn das DIV angezeigt wird, verstecken wir es
+                divElement.classList.remove('block');
+                divElement.classList.add('hidden');
+            }
+        }
+    }
+    function cancelNewEntry(element) {
+        var parentDiv = element.closest('.newEntry');
+        if (parentDiv) {
+            parentDiv.classList.add('hidden');
+            parentDiv.classList.remove('block');
+        } else {
+            console.error('Kein Element mit der Id newEntry gefunden');
+        }
+    }
     // sort table 
     /*
     $(document).ready(function() {
@@ -303,6 +345,7 @@
     } 
     // load table
     function loadTable(table = 'location_join_location', search = '', limit = 100, page = 1) {
+        currentTable = table;
         var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
         $.ajax({
             url: configUrl,

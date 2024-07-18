@@ -32,7 +32,7 @@ class Auth {
     // local_signin / local_signup
     private $uuid;
     private $password_db;
-    private $language;
+    private $settings;
     private $login_attempts;
     // ldap_signin
     private $ldap_server;
@@ -238,10 +238,8 @@ class Auth {
             $this->local_signon('signin');
         
             // check if user exists
-            $query = "SELECT uuid, password, email, notification_setting, language, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
-            # for testing
-            # $query = "SELECT uuid, password, email, notification_setting, language, login_attempts FROM users WHERE username = :username";
-
+            $query = "SELECT uuid, password, email, notification_setting, settings, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
+            
             // execute query
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'activation_code' => 'activated']);
             # for testing
@@ -254,7 +252,7 @@ class Auth {
 
                 $this->uuid = $result['uuid'];
                 $this->password_db = $result['password'];
-                $this->language = $result['language'];
+                $this->settings = $result['settings'];
                 $this->login_attempts = $result['login_attempts'];
 
                 // check if login attempts exceeded
@@ -268,7 +266,7 @@ class Auth {
                         $_SESSION['loggedin'] = TRUE;
                         $_SESSION['name'] = $this->username;
                         $_SESSION['uuid'] = $this->uuid;
-                        $_SESSION['language'] = $this->language;
+                        $_SESSION['settings'] = $this->settings;
 
                         // update database
                         $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
@@ -396,7 +394,7 @@ class Auth {
 
             if ($user_entries["count"] == 1) {
                 $this->logger->log("user '$this->username' matched with filter: '" . $filter . "'", 0);
-               
+
                 # Get User dn  
                 if (isset($user_entries[0]["dn"])) {
                     // Zugriff auf den 'dn' Wert des aktuellen Eintrags
@@ -487,11 +485,14 @@ class Auth {
             $this->logger->log('user does not exist', 1);
 
             // create user account
-            $query = "INSERT INTO users (login_provider, role, username, password, email, activation_code, language, ip_address, created, last_changed) VALUES (:login_provider, :role, :username, :password, :email, :activation_code, :language, :ip_address, :created, :last_changed)"; 
+            $query = "INSERT INTO users (login_provider, role, username, password, email, activation_code, settings, ip_address, created, last_changed) VALUES (:login_provider, :role, :username, :password, :email, :activation_code, :settings, :ip_address, :created, :last_changed)"; 
 
             // prepare vars for query
             $activation_code = $this->random_string(10);
             $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
+            $settings = [
+                'language' => $language
+            ];
             
             // hash password
             $this->password = password_hash($this->password, PASSWORD_DEFAULT);
@@ -505,7 +506,7 @@ class Auth {
                 'password' => $this->password,
                 'email' => $this->email,
                 'activation_code' => $activation_code,
-                'language' => $language,
+                'settings' => json_encode($settings),
                 'ip_address' => $this->ip(),
                 'created' => 'NOW()',
                 'last_changed' => 'NOW()'
