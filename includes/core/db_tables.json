@@ -1,15 +1,4 @@
 {
-    "metadata": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "users": "UUID",
-        "status": "INT",
-        "caption":"VARCHAR(255) NOT NULL",
-        "description": "TEXT",
-        "specification": "TEXT",
-        "tags": "VARCHAR(255)",
-        "created": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
-        "changed": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"
-    },
     "role": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "caption": "VARCHAR(255) NOT NULL",
@@ -34,6 +23,18 @@
         "login_attempts": "INT",
         "created": "TIMESTAMP WITH TIME ZONE",
         "last_changed": "TIMESTAMP WITH TIME ZONE",
+        "PRIMARY KEY": "(uuid)"
+    },
+    "metadata": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "users": "UUID REFERENCES users(uuid)",
+        "status": "INT",
+        "caption":"VARCHAR(255) NOT NULL",
+        "description": "TEXT",
+        "specification": "TEXT",
+        "tags": "VARCHAR(255)",
+        "created": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+        "changed": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
         "PRIMARY KEY": "(uuid)"
     },
     "access": {
