@@ -1,4 +1,15 @@
 {
+    "metadata": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "users": "UUID",
+        "status": "INT",
+        "caption":"VARCHAR(255) NOT NULL",
+        "description": "TEXT",
+        "specification": "TEXT",
+        "tags": "VARCHAR(255)",
+        "created": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+        "changed": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"
+    },
     "role": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "caption": "VARCHAR(255) NOT NULL",
