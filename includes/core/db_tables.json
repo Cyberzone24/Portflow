@@ -21,8 +21,8 @@
         "last_login": "TIMESTAMP WITH TIME ZONE",
         "last_login_attempt": "TIMESTAMP WITH TIME ZONE",
         "login_attempts": "INT",
-        "created": "TIMESTAMP WITH TIME ZONE",
-        "last_changed": "TIMESTAMP WITH TIME ZONE",
+        "created": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+        "changed": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
         "PRIMARY KEY": "(uuid)"
     },
     "metadata": {
@@ -36,6 +36,10 @@
         "created": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
         "changed": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
         "PRIMARY KEY": "(uuid)"
+    },
+    "journal": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "metadata": "UUID REFERENCES metadata(uuid)"
     },
     "access": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -70,32 +74,7 @@
         "rotation": "INT",
         "size": "TEXT",
         "item_group": "UUID",
-        "template": "BOOLEAN",
-        "PRIMARY KEY": "(uuid)"
-    },
-    "device_port": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "metadata": "UUID REFERENCES metadata(uuid)",
-        "device": "UUID NOT NULL REFERENCES device(uuid)",
-        "speed": "FLOAT",
-        "type": "VARCHAR(255)",
-        "size": "TEXT",
-        "position": "TEXT",
-        "rotation": "TEXT",
-        "coupling": "BOOLEAN",
-        "tags": "VARCHAR(255)",
-        "PRIMARY KEY": "(uuid)"
-    },
-    "connection": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "metadata": "UUID REFERENCES metadata(uuid)",
-        "device_port_source": "UUID NOT NULL REFERENCES device_port(uuid) NOT NULL",
-        "device_port_destination": "UUID REFERENCES device_port(uuid)",
-        "type": "VARCHAR(255)",
-        "length": "FLOAT",
-        "crossover": "BOOLEAN",
-        "speed": "FLOAT",
-        "item_group": "UUID",
+        "template": "BOOLEAN DEFAULT FALSE",
         "PRIMARY KEY": "(uuid)"
     },
     "vlan": {
@@ -104,12 +83,46 @@
         "vlan": "INT NOT NULL",
         "PRIMARY KEY": "(uuid)"
     },
-    "device_port_vlan": {
+    "ip_range": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid)",
-        "device_port": "UUID NOT NULL REFERENCES device_port(uuid) NOT NULL",
-        "vlan": "UUID NOT NULL REFERENCES vlan(uuid) NOT NULL",
-        "tagged": "BOOLEAN",
+        "vlan": "UUID REFERENCES vlan(uuid)",
+        "ip_range": "VARCHAR(255)",
+        "subnet": "INT",
+        "gateway": "VARCHAR(255)",
+        "broadcast": "VARCHAR(255)",
+        "dns_server": "VARCHAR(255)",
+        "dns_zone": "VARCHAR(255)",
+        "dhcp_server": "VARCHAR(255)",
+        "PRIMARY KEY": "(uuid)"
+    },
+    "device_port": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "metadata": "UUID REFERENCES metadata(uuid)",
+        "device": "UUID NOT NULL REFERENCES device(uuid)",
+        "vlan": "UUID REFERENCES vlan(uuid)",
+        "ip_range": "UUID REFERENCES ip_range(uuid)",
+        "speed": "FLOAT",
+        "type": "VARCHAR(255)",
+        "size": "TEXT",
+        "position": "TEXT",
+        "rotation": "TEXT",
+        "coupling": "BOOLEAN DEFAULT FALSE",
+        "vlan_tagged": "BOOLEAN DEFAULT FALSE",
+        "ip": "VARCHAR(255)",
+        "dhcp_addres": "BOOLEAN DEFAULT FALSE",
+        "PRIMARY KEY": "(uuid)"
+    },
+    "connection": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "metadata": "UUID REFERENCES metadata(uuid)",
+        "device_port_source": "UUID NOT NULL REFERENCES device_port(uuid)",
+        "device_port_destination": "UUID REFERENCES device_port(uuid)",
+        "type": "VARCHAR(255)",
+        "length": "FLOAT",
+        "crossover": "BOOLEAN DEFAULT FALSE",
+        "speed": "FLOAT",
+        "item_group": "UUID",
         "PRIMARY KEY": "(uuid)"
     }
 }
