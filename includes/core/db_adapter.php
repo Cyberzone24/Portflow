@@ -149,7 +149,7 @@ class DatabaseAdapter {
             }
         }
     
-        // Create changelog trigger function
+        // Create changelog trigger function ================================================================================================= USER ID muss noch irgendwo her kommen ================================================================================================
         $triggerFunctionSQL = "
             CREATE OR REPLACE FUNCTION log_changes()
             RETURNS TRIGGER AS $$
