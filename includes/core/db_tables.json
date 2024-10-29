@@ -39,7 +39,9 @@
     },
     "journal": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "metadata": "UUID REFERENCES metadata(uuid)"
+        "metadata": "UUID REFERENCES metadata(uuid)",
+        "reference": "UUID NOT NULL",
+        "PRIMARY KEY": "(uuid)"
     },
     "access": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
@@ -115,7 +117,7 @@
     "device_lifecycle": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid)",
-        "device_uuid": "UUID REFERENCES device(uuid) NOT NULL",
+        "device": "UUID REFERENCES device(uuid) NOT NULL",
         "value_date": "DATE",
         "PRIMARY KEY": "(uuid)"
     },
