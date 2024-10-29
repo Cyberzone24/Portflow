@@ -100,7 +100,6 @@
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid)",
         "device": "UUID NOT NULL REFERENCES device(uuid)",
-        "vlan": "UUID REFERENCES vlan(uuid)",
         "ip_range": "UUID REFERENCES ip_range(uuid)",
         "speed": "FLOAT",
         "type": "VARCHAR(255)",
@@ -110,7 +109,14 @@
         "coupling": "BOOLEAN DEFAULT FALSE",
         "vlan_tagged": "BOOLEAN DEFAULT FALSE",
         "ip": "VARCHAR(255)",
-        "dhcp_addres": "BOOLEAN DEFAULT FALSE",
+        "dhcp_address": "BOOLEAN DEFAULT FALSE",
+        "PRIMARY KEY": "(uuid)"
+    },
+    "device_lifecycle": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "metadata": "UUID REFERENCES metadata(uuid)",
+        "device_uuid": "UUID REFERENCES device(uuid) NOT NULL",
+        "value_date": "DATE",
         "PRIMARY KEY": "(uuid)"
     },
     "connection": {
