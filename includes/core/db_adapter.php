@@ -148,7 +148,56 @@ class DatabaseAdapter {
                 $this->logger->log('Error during initialization of database: ' . $e->getMessage());
             }
         }
-
+    
+        // Create changelog trigger function
+        $triggerFunctionSQL = "
+            CREATE OR REPLACE FUNCTION log_changes()
+            RETURNS TRIGGER AS $$
+            DECLARE
+                user_id UUID;
+            BEGIN
+                -- Assumes current_setting('app.current_user') is set with the user's UUID
+                user_id := current_setting('app.current_user')::UUID;
+    
+                -- Insert into changelog table
+                INSERT INTO changelog (users, operation, changed_table, changed_row, changed_data, changed)
+                VALUES (
+                    user_id,
+                    TG_OP,
+                    TG_TABLE_NAME,
+                    COALESCE(NEW.uuid, OLD.uuid),
+                    CASE WHEN TG_OP = 'DELETE' THEN row_to_json(OLD)::text ELSE row_to_json(NEW)::text END,
+                    CURRENT_TIMESTAMP
+                );
+    
+                RETURN NULL;
+            END;
+            $$ LANGUAGE plpgsql;
+        ";
+    
+        try {
+            $this->pdo->exec($triggerFunctionSQL);
+            $this->logger->log("Created changelog trigger function");
+        } catch (\Exception $e) {
+            $this->logger->log('Error creating changelog trigger function: ' . $e->getMessage());
+        }
+    
+        // Add triggers to each table for INSERT, UPDATE, DELETE
+        foreach ($dbTables as $dbTable => $columns) {
+            $triggerSQL = "
+                CREATE TRIGGER {$dbTable}_change_log
+                AFTER INSERT OR UPDATE OR DELETE ON {$dbTable}
+                FOR EACH ROW EXECUTE FUNCTION log_changes();
+            ";
+    
+            try {
+                $this->pdo->exec($triggerSQL);
+                $this->logger->log("Created changelog trigger for table $dbTable");
+            } catch (\Exception $e) {
+                $this->logger->log("Error creating changelog trigger for table $dbTable: " . $e->getMessage());
+            }
+        }
+    
         // Create views based on foreign keys
         foreach ($foreignKeys as $mainTable => $fks) {
             // Initialize the base SELECT clause and the JOIN clauses
@@ -217,5 +266,5 @@ class DatabaseAdapter {
             }
         }
         $this->logger->log("DB initialized");
-    }
-}    
+    }    
+}

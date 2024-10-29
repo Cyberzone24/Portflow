@@ -132,5 +132,15 @@
         "speed": "FLOAT",
         "item_group": "UUID",
         "PRIMARY KEY": "(uuid)"
+    },
+    "changelog": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "users": "UUID REFERENCES users(uuid)",
+        "operation": "VARCHAR(10) NOT NULL",
+        "changed_table": "VARCHAR(255) NOT NULL",
+        "changed_row": "UUID NOT NULL",
+        "changed_data": "TEXT",
+        "changed": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+        "PRIMARY KEY": "(uuid)"
     }
 }
