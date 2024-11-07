@@ -19,11 +19,11 @@
         <p>IT Asset-Management</p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
             <li onclick="loadTable('location_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
-            <li onclick="loadTable('vlan_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
-            <li onclick="loadTable('ip_range_join_metadata_join_vlan')" class="bg-white py-2 px-4 rounded-l-lg pr-0">IPAM</li>
-            <li onclick="loadTable('device_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
-            <li onclick="loadTable('device_port_join_metadata_join_device_join_ip_range')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
-            <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
+            <li onclick="loadTable('ip_range_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4">IPAM</li>
+            <li onclick="loadTable('vlan_join_metadata_join_ip_range')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
+            <li onclick="loadTable('device_join_metadata_join_location_join_location')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
+            <li onclick="loadTable('device_port_join_metadata_join_device_join_vlan_join_vlan')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
+            <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative">
@@ -59,8 +59,7 @@
                 <tbody></tbody>
             </table>
         </div>
-        <!-- 
-        <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_location">
+        <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_metadata_join_location">
             <div class="flex justify-between pb-6">
                 <div class="text-xl">
                     Add new Location
@@ -69,8 +68,48 @@
                     <button type="button" onclick="cancelNewEntry(this)" class="text-2xl text-white"><i class="fa-solid fa-xmark"></i></button>
                 </div>
             </div>
-            <form id="new_location">
+            <form id="metadata">
                 <div class="flex gap-4 justify-between">
+                    <div class="pb-6 h-fit w-full max-w-lg ">
+                        <label class="block mb-2" for="type">
+                            Status
+                        </label>
+                        <select name="status" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                            <option value="0">Active</option>
+                            <option value="2">Deactivated</option>
+                            <option value="4">Offline</option>
+                            <option value="6">Unused</option>
+                        </select>
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg relative">
+                        <label class="block mb-2" for="type">
+                            Caption
+                        </label>
+                        <input type="text" name="caption" placeholder="Caption" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg relative">
+                        <label class="block mb-2" for="type">
+                            Description
+                        </label>
+                        <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg relative">
+                        <label class="block mb-2" for="type">
+                            Specification
+                        </label>
+                        <textarea name="specification" placeholder="Specification" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                    </div>
+                    <div class="pb-6 h-fit w-full max-w-lg relative">
+                        <label class="block mb-2" for="type">
+                            Tags
+                        </label>
+                        <input type="text" name="tags" placeholder="Tags" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                </div>
+            </form>
+            <form id="location">
+                <div class="flex gap-4 justify-between">
+                    <input type="hidden" id="metadataUUID" name="metadata" value="">
                     <div class="pb-6 h-fit w-full max-w-lg ">
                         <label class="block mb-2" for="type">
                             Type
@@ -91,21 +130,23 @@
                         <input type="hidden" id="parent_location" name="parent_location" value="">
                         <div id="location_search" class="absolute z-3 w-full bg-white mt-2 rounded-3xl shadow-lg border leading-tight hidden"></div>
                     </div>
-                    <div class="pb-6 h-fit w-full max-w-lg">
+                    <div class="pb-6 h-fit w-full max-w-lg relative">
                         <label class="block mb-2" for="type">
-                            Caption
+                            Size
                         </label>
-                        <input type="text" name="caption" placeholder="Caption" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                        <textarea name="size" placeholder="Size" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
                     </div>
                     <div class="pb-6 h-fit w-full max-w-lg">
                         <label class="block mb-2" for="type">
-                            Description
+                            Rotation
                         </label>
-                        <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                        <textarea name="rotation" placeholder="Rotation" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
                     </div>
                 </div>
                 <div class="h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                    <button type="submit" class="text-2xl text-white"><i class="fa-solid fa-check"></i></button>
+                    <button type="button" onclick="submitForms()" class="text-2xl text-white">
+                        <i class="fa-solid fa-check"></i>
+                    </button>
                 </div>
                 <script>
                 $(document).ready(function() {
@@ -121,35 +162,55 @@
                         var searchQuery = 'typeMax=' + typeValue + '&search=' + search;
                         loadDropdown(searchQuery);
                     });
-
-                    $('#new_location').on('submit', function(event) {
-                        event.preventDefault(); // Verhindert das Standard-Submit-Verhalten
-
-                        var formDataArray = $(this).serializeArray(); // Sammelt die Daten des Formulars als Array
-                        var formDataObj = {};
-                        $.each(formDataArray, function(index, item) {
-                            formDataObj[item.name] = item.value;
-                        });
-
-                        $.ajax({
-                            url: '<?php #echo PORTFLOW_HOSTNAME; ?>' + '/api/location/', // Die URL, an die der POST-Request gesendet wird
-                            type: 'POST',
-                            contentType: 'application/json', // Setzt den Content-Type auf application/json
-                            data: JSON.stringify(formDataObj), // Konvertiert das Objekt in einen JSON-String
-                            success: function(response) {
-                                console.log('Erfolg:', response);
-                                // Hier können Sie z.B. eine Erfolgsmeldung anzeigen oder die Seite aktualisieren
-                            },
-                            error: function(jqXHR, textStatus, errorThrown) {
-                                console.log('Fehler beim Senden der Daten:', jqXHR.responseText);
-                                // Hier können Sie z.B. eine Fehlermeldung anzeigen
-                            }
-                        });
-                    });
                 });
 
+                function submitForms() {
+                    // Metadata-Formulardaten sammeln und senden
+                    var metadataData = $('#metadata').serializeArray();
+                    var metadataObj = {};
+                    $.each(metadataData, function(index, item) {
+                        metadataObj[item.name] = item.value;
+                    });
+
+                    $.ajax({
+                        url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/metadata/',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify(metadataObj),
+                        success: function(response) {
+                            // Die UUID aus dem ersten Element im Array extrahieren
+                            var uuid = response[0].uuid;
+                            $('#metadataUUID').val(uuid); // UUID in das versteckte Feld einfügen
+
+                            // Location-Formulardaten sammeln und senden
+                            var locationData = $('#location').serializeArray();
+                            var locationObj = {};
+                            $.each(locationData, function(index, item) {
+                                locationObj[item.name] = item.value;
+                            });
+
+                            $.ajax({
+                                url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/',
+                                type: 'POST',
+                                contentType: 'application/json',
+                                data: JSON.stringify(locationObj),
+                                success: function(response) {
+                                    console.log('Erfolg:', response);
+                                    // Optional: Weitere Aktionen nach erfolgreichem POST
+                                },
+                                error: function(jqXHR, textStatus, errorThrown) {
+                                    console.log('Fehler beim Senden der Location-Daten:', jqXHR.responseText);
+                                }
+                            });
+                        },
+                        error: function(jqXHR, textStatus, errorThrown) {
+                            console.log('Fehler beim Senden der Metadata-Daten:', jqXHR.responseText);
+                        }
+                    });
+                }
+
                 function loadDropdown(search) {
-                    var url = '<?php #echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
+                    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_metadata_join_location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
                     $.ajax({
                         url: url,
                         type: 'GET',
@@ -160,11 +221,11 @@
 
                             if (data && data.items && data.items.length > 0) {
                                 data.items.forEach(function(item) {
-                                    var option = $('<div class="hover:bg-gray-100 py-2 px-4 rounded-3xl cursor-pointer">').text(item.caption).attr('data-value', item.uuid);
+                                    var option = $('<div class="hover:bg-gray-100 py-2 px-4 rounded-3xl cursor-pointer">').text(item.metadata_caption_0).attr('data-value', item.uuid);
                                     dropdown.append(option);
 
                                     option.on('click', function() {
-                                        $('#search').val(item.caption); // Den Wert des Suchfelds aktualisieren
+                                        $('#search').val(item.metadata_caption_0); // Den Wert des Suchfelds aktualisieren
                                         $('#parent_location').val(item.uuid); // Den Wert des versteckten Feldes aktualisieren
                                         dropdown.hide(); // Dropdown ausblenden
                                     });
@@ -183,7 +244,6 @@
                 </script>
             </form>
         </div>
-        -->
     </div>
 </div>
 <script>
@@ -209,8 +269,8 @@
         // Bestimmen der ID des DIVs basierend auf dem Namen der aktuellen Tabelle
         let divId = '';
         switch (currentTable) {
-            case 'location_join_location':
-                divId = 'location_join_location';
+            case 'location_join_metadata_join_location':
+                divId = 'location_join_metadata_join_location';
                 break;
             // Fügen Sie hier weitere Fälle hinzu, falls erforderlich
             default:

@@ -485,7 +485,7 @@ class Auth {
             $this->logger->log('user does not exist', 1);
 
             // create user account
-            $query = "INSERT INTO users (login_provider, role, username, password, email, activation_code, settings, ip_address, created, last_changed) VALUES (:login_provider, :role, :username, :password, :email, :activation_code, :settings, :ip_address, :created, :last_changed)"; 
+            $query = "INSERT INTO users (role, login_provider, username, password, email, activation_code, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :password, :email, :activation_code, :settings, :ip_address, :created, :changed)"; 
 
             // prepare vars for query
             $activation_code = $this->random_string(10);
@@ -509,7 +509,7 @@ class Auth {
                 'settings' => json_encode($settings),
                 'ip_address' => $this->ip(),
                 'created' => 'NOW()',
-                'last_changed' => 'NOW()'
+                'changed' => 'NOW()'
             ];
             $result = $this->db_adapter->db_query($query, $params);
             $this->logger->log('creating user account');
