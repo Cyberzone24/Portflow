@@ -18,11 +18,12 @@
     <div class="basis-1/6 flex flex-col gap-6">  
         <p>IT Asset-Management</p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <li onclick="loadTable('location_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
-            <li onclick="loadTable('device_join_location_join_device_model')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
-            <li onclick="loadTable('device_port_join_device')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
-            <li onclick="loadTable('connection_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
-            <li onclick="loadTable('vlan')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
+            <li onclick="loadTable('location_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
+            <li onclick="loadTable('vlan_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
+            <li onclick="loadTable('ip_range_join_metadata_join_vlan')" class="bg-white py-2 px-4 rounded-l-lg pr-0">IPAM</li>
+            <li onclick="loadTable('device_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
+            <li onclick="loadTable('device_port_join_metadata_join_device_join_ip_range')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
+            <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative">
@@ -58,6 +59,7 @@
                 <tbody></tbody>
             </table>
         </div>
+        <!-- 
         <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_location">
             <div class="flex justify-between pb-6">
                 <div class="text-xl">
@@ -130,7 +132,7 @@
                         });
 
                         $.ajax({
-                            url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/', // Die URL, an die der POST-Request gesendet wird
+                            url: '<?php #echo PORTFLOW_HOSTNAME; ?>' + '/api/location/', // Die URL, an die der POST-Request gesendet wird
                             type: 'POST',
                             contentType: 'application/json', // Setzt den Content-Type auf application/json
                             data: JSON.stringify(formDataObj), // Konvertiert das Objekt in einen JSON-String
@@ -147,7 +149,7 @@
                 });
 
                 function loadDropdown(search) {
-                    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
+                    var url = '<?php #echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
                     $.ajax({
                         url: url,
                         type: 'GET',
@@ -181,11 +183,12 @@
                 </script>
             </form>
         </div>
+        -->
     </div>
 </div>
 <script>
     // Globale Variable, um den Namen der zuletzt geladenen Tabelle zu speichern
-    let currentTable = 'location_join_location';
+    let currentTable = 'location_join_metadata_join_location';
 
     // Navigation
     $(document).ready(function() {
@@ -344,7 +347,7 @@
         $('#pagination_bottom').html($('#pagination').clone(true));
     } 
     // load table
-    function loadTable(table = 'location_join_location', search = '', limit = 100, page = 1) {
+    function loadTable(table = 'location_join_metadata_join_location', search = '', limit = 100, page = 1) {
         currentTable = table;
         var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
         $.ajax({

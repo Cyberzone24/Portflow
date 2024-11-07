@@ -68,15 +68,15 @@ psql -c "CREATE USER $pg_username WITH PASSWORD '$pg_password';"
 psql -c "CREATE DATABASE $pg_dbname OWNER $pg_username;"
 EOF
 
-# Download the latest release from Le0nWolf/Portflow
+# Download the latest release from Cyberzone24/Portflow
 TEMP_DIR=$(mktemp -d)
 cd $TEMP_DIR
-LATEST_RELEASE_URL=$(curl -s https://api.github.com/repos/Le0nWolf/Portflow/releases/latest | grep "tarball_url" | cut -d '"' -f 4)
+LATEST_RELEASE_URL=$(curl -s https://api.github.com/repos/Cyberzone24/Portflow/releases/latest | grep "tarball_url" | cut -d '"' -f 4)
 curl -L $LATEST_RELEASE_URL -o portflow_latest.tar.gz
 
 # Extract and copy to Lighttpd web directory
 tar -xzf portflow_latest.tar.gz
-EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "Le0nWolf-Portflow-*")
+EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "Cyberzone24-Portflow-*")
 sudo rm -rf /var/www/html/*
 sudo cp -r $EXTRACTED_DIR/* /var/www/html/
 
