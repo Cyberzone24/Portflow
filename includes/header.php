@@ -54,11 +54,11 @@
         </li>
     </ul>
     <div class="basis-1/6 py-4 flex flex-row items-center justify-end">
-        <a href="?signout" title="<?php echo $lang['logout']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-red-500 text-white text-2xl flex items-center justify-center shadow-md">
-            <i class="fa-solid fa-arrow-right-from-bracket"></i>
-        </a>
         <a href="settings.php" title="<?php echo $lang['settings']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-gray-700 text-white text-2xl flex items-center justify-center shadow-md duration-500 hover:rotate-180">
             <i class="fa-solid fa-gear"></i>
+        </a>
+        <a href="?signout" title="<?php echo $lang['logout']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-red-500 text-white text-2xl flex items-center justify-center shadow-md">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
         </a>
     </div>
 </header>

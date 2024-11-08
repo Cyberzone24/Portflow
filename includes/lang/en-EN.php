@@ -2,6 +2,7 @@
 function lang_en() {
     $lang = array();
 
+    $lang['lang'] = 'English';
     $lang['portflow'] = 'Portflow';
     $lang['itam'] = 'ITAM';
     $lang['portview'] = 'Portview';
