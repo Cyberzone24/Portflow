@@ -16,14 +16,14 @@
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6">  
-        <p>IT Asset-Management</p>
+        <p><?php echo $lang['it asset-management']; ?></p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <li onclick="loadTable('location_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0">Location</li>
-            <li onclick="loadTable('ip_range_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4">IPAM</li>
-            <li onclick="loadTable('vlan_join_metadata_join_ip_range')" class="bg-white py-2 px-4 rounded-lg mr-4">VLAN</li>
-            <li onclick="loadTable('device_join_metadata_join_location_join_location')" class="bg-white py-2 px-4 rounded-lg mr-4">Device</li>
-            <li onclick="loadTable('device_port_join_metadata_join_device_join_vlan_join_vlan')" class="bg-white py-2 px-4 rounded-lg mr-4">Device Port</li>
-            <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4">Connection</li>
+            <li onclick="loadTable('location_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0"><?php echo $lang['location']; ?></li>
+            <li onclick="loadTable('ip_range_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['ipam']; ?></li>
+            <li onclick="loadTable('vlan_join_metadata_join_ip_range')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['vlan']; ?></li>
+            <li onclick="loadTable('device_join_metadata_join_location_join_location')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['devices']; ?></li>
+            <li onclick="loadTable('device_port_join_metadata_join_device_join_vlan_join_vlan')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['device ports']; ?></li>
+            <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['connections']; ?></li>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative">
@@ -45,7 +45,7 @@
             <div class="flex justify-between my-4">
                 <div id="pagination" class="flex flex-row"></div>
                 <div class="flex flex-row">
-                    <p class="mr-4">Anzahl:</p>
+                    <p class="mr-4"><?php echo $lang['quantity']; ?>:</p>
                     <select id="table_limit_1" name="limit" class="bg-transparent" onchange="setTableLimit(this.value)">
                         <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
                         <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>

@@ -46,19 +46,19 @@
     <ul class="basis-1/6 flex justify-center gap-8">
         <li class="flex items-end">
             <a class="<?= ($active_page == 'itam') ? 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800'; ?>"
-                href="itam.php"><?php echo $lang['itam']; ?></a>
+                href="itam.php" title="<?php echo $lang['it asset-management']; ?>"><?php echo $lang['itam']; ?></a>
         </li>
         <li class="flex items-end">
             <a class="<?= ($active_page == 'portview') ? 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800'; ?>"
-                href="portview.php"><?php echo $lang['portview']; ?></a>
+                href="portview.php" title="<?php echo $lang['portview']; ?>"><?php echo $lang['portview']; ?></a>
         </li>
     </ul>
     <div class="basis-1/6 py-4 flex flex-row items-center justify-end">
-        <a href="settings.php" title="<?php echo $lang['settings']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-gray-700 text-white text-2xl flex items-center justify-center shadow-md duration-500 hover:rotate-180">
-            <i class="fa-solid fa-gear"></i>
-        </a>
         <a href="?signout" title="<?php echo $lang['logout']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-red-500 text-white text-2xl flex items-center justify-center shadow-md">
             <i class="fa-solid fa-arrow-right-from-bracket"></i>
+        </a>
+        <a href="settings.php" title="<?php echo $lang['settings']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-gray-700 text-white text-2xl flex items-center justify-center shadow-md duration-500 hover:rotate-180">
+            <i class="fa-solid fa-gear"></i>
         </a>
     </div>
 </header>
