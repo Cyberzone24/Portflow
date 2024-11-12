@@ -12,7 +12,7 @@ foreach ($_COOKIE as $name => $value) {
 if ($alertCookieExists) {
     echo <<<HTML
     <div class='max-w-lg w-full fixed top-0 left-1/2 transform -translate-x-1/2 z-50'>
-        <div class="flex justify-center">
+        <div class="flex flex-col justify-center">
     HTML;
 
     // Iterate through alert cookies

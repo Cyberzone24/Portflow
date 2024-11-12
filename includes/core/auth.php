@@ -406,11 +406,72 @@ class Auth {
                         // If the bind is successful, the user's credentials are valid
                         $this->logger->log("password verification successful", 0);
 
+                        // check if user exists
+                        $query = "SELECT uuid, notification_setting, settings FROM users WHERE username = :username AND login_provider = :login_provider";
+            
+                        // execute query
+                        $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
+                        $result = !empty($result) ? $result[0] : null;
+                        $this->logger->log('checking if user exists in database');
+
+                        if (!empty($result)) {
+                            $this->logger->log('user exists in database', 1);
+
+                            $this->uuid = $result['uuid'];
+                            $this->password_db = $result['password'];
+                            $this->settings = $result['settings'];
+                            
+                            // update database
+                            $query = "UPDATE users SET last_login = NOW(), ip_address = :ip_address WHERE uuid = :uuid";
+
+                            // execute query
+                            $result = $this->db_adapter->db_query($query, ['ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+                        } else {
+                            $this->logger->log('user does not exist in database', 1);
+
+                            // get ldap role uuid
+                            $query = "SELECT uuid FROM role WHERE caption = :caption";
+                            $params = ['caption' => 'ldap'];
+                            $result = $this->db_adapter->db_query($query, $params);
+
+                            if (!empty($result)) {
+
+                                // create user account
+                                $query = "INSERT INTO users (role, login_provider, username, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :settings, :ip_address, :created, :changed) RETURNING uuid"; 
+
+                                // prepare vars for query
+                                $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
+                                $settings = [
+                                    'language' => $language
+                                ];
+
+                                // execute query
+                                $params = [
+                                    'role' => $result[0]['uuid'],
+                                    'login_provider' => 'ldap',
+                                    'username' => $this->username,
+                                    'settings' => json_encode($settings),
+                                    'ip_address' => $this->ip(),
+                                    'created' => 'NOW()',
+                                    'changed' => 'NOW()'
+                                ];
+                                $result = $this->db_adapter->db_query($query, $params);
+                                $this->uuid = $result[0]['uuid'];
+                                $this->logger->log('creating user account in database');
+                                $this->settings = $params['settings'];
+
+                            } else {
+                                $this->logger->log('ldap role does not exist', 3, echoToWeb: true);
+                                throw new \Exception('ldap role does not exist');
+                            }
+                        }
+
                         // create session
                         session_regenerate_id();
                         $_SESSION['loggedin'] = TRUE;
-                        $_SESSION['name'] = $this->username; // Oder $user_entries[0]["displayname"][0] für den vollständigen Namen
+                        $_SESSION['name'] = $this->username;
                         $_SESSION['uuid'] = $this->uuid;
+                        $_SESSION['settings'] = $this->settings;
                     
                         if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME)) {
                             header('Location: ' . $_SESSION['referrer']);
@@ -422,6 +483,7 @@ class Auth {
 
                     } else {
                         // If the bind fails, the user's credentials are invalid
+                        $this->logger->log('password verification failed', echoToWeb: true);
                         throw new \Exception('password verification failed');
                     }
 
@@ -462,11 +524,32 @@ class Auth {
             $query = "SELECT uuid FROM users";
             $result = $this->db_adapter->db_query($query);
             if (empty($result)) {
+
+                // create ldap role
+                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
+                $params = ['caption' => 'ldap', 'description' => 'ldap role created by portflow'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->role = $result[0]['uuid'];
+                $this->logger->log('creating ldap role', 1);
+
+                // set access right
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '0'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('disallowing api access for ldap role', 0);
+
+                // create admin role
                 $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
                 $params = ['caption' => 'admin', 'description' => 'administrator role created by portflow'];
                 $result = $this->db_adapter->db_query($query, $params);
                 $this->role = $result[0]['uuid'];
                 $this->logger->log('creating admin role and retrieving uuid', 1);
+
+                // set access right
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '7'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('allowing api access for admin role', 0);
             }
 
             // check if user exists

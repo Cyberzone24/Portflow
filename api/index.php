@@ -64,8 +64,7 @@ class API {
     }
 
     private function getAccessRights($resource) {
-        // get the current user's role
-        $_SESSION['uuid'] = '70cca591-b80a-4fe8-a3cd-7d8ad2996ac4'; // ====================================== JUST FOR TESTING
+        // ================================================ SESSION ID has to be providable without user login
 
         if (empty($_SESSION['uuid'])) {
             http_response_code(400); 
@@ -85,11 +84,6 @@ class API {
         $query = "SELECT resource, access_right FROM access WHERE resource iLIKE :resource AND role = :role";
         $params = ['resource' => 'api/%', 'role' => $role];
         $result = $this->dbAdapter->db_query($query, $params);
-        /* ============================================================================================== TABLE HAS TO LOOK LIKE THIS
-            resource      |                 role                 | access_right 
-            -------------------+--------------------------------------+--------------
-            api/users | 27bc522e-b6cb-4fde-ba53-95501e284fac |            7
-        */
 
         if (!empty($result[0]) && ($result[0]['resource'] === 'api/*' || $result[0]['resource'] === 'api/' . $resource)) {
             return $result[0]['access_right'];
