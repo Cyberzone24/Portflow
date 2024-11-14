@@ -9,6 +9,13 @@
     if (!in_array(__DIR__ . '/includes/core/session.php', get_included_files())) {
         die('could not verify session');
     }
+
+    // import database adapter
+    include_once __DIR__ . '/includes/core/db_adapter.php';
+    use Portflow\Core\DatabaseAdapter;
+    $db_adapter = new DatabaseAdapter();
+
+    include_once __DIR__ . '/includes/header.php';
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6">  
@@ -18,6 +25,7 @@
             <li onclick="" class="bg-white py-2 px-4 rounded-lg mr-4">Appearance</li>
             <li onclick="" class="bg-white py-2 px-4 rounded-lg mr-4">Notifications</li>
             <li onclick="" class="bg-white py-2 px-4 rounded-lg mr-4">Configuration</li>
+            <li onclick="" class="bg-white py-2 px-4 rounded-lg mr-4">Access Management</li>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex flex-col gap-6 bg-white rounded-lg p-4">
@@ -87,4 +95,32 @@
             - Benutzer verwalten
         </pre></div>
     </div>
+                users 10 einträge, dann scroll
+
+                rollen 10 einträge, dann scroll
+
+                acl 10 einträge, dann scroll
+    <?php
+            $query = "SELECT * FROM users";
+            $results = $db_adapter->db_query($query);
+
+            var_dump($results);
+
+            echo "<br><br>";
+            $query = "SELECT * FROM role";
+            $results = $db_adapter->db_query($query);
+
+            var_dump($results);
+
+            echo "<br><br>";
+            $query = "SELECT * FROM access";
+            $results = $db_adapter->db_query($query);
+
+            var_dump($results);
+    ?>
+    <div>
+    </div>
 </div>
+<?php
+    include_once 'includes/footer.php';
+?>
