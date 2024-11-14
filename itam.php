@@ -36,11 +36,11 @@
                     <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
                         <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
                         <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
-                            <button type="submit" class="text-2xl text-white"><i class="fa-solid fa-magnifying-glass"></i></button>
+                            <button type="submit" class="text-2xl text-white"><i data-lucide="search"></i></button>
                         </div>
                     </form>
                     <div class="h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                        <button form="" onclick="newEntry()" class="new_entry_button text-2xl text-white"><i class="fa-solid fa-plus"></i></button>
+                        <button form="" onclick="newEntry()" class="new_entry_button text-2xl text-white"><i data-lucide="plus"></i></button>
                     </div>
                 </div>
             </div>
@@ -67,7 +67,7 @@
                     New Location
                 </div>
                 <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
-                    <button type="button" onclick="cancelNewEntry(this)" class="text-2xl text-white"><i class="fa-solid fa-xmark"></i></button>
+                    <button type="button" onclick="cancelNewEntry(this)" class="text-2xl text-white"><i data-lucide="x"></i></button>
                 </div>
             </div>
             <form id="metadata">
@@ -161,7 +161,7 @@
                 </div>
                 <div class="h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
                     <button type="button" onclick="submitForms(this)" class="text-2xl text-white">
-                        <i class="fa-solid fa-check"></i>
+                        <i data-lucide="check"></i>
                     </button>
                 </div>
                 <script>
@@ -474,7 +474,7 @@
                             });
 
                             // Detailsspalte mit JSON-Popup
-                            var detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white text-2xl flex items-center justify-center shadow-md"><i class="fa-solid fa-circle-info"></i></button>');
+                            var detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white text-2xl flex items-center justify-center shadow-md"><i data-lucide="info"></i></button>');
                             detailsButton.on('click', function() {
                                 var detailsData = {};
                                 Object.keys(columnsConfig).forEach(function(key) {
@@ -486,6 +486,9 @@
                             });
                             tr.append($('<td class="p-2 border-b max-w-lg overflow-auto">').append(detailsButton));
                             tableBody.append(tr);
+                            
+                            // Content is loaded after site is rendered, therefore icons could be missing without another lucide.createIcons()
+                            lucide.createIcons();
                         });
 
                         generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
@@ -530,3 +533,6 @@
     }
 
 </script>
+<?php
+    include_once 'includes/footer.php';
+?>
