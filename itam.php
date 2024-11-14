@@ -33,14 +33,14 @@
             <div class="flex justify-between mb-4">
                 <p id="count"></p>
                 <div class="flex flex-row">
-                    <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
+                    <form id="searchForm" class="flex flex-row" enctype="multipart/form-data" onsubmit="searchTable(event)">
                         <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
                         <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
                             <button type="submit" class="text-2xl text-white"><i data-lucide="search"></i></button>
                         </div>
                     </form>
                     <div class="h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                        <button form="" onclick="newEntry()" class="new_entry_button text-2xl text-white"><i data-lucide="plus"></i></button>
+                        <button form="" onclick="openNewEntry()" class="new_entry_button text-2xl text-white"><i data-lucide="plus"></i></button>
                     </div>
                 </div>
             </div>
@@ -61,13 +61,26 @@
                 <tbody></tbody>
             </table>
         </div>
+        
+        <!-- Details Popup -->
+        <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden">
+            <div class="flex justify-between pb-6">
+                <div class="text-xl font-bold">Details</div>
+                <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
+                    <button type="button" onclick="closeDetailsPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
+                </div>
+            </div>
+            <div id="detailsContent" class="space-y-2"></div>
+        </div>
+
+        <!-- New Entry Popup -->
         <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_metadata_join_location">
             <div class="flex justify-between pb-6">
                 <div class="text-xl font-bold">
                     New Location
                 </div>
                 <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
-                    <button type="button" onclick="cancelNewEntry(this)" class="text-2xl text-white"><i data-lucide="x"></i></button>
+                    <button type="button" onclick="closeNewEntry(this)" class="text-2xl text-white"><i data-lucide="x"></i></button>
                 </div>
             </div>
             <form id="metadata">
@@ -164,374 +177,237 @@
                         <i data-lucide="check"></i>
                     </button>
                 </div>
-                <script>
-                $(document).ready(function() {
-                    $('#type').on('change', function() {
-                        var typeValue = $(this).val();
-                        var searchQuery = 'typeMax=' + typeValue;
-                        loadDropdown(searchQuery);
-                    });
-
-                    $('#search').on('input', function() {
-                        var search = $(this).val();
-                        var typeValue = $('#type').val();
-                        var searchQuery = 'typeMax=' + typeValue + '&search=' + search;
-                        loadDropdown(searchQuery);
-                    });
-                });
-
-                function submitForms(element) {
-                    // Metadata-Formulardaten sammeln und senden
-                    var metadataData = $('#metadata').serializeArray();
-                    var metadataObj = {};
-                    $.each(metadataData, function(index, item) {
-                        metadataObj[item.name] = item.value;
-                    });
-
-                    $.ajax({
-                        url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/metadata/',
-                        type: 'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify(metadataObj),
-                        success: function(response) {
-                            // Die UUID aus dem ersten Element im Array extrahieren
-                            var uuid = response[0].uuid;
-                            $('#metadataUUID').val(uuid); // UUID in das versteckte Feld einfügen
-
-                            // Location-Formulardaten sammeln und senden
-                            var locationData = $('#location').serializeArray();
-                            var locationObj = {};
-                            $.each(locationData, function(index, item) {
-                                locationObj[item.name] = item.value;
-                            });
-
-                            $.ajax({
-                                url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/',
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify(locationObj),
-                                success: function(response) {
-                                    console.log('Erfolg:', response);
-                                    cancelNewEntry(element);
-                                    loadTable();
-                                },
-                                error: function(jqXHR, textStatus, errorThrown) {
-                                    console.log('Fehler beim Senden der Location-Daten:', jqXHR.responseText);
-                                }
-                            });
-                        },
-                        error: function(jqXHR, textStatus, errorThrown) {
-                            console.log('Fehler beim Senden der Metadata-Daten:', jqXHR.responseText);
-                        }
-                    });
-                }
-
-                function loadDropdown(search) {
-                    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_metadata_join_location/?' + search; // Beispiel-URL, passen Sie sie entsprechend an
-                    $.ajax({
-                        url: url,
-                        type: 'GET',
-                        dataType: 'json',
-                        success: function(data) {
-                            var dropdown = $('#location_search');
-                            dropdown.empty(); // Vorhandene Optionen löschen
-
-                            if (data && data.items && data.items.length > 0) {
-                                data.items.forEach(function(item) {
-                                    var option = $('<div class="hover:bg-gray-100 py-2 px-4 rounded-3xl cursor-pointer">').text(item.metadata_caption_0).attr('data-value', item.uuid);
-                                    dropdown.append(option);
-
-                                    option.on('click', function() {
-                                        $('#search').val(item.metadata_caption_0); // Den Wert des Suchfelds aktualisieren
-                                        $('#parent_location').val(item.uuid); // Den Wert des versteckten Feldes aktualisieren
-                                        dropdown.hide(); // Dropdown ausblenden
-                                    });
-                                });
-                                dropdown.show(); // Dropdown anzeigen, wenn Optionen hinzugefügt wurden
-                            } else {
-                                dropdown.append($('<div class="p-2 text-gray-500">').text('Keine Ergebnisse gefunden'));
-                                dropdown.show();
-                            }
-                        },
-                        error: function(jqXHR, textStatus, errorThrown) {
-                            console.log('Error loading dropdown data:', jqXHR.responseText);
-                        }
-                    });
-                }
-                </script>
             </form>
         </div>
     </div>
 </div>
 <script>
-    // Globale Variable, um den Namen der zuletzt geladenen Tabelle zu speichern
-    let currentTable = 'location_join_metadata_join_location';
+// General helper functions
+function ajaxGet(url, successCallback, errorCallback) {
+    $.ajax({
+        url: url,
+        type: 'GET',
+        dataType: 'json',
+        success: successCallback,
+        error: function(jqXHR) {
+            console.log('Error:', jqXHR.responseText);
+            if (errorCallback) errorCallback(jqXHR);
+        }
+    });
+}
 
-    // Navigation
-    $(document).ready(function() {
-        // Markieren Sie das 'Location'-Element (das erste klickbare Element) standardmäßig als ausgewählt
-        $('#itam_nav > li:first-child').addClass('rounded-l-lg pr-0').removeClass('rounded-lg mr-4');
+function ajaxPost(url, data, successCallback, errorCallback) {
+    $.ajax({
+        url: url,
+        type: 'POST',
+        data: JSON.stringify(data),
+        contentType: 'application/json',
+        success: successCallback,
+        error: function(jqXHR) {
+            console.log('Error:', jqXHR.responseText);
+            if (errorCallback) errorCallback(jqXHR);
+        }
+    });
+}
+
+// submit location form
+function submitForms(element) {
+    // Metadata-Formulardaten sammeln und senden
+    var metadataData = $('#metadata').serializeArray();
+    var metadataObj = {};
+    $.each(metadataData, function(index, item) {
+        metadataObj[item.name] = item.value;
+    });
+
+    ajaxPost(
+        '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/metadata/',
+        metadataObj,
+        function(response) {
+            var uuid = response[0].uuid;
+            $('#metadataUUID').val(uuid); // UUID in verstecktes Feld einfügen
+
+            // Location-Formulardaten sammeln und senden
+            var locationData = $('#location').serializeArray();
+            var locationObj = {};
+            $.each(locationData, function(index, item) {
+                locationObj[item.name] = item.value;
+            });
+
+            ajaxPost(
+                '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/',
+                locationObj,
+                function(response) {
+                    console.log('Erfolg:', response);
+                    closeNewEntry(element);
+                    loadTable();
+                },
+                function(jqXHR, textStatus, errorThrown) {
+                    console.log('Fehler beim Senden der Location-Daten:', jqXHR.responseText);
+                }
+            );
+        },
+        function(jqXHR, textStatus, errorThrown) {
+            console.log('Fehler beim Senden der Metadata-Daten:', jqXHR.responseText);
+        }
+    );
+}
+
+
+// Generate pagination
+function generatePagination(totalPages, currentPage, search, limit) {
+    var pagesPerGroup = 10;
+    var pageGroup = Math.floor((currentPage - 1) / pagesPerGroup);
+    var $pagination = $('#pagination').empty().append('<div class="mr-2">Seite: </div>');
     
-        // Event-Listener für Klicks auf li-Elemente innerhalb der ul mit der ID 'itam_nav'
-        $('#itam_nav > li').click(function() {
-            // Setzen Sie alle li-Elemente auf die Standardklassen zurück
-            $('#itam_nav > li').removeClass('rounded-l-lg pr-0').addClass('bg-white py-2 px-4 rounded-lg mr-4');
-            // Fügen Sie dem geklickten li-Element die spezifischen Klassen hinzu
-            $(this).removeClass('rounded-lg mr-4').addClass('rounded-l-lg pr-0');
+    function addPageButton(text, callback, hidden = false) {
+        var button = $('<div class="mr-2 cursor-pointer">').html(text).css('visibility', hidden ? 'hidden' : 'visible');
+        if (!hidden) button.click(callback);
+        $pagination.append(button);
+    }
+    
+    addPageButton('&larr;', () => generatePagination(totalPages, (pageGroup - 1) * pagesPerGroup + 1, search, limit), pageGroup === 0);
+
+    for (let i = pageGroup * pagesPerGroup + 1; i <= Math.min((pageGroup + 1) * pagesPerGroup, totalPages); i++) {
+        let pageDiv = $('<div class="mr-2 cursor-pointer">').text(i).toggleClass('current-page text-blue-500', i === currentPage);
+        pageDiv.click(() => loadTable(currentTable, search, limit, i));
+        $pagination.append(pageDiv);
+    }
+    
+    addPageButton('&rarr;', () => generatePagination(totalPages, (pageGroup + 1) * pagesPerGroup + 1, search, limit), (pageGroup + 1) * pagesPerGroup >= totalPages);
+    
+    $('#pagination_bottom').html($pagination.clone(true));
+}
+
+// Load table data
+function loadTable(table = 'location_join_metadata_join_location', search = '', limit = 100, page = 1) {
+    currentTable = table;
+    const configUrl = `${'<?php echo PORTFLOW_HOSTNAME; ?>'}/includes/lang.php?nav`;
+
+    ajaxGet(configUrl, config => {
+        let { columns, default: defaultColumns } = config[table];
+        let userColumns = loadUserColumns(table, defaultColumns);
+
+        ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}`, data => {
+            $('#count').text('Datensätze: ' + parseInt(data.pageInfo.totalResults));
+            displayTable(columns, userColumns, data.items);
+            generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
         });
     });
+}
+loadTable();
 
-    // Funktion, um das entsprechende DIV basierend auf der aktuellen Tabelle einzublenden
-    function newEntry() {
-        // Bestimmen der ID des DIVs basierend auf dem Namen der aktuellen Tabelle
-        let divId = '';
-        switch (currentTable) {
-            case 'location_join_metadata_join_location':
-                divId = 'location_join_metadata_join_location';
-                break;
-            // Fügen Sie hier weitere Fälle hinzu, falls erforderlich
-            default:
-                console.log('Kein passendes DIV gefunden für: ' + currentTable);
-                return; // Frühzeitiger Abbruch, wenn keine passende ID gefunden wurde
-        }
+// Display table content
+function displayTable(columnsConfig, userColumns, rows) {
+    var $tableHead = $('.static thead').empty();
+    var $tableBody = $('.static tbody').empty();
 
-        // Ein- oder Ausblenden des DIVs, wenn eine ID gefunden wurde
-        if (divId) {
-            const divElement = document.getElementById(divId);
-            if (divElement.classList.contains('hidden')) {
-                // Wenn das DIV versteckt ist, zeigen wir es an
-                divElement.classList.remove('hidden');
-                divElement.classList.add('block');
-            } else {
-                // Wenn das DIV angezeigt wird, verstecken wir es
-                divElement.classList.remove('block');
-                divElement.classList.add('hidden');
-            }
-        }
-    }
-    function cancelNewEntry(element) {
-        var parentDiv = element.closest('.newEntry');
-        if (parentDiv) {
-            parentDiv.classList.add('hidden');
-            parentDiv.classList.remove('block');
-        } else {
-            console.error('Kein Element mit der Id newEntry gefunden');
-        }
-    }
-    // sort table 
-    /*
-    $(document).ready(function() {
-        var currentSort = '';
-        var currentOrder = '';
-        var query = '';
-        var limit = 100;
-        var page = 1;
+    let trHead = $('<tr class="border-b bg-gray-200">');
+    userColumns.forEach(colKey => trHead.append($('<th class="p-2">').text(columnsConfig[colKey] || colKey)));
+    trHead.append($('<th class="p-2">Details</th>'));
+    $tableHead.append(trHead);
 
-        // Update query, limit, and page when loadTable is called
-        var originalLoadTable = loadTable;
-        loadTable = function(newQuery, newLimit, newPage, sort, order) {
-            if (newQuery !== undefined) query = newQuery;
-            if (newLimit !== undefined) limit = newLimit;
-            if (newPage !== undefined) page = newPage;
-            originalLoadTable(query, limit, page, sort, order);
-        };
+    rows.forEach(row => {
+        let tr = $('<tr class="hover:bg-gray-200">');
+        userColumns.forEach(colKey => tr.append($('<td class="p-2 border-b">').text(row[colKey] || '--')));
+        
+        let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 text-white flex items-center justify-center">')
+            .html('<i data-lucide="info"></i>')
+            .click(() => openDetailsPopup(row));
+        tr.append($('<td class="p-2 border-b">').append(detailsButton));
+        $tableBody.append(tr);
+    });
 
-        $('th[data-sort]').click(function() {
-            var sort = $(this).data('sort');
-            if (currentSort == sort) {
-                currentOrder = (currentOrder == 'ASC') ? 'DESC' : 'ASC';
-            } else {
-                currentSort = sort;
-                currentOrder = 'ASC';
-            }
+    lucide.createIcons();
+}
 
-            loadTable(undefined, undefined, undefined, sort, currentOrder);
+// Load user column preferences
+function loadUserColumns(table, defaultColumns) {
+    const userSettings = <?php echo json_encode($_SESSION['settings'] ?? []); ?>;
+    return userSettings.tables && userSettings.tables[table] ? userSettings.tables[table] : defaultColumns;
+}
 
-            // Remove all existing arrows
-            $('.sort-icon').text('');
+// Open new close entry details
+function openNewEntry() {
+    // Öffnet das Formular für einen neuen Eintrag
+    console.log("Neuer Eintrag wird erstellt");
+    document.getElementById('location_join_metadata_join_location').classList.remove('hidden');
+}
 
-            // Add arrow to the current cell
-            $(this).find('.sort-icon').text(currentOrder == 'ASC' ? '↑' : '↓');
+function closeNewEntry() {
+    // Popup für neuen Eintrag ausblenden
+    document.getElementById('location_join_metadata_join_location').classList.add('hidden');
+}
+
+// Open and close details popup
+function openDetailsPopup(rowData) {
+    var $detailsContent = $('#detailsContent').empty();
+    Object.entries(rowData).forEach(([key, value]) => $detailsContent.append(`<p><strong>${key}:</strong> ${value || '--'}</p>`));
+    $('#detailsPopup').removeClass('hidden');
+}
+
+function closeDetailsPopup() {
+    $('#detailsPopup').addClass('hidden');
+}
+
+// Search functions
+$(document).ready(function() {
+    $('#searchForm').on('change', function(event) {
+        event.preventDefault();
+        loadTable('location', $(this).find('input[name="search"]').val());
+    });
+
+    $('#type').on('change', function() {
+        var typeValue = $(this).val();
+        var searchQuery = 'typeMax=' + typeValue;
+        loadDropdown(searchQuery);
+    });
+    $('#search').on('input', function() {
+            var search = $(this).val();
+            var typeValue = $('#type').val();
+            var searchQuery = 'typeMax=' + typeValue + '&search=' + search;
+            loadDropdown(searchQuery);
         });
-    });
-    // set table limit
-    function setTableLimit(limit) {
-        document.cookie = `table_limit=${limit}; SameSite=Lax`;
-        loadTable('', limit);
-    }
-    document.getElementById('table_limit_1').addEventListener('change', function() {
-        document.getElementById('table_limit_2').value = this.value;
-        setTableLimit(this.value);
-    });
-    document.getElementById('table_limit_2').addEventListener('change', function() {
-        document.getElementById('table_limit_1').value = this.value;
-        setTableLimit(this.value);
-    });*/
-    // generate pagination
-    function generatePagination(totalPages, currentPage, search, limit) {
-        var pagesPerGroup = 10;
-        var pageGroup = Math.floor((currentPage - 1) / pagesPerGroup);
+});
 
-        // Leeren Sie das vorhandene Div
-        $('#pagination, #pagination_bottom').empty();
+// Dropdown
+function loadDropdown(search) {
+    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_metadata_join_location/?' + search;
 
-        // Fügen Sie den Text 'Seite: ' hinzu
-        $('#pagination').append('<div class="mr-2">Seite: </div>');
+    // AJAX-GET-Anfrage mit Helferfunktionen
+    $.get(url, function(data) {
+        var dropdown = $('#location_search');
+        dropdown.empty(); // Vorhandene Optionen löschen
 
-        // Fügen Sie eine Schaltfläche hinzu, um zur vorherigen Gruppe von Seiten zu navigieren
-        var prevButton = $('<div class="mr-2 cursor-pointer">&larr;</div>');
-        if (pageGroup > 0) {
-            prevButton.click(function() {
-                generatePagination(totalPages, (pageGroup - 1) * pagesPerGroup + 1, search, limit);
-            });
-        } else {
-            prevButton.css('visibility', 'hidden');
-        }
-        $('#pagination').append(prevButton);
+        if (data && data.items && data.items.length > 0) {
+            data.items.forEach(function(item) {
+                var option = $('<div class="hover:bg-gray-100 py-2 px-4 rounded-3xl cursor-pointer">')
+                    .text(item.metadata_caption_0)
+                    .attr('data-value', item.uuid);
 
-        // Durchlaufen Sie die Seiten in der aktuellen Gruppe
-        for (var i = pageGroup * pagesPerGroup + 1; i <= Math.min((pageGroup + 1) * pagesPerGroup, totalPages); i++) {
-            // Erstellen Sie ein neues div für jede Seitenzahl
-            var pageDiv = $('<div class="mr-2 cursor-pointer"></div>');
-            pageDiv.text(i);
+                dropdown.append(option);
 
-            // Wenn es die aktuelle Seite ist, fügen Sie eine Klasse hinzu, um sie hervorzuheben
-            if (i == currentPage) {
-                pageDiv.addClass('current-page text-blue-500');
-            }
-
-            // Fügen Sie einen Klick-Event-Handler hinzu, der die Funktion loadTable aufruft
-            pageDiv.click(function() {
-                loadTable(table, search, limit, $(this).text());
-            });
-
-            // Fügen Sie die Seitenzahl zur Paginierungsleiste hinzu
-            $('#pagination').append(pageDiv);
-        }
-
-        // Fügen Sie eine Schaltfläche hinzu, um zur nächsten Gruppe von Seiten zu navigieren
-        var nextButton = $('<div class="mr-2 cursor-pointer">&rarr;</div>');
-        if ((pageGroup + 1) * pagesPerGroup < totalPages) {
-            nextButton.click(function() {
-                generatePagination(totalPages, (pageGroup + 1) * pagesPerGroup + 1, search, limit);
-            });
-        } else {
-            nextButton.css('visibility', 'hidden');
-        }
-        $('#pagination').append(nextButton);
-
-        // Clone the pagination to 'pagination_bottom'
-        $('#pagination_bottom').html($('#pagination').clone(true));
-    } 
-
-    // load table
-    function loadTable(table = 'location_join_metadata_join_location', search = '', limit = 100, page = 1) {
-        currentTable = table;
-        var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
-
-        $.ajax({
-            url: configUrl,
-            dataType: 'json',
-            success: function(config) {
-                var tableConfig = config[table];
-                var columnsConfig = tableConfig.columns;
-                var defaultColumns = tableConfig.default;
-
-                // Abruf der Benutzerpräferenzen aus der PHP-Session
-                var userSettingsRaw = <?php echo json_encode($_SESSION['settings'] ?? []); ?>;
-                var userSettings = typeof userSettingsRaw === 'string' ? JSON.parse(userSettingsRaw) : userSettingsRaw;
-                var userColumns = userSettings.tables && userSettings.tables[table] ? userSettings.tables[table] : defaultColumns;
-
-                var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + table;
-
-                $.ajax({
-                    url: url,
-                    type: 'GET',
-                    dataType: 'json',
-                    success: function(data) {
-                        var tableHead = $('.static thead');
-                        var tableBody = $('.static tbody');
-                        tableHead.empty();
-                        tableBody.empty();
-
-                        var trHead = $('<tr class="border-b bg-gray-200">');
-                        userColumns.forEach(function(columnKey) {
-                            var th = $('<th scope="col" class="p-2" data-sort="' + columnKey + '">').text(columnsConfig[columnKey] || columnKey);
-                            trHead.append(th);
-                        });
-                        // Detailspalte hinzufügen
-                        trHead.append($('<th scope="col" class="p-2">Details</th>'));
-                        tableHead.append(trHead);
-
-                        var results = data.items;
-                        $('#count').text('Datensätze: ' + parseInt(data.pageInfo.totalResults));
-
-                        results.forEach(function(row) {
-                            var tr = $('<tr class="hover:bg-gray-200">');
-                            userColumns.forEach(function(columnKey) {
-                                var td = $('<td class="p-2 border-b max-w-lg overflow-auto">').text(row[columnKey] || '--');
-                                tr.append(td);
-                            });
-
-                            // Detailsspalte mit JSON-Popup
-                            var detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white text-2xl flex items-center justify-center shadow-md"><i data-lucide="info"></i></button>');
-                            detailsButton.on('click', function() {
-                                var detailsData = {};
-                                Object.keys(columnsConfig).forEach(function(key) {
-                                    if (!userColumns.includes(key)) {
-                                        detailsData[key] = row[key] || '--';
-                                    }
-                                });
-                                alert(JSON.stringify(detailsData, null, 2)); // oder modales Popup hier hinzufügen
-                            });
-                            tr.append($('<td class="p-2 border-b max-w-lg overflow-auto">').append(detailsButton));
-                            tableBody.append(tr);
-                            
-                            // Content is loaded after site is rendered, therefore icons could be missing without another lucide.createIcons()
-                            lucide.createIcons();
-                        });
-
-                        generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        console.log('Error:', jqXHR.responseText);
-                    }
+                // Klick-Event für die Dropdown-Option
+                option.on('click', function() {
+                    $('#search').val(item.metadata_caption_0);
+                    $('#parent_location').val(item.uuid);
+                    dropdown.hide();
                 });
-            },
-            error: function(jqXHR, textStatus, errorThrown) {
-                console.log('Error loading table config:', jqXHR.responseText);
-            }
-        });
-    }
-    loadTable();
-    // search
-    $(document).ready(function() {
-        $('#searchForm').on('change', function(event) {
-            event.preventDefault();
-            var search = $(this).find('input[name="search"]').val();
-            loadTable(table = 'location', search);
-        });
+            });
+            dropdown.show(); // Dropdown anzeigen, wenn Optionen hinzugefügt wurden
+        } else {
+            dropdown.append($('<div class="p-2 text-gray-500">').text('Keine Ergebnisse gefunden'));
+            dropdown.show();
+        }
+    }).fail(function(jqXHR, textStatus, errorThrown) {
+        console.log('Fehler beim Laden der Dropdown-Daten:', jqXHR.responseText);
     });
+}
 
-    function saveUserColumnPreferences(table, selectedColumns) {
-        settings[table] = settings[table] || {};
-        settings[table].columns = selectedColumns;
-
-        // Send updated preferences to PHP session via AJAX
-        $.ajax({
-            url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + 'settings',
-            type: 'POST',
-            data: JSON.stringify(settings),
-            contentType: 'application/json',
-            success: function() {
-                console.log('Preferences saved successfully');
-            },
-            error: function(jqXHR, textStatus, errorThrown) {
-                console.log('Error saving preferences:', jqXHR.responseText);
-            }
-        });
-    }
-
+// Save user column preferences
+function saveUserColumnPreferences(table, selectedColumns) {
+    const settings = { [table]: { columns: selectedColumns } };
+    ajaxPost(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/settings`, settings, () => console.log('Preferences saved successfully'));
+}
 </script>
 <?php
     include_once 'includes/footer.php';
