@@ -324,9 +324,6 @@ class Auth {
                     }
                 }
 
-            }else {
-                $this->logger->log('user does not exist or account is not activated', 2, echoToWeb: true);
-                throw new \Exception('user does not exist or account is not activated');
             }
         } catch (\Exception $e) {
             // Log the exception message with ERROR level

@@ -2,25 +2,28 @@
 if (isset($_GET['nav'])) {
     $nav = [];
     $nav['location_join_metadata_join_location'] = [
-        'uuid' => 'Standort UUID',
-        'type' => 'Standort Typ',
-        'size' => 'Standort Größe',
-        'rotation' => 'Standort Rotation',
-        'metadata_uuid_0' => 'Metadata UUID',
-        'metadata_users_0' => 'Metadata Nutzer',
-        'metadata_status_0' => 'Metadata Status',
-        'metadata_created_0' => 'Metadata Erstellt',
-        'metadata_changed_0' => 'Metadata Geändert',
-        'metadata_specification_0' => 'Metadata Spezifikation',
-        'metadata_tags_0' => 'Metadata Tags',
-        'metadata_caption_0' => 'Metadata Titel',
-        'metadata_description_0' => 'Metadata Beschreibung',
-        'location_uuid_1' => 'übergeordneter Standort UUID',
-        'location_metadata_1' => 'übergeordneter Standort Metadata',
-        'location_parent_location_1' => 'übergeordneter Standort übergeordneter Standort',
-        'location_type_1' => 'übergeordneter Standort Typ',
-        'location_size_1' => 'übergeordneter Standort Größe',
-        'location_rotation_1' => 'übergeordneter Standort Rotation',
+        'default' => ['type', 'metadata_status_0', 'metadata_caption_0', 'metadata_tags_0'],
+        'columns' => [
+            'uuid' => 'Standort UUID',
+            'type' => 'Standort Typ',
+            'size' => 'Standort Größe',
+            'rotation' => 'Standort Rotation',
+            'metadata_uuid_0' => 'Metadata UUID',
+            'metadata_users_0' => 'Metadata Nutzer',
+            'metadata_status_0' => 'Metadata Status',
+            'metadata_created_0' => 'Metadata Erstellt',
+            'metadata_changed_0' => 'Metadata Geändert',
+            'metadata_specification_0' => 'Metadata Spezifikation',
+            'metadata_tags_0' => 'Metadata Tags',
+            'metadata_caption_0' => 'Metadata Titel',
+            'metadata_description_0' => 'Metadata Beschreibung',
+            'location_uuid_1' => 'übergeordneter Standort UUID',
+            'location_metadata_1' => 'übergeordneter Standort Metadata',
+            'location_parent_location_1' => 'übergeordneter Standort übergeordneter Standort',
+            'location_type_1' => 'übergeordneter Standort Typ',
+            'location_size_1' => 'übergeordneter Standort Größe',
+            'location_rotation_1' => 'übergeordneter Standort Rotation'
+        ]
     ];
     $nav['ip_range_join_metadata'] = [
         'uuid' => 'IP-Range UUID',
@@ -39,7 +42,7 @@ if (isset($_GET['nav'])) {
         'metadata_specification_0' => 'Metadata Specification',
         'metadata_tags_0' => 'Metadata Tags',
         'metadata_caption_0' => 'Metadata Caption',
-        'metadata_description_0' => 'Metadata Description',
+        'metadata_description_0' => 'Metadata Description'
     ];
     $nav['vlan_join_metadata_join_ip_range'] = [
         'uuid' => 'VLAN UUID',
@@ -61,7 +64,7 @@ if (isset($_GET['nav'])) {
         'ip_range_broadcast_1' => 'IP-Range Broadcast',
         'ip_range_dns_server_1' => 'IP-Range DNS-Server',
         'ip_range_dns_zone_1' => 'IP-Range DNS-Zone',
-        'ip_range_dhcp_server_1' => 'IP-Range DHCP-Server',
+        'ip_range_dhcp_server_1' => 'IP-Range DHCP-Server'
     ];
     $nav['device_join_location_join_device_model'] = [
         'type' => 'Type',

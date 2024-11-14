@@ -13,6 +13,8 @@
     include_once __DIR__ . '/includes/header.php';
 
     $limit = $_COOKIE['table_limit'] ?? 100;
+
+    $_SESSION['settings'] = '{"language": "de", "tables": { "location_join_metadata_join_location": ["type", "metadata_status_0", "metadata_tags_0", "metadata_caption_0"] } }';
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6">  
@@ -61,90 +63,104 @@
         </div>
         <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_metadata_join_location">
             <div class="flex justify-between pb-6">
-                <div class="text-xl">
-                    Add new Location
+                <div class="text-xl font-bold">
+                    New Location
                 </div>
                 <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
                     <button type="button" onclick="cancelNewEntry(this)" class="text-2xl text-white"><i class="fa-solid fa-xmark"></i></button>
                 </div>
             </div>
             <form id="metadata">
-                <div class="flex gap-4 justify-between">
-                    <div class="pb-6 h-fit w-full max-w-lg ">
-                        <label class="block mb-2" for="type">
-                            Status
-                        </label>
-                        <select name="status" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                            <option value="0">Active</option>
-                            <option value="2">Deactivated</option>
-                            <option value="4">Offline</option>
-                            <option value="6">Unused</option>
-                        </select>
+                <div class="text-lg">
+                    Metadata
+                </div>
+                <div class="grid grid-cols-2 gap-4 justify-between">
+                    <div class="flex flex-col">
+                        <div class="pb-6 h-fit w-full max-w-lg ">
+                            <label class="block mb-2" for="type">
+                                Status
+                            </label>
+                            <select name="status" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                                <option value="0">Active</option>
+                                <option value="2">Deactivated</option>
+                                <option value="4">Offline</option>
+                                <option value="6">Unused</option>
+                            </select>
+                        </div>
+                        <div class="pb-6 h-fit w-full max-w-lg relative">
+                            <label class="block mb-2" for="type">
+                                Caption
+                            </label>
+                            <input type="text" name="caption" placeholder="Caption" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                        </div>
+                        <div class="pb-6 h-fit w-full max-w-lg relative">
+                            <label class="block mb-2" for="type">
+                                Description
+                            </label>
+                            <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                        </div>
                     </div>
-                    <div class="pb-6 h-fit w-full max-w-lg relative">
-                        <label class="block mb-2" for="type">
-                            Caption
-                        </label>
-                        <input type="text" name="caption" placeholder="Caption" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                    </div>
-                    <div class="pb-6 h-fit w-full max-w-lg relative">
-                        <label class="block mb-2" for="type">
-                            Description
-                        </label>
-                        <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                    </div>
-                    <div class="pb-6 h-fit w-full max-w-lg relative">
-                        <label class="block mb-2" for="type">
-                            Specification
-                        </label>
-                        <textarea name="specification" placeholder="Specification" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                    </div>
-                    <div class="pb-6 h-fit w-full max-w-lg relative">
-                        <label class="block mb-2" for="type">
-                            Tags
-                        </label>
-                        <input type="text" name="tags" placeholder="Tags" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                    <div class="flex flex-col">
+                        <div class="pb-6 h-fit w-full max-w-lg relative">
+                            <label class="block mb-2" for="type">
+                                Specification
+                            </label>
+                            <textarea name="specification" placeholder="Specification" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                        </div>
+                        <div class="pb-6 h-fit w-full max-w-lg relative">
+                            <label class="block mb-2" for="type">
+                                Tags
+                            </label>
+                            <input type="text" name="tags" placeholder="Tags" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                        </div>
                     </div>
                 </div>
             </form>
             <form id="location">
-                <div class="flex gap-4 justify-between">
-                    <input type="hidden" id="metadataUUID" name="metadata" value="">
-                    <div class="pb-6 h-fit w-full max-w-lg ">
-                        <label class="block mb-2" for="type">
-                            Type
-                        </label>
-                        <select id="type" name="type" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                            <option value="0">Region</option>
-                            <option value="2">Building complex</option>
-                            <option value="4">Building</option>
-                            <option value="6">Room</option>
-                            <option value="8">Rack</option>
-                        </select>
+                <input type="hidden" id="metadataUUID" name="metadata" value="">
+                <div class="text-lg">
+                    Location
+                </div>
+                <div class="grid grid-cols-2 gap-4 justify-between">
+                    <div class="flex flex-col">
+                        <div class="pb-6 h-fit w-full max-w-lg ">
+                            <label class="block mb-2" for="type">
+                                Type
+                            </label>
+                            <select id="type" name="type" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                                <option value="0">Region</option>
+                                <option value="2">Building complex</option>
+                                <option value="4">Building</option>
+                                <option value="6">Room</option>
+                                <option value="8">Rack</option>
+                            </select>
+                        </div>
+                        <div class="pb-6 h-fit w-full max-w-lg relative">
+                            <label class="block mb-2" for="type">
+                                Parent Location
+                            </label>
+                            <input type="text" id="search" placeholder="Parent Location" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
+                            <input type="hidden" id="parent_location" name="parent_location" value="">
+                            <div id="location_search" class="absolute z-3 w-full bg-white mt-2 rounded-3xl shadow-lg border leading-tight hidden"></div>
+                        </div>
                     </div>
-                    <div class="pb-6 h-fit w-full max-w-lg relative">
-                        <label class="block mb-2" for="type">
-                            Parent Location
-                        </label>
-                        <input type="text" id="search" placeholder="Parent Location" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                        <input type="hidden" id="parent_location" name="parent_location" value="">
-                        <div id="location_search" class="absolute z-3 w-full bg-white mt-2 rounded-3xl shadow-lg border leading-tight hidden"></div>
-                    </div>
-                    <div class="pb-6 h-fit w-full max-w-lg relative">
-                        <label class="block mb-2" for="type">
-                            Size
-                        </label>
-                        <textarea name="size" placeholder="Size" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                    </div>
-                    <div class="pb-6 h-fit w-full max-w-lg">
-                        <label class="block mb-2" for="type">
-                            Rotation
-                        </label>
-                        <textarea name="rotation" placeholder="Rotation" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                    <div class="flex flex-col">
+                        <div class="pb-6 h-fit w-full max-w-lg relative">
+                            <label class="block mb-2" for="type">
+                                Size
+                            </label>
+                            <textarea name="size" placeholder="Size" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                        </div>
+                        <div class="pb-6 h-fit w-full max-w-lg">
+                            <label class="block mb-2" for="type">
+                                Rotation
+                            </label>
+                            <textarea name="rotation" placeholder="Rotation" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                        </div>
                     </div>
                 </div>
                 <div class="h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                    <button type="button" onclick="submitForms()" class="text-2xl text-white">
+                    <button type="button" onclick="submitForms(this)" class="text-2xl text-white">
                         <i class="fa-solid fa-check"></i>
                     </button>
                 </div>
@@ -164,7 +180,7 @@
                     });
                 });
 
-                function submitForms() {
+                function submitForms(element) {
                     // Metadata-Formulardaten sammeln und senden
                     var metadataData = $('#metadata').serializeArray();
                     var metadataObj = {};
@@ -196,7 +212,8 @@
                                 data: JSON.stringify(locationObj),
                                 success: function(response) {
                                     console.log('Erfolg:', response);
-                                    // Optional: Weitere Aktionen nach erfolgreichem POST
+                                    cancelNewEntry(element);
+                                    loadTable();
                                 },
                                 error: function(jqXHR, textStatus, errorThrown) {
                                     console.log('Fehler beim Senden der Location-Daten:', jqXHR.responseText);
@@ -406,16 +423,27 @@
         // Clone the pagination to 'pagination_bottom'
         $('#pagination_bottom').html($('#pagination').clone(true));
     } 
+
     // load table
     function loadTable(table = 'location_join_metadata_join_location', search = '', limit = 100, page = 1) {
         currentTable = table;
         var configUrl = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/lang.php?nav';
+
         $.ajax({
             url: configUrl,
             dataType: 'json',
             success: function(config) {
-                var columnsConfig = config[table];
+                var tableConfig = config[table];
+                var columnsConfig = tableConfig.columns;
+                var defaultColumns = tableConfig.default;
+
+                // Abruf der Benutzerpräferenzen aus der PHP-Session
+                var userSettingsRaw = <?php echo json_encode($_SESSION['settings'] ?? []); ?>;
+                var userSettings = typeof userSettingsRaw === 'string' ? JSON.parse(userSettingsRaw) : userSettingsRaw;
+                var userColumns = userSettings.tables && userSettings.tables[table] ? userSettings.tables[table] : defaultColumns;
+
                 var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + table;
+
                 $.ajax({
                     url: url,
                     type: 'GET',
@@ -427,10 +455,12 @@
                         tableBody.empty();
 
                         var trHead = $('<tr class="border-b bg-gray-200">');
-                        Object.keys(columnsConfig).forEach(function(key) {
-                            var th = $('<th scope="col" class="p-2" data-sort="' + key + '">').text(columnsConfig[key]);
+                        userColumns.forEach(function(columnKey) {
+                            var th = $('<th scope="col" class="p-2" data-sort="' + columnKey + '">').text(columnsConfig[columnKey] || columnKey);
                             trHead.append(th);
                         });
+                        // Detailspalte hinzufügen
+                        trHead.append($('<th scope="col" class="p-2">Details</th>'));
                         tableHead.append(trHead);
 
                         var results = data.items;
@@ -438,10 +468,23 @@
 
                         results.forEach(function(row) {
                             var tr = $('<tr class="hover:bg-gray-200">');
-                            Object.keys(columnsConfig).forEach(function(key) {
-                                var td = $('<td class="p-2 border-b max-w-lg overflow-auto">').text(row[key] || '--');
+                            userColumns.forEach(function(columnKey) {
+                                var td = $('<td class="p-2 border-b max-w-lg overflow-auto">').text(row[columnKey] || '--');
                                 tr.append(td);
                             });
+
+                            // Detailsspalte mit JSON-Popup
+                            var detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white text-2xl flex items-center justify-center shadow-md"><i class="fa-solid fa-circle-info"></i></button>');
+                            detailsButton.on('click', function() {
+                                var detailsData = {};
+                                Object.keys(columnsConfig).forEach(function(key) {
+                                    if (!userColumns.includes(key)) {
+                                        detailsData[key] = row[key] || '--';
+                                    }
+                                });
+                                alert(JSON.stringify(detailsData, null, 2)); // oder modales Popup hier hinzufügen
+                            });
+                            tr.append($('<td class="p-2 border-b max-w-lg overflow-auto">').append(detailsButton));
                             tableBody.append(tr);
                         });
 
@@ -466,4 +509,24 @@
             loadTable(table = 'location', search);
         });
     });
+
+    function saveUserColumnPreferences(table, selectedColumns) {
+        settings[table] = settings[table] || {};
+        settings[table].columns = selectedColumns;
+
+        // Send updated preferences to PHP session via AJAX
+        $.ajax({
+            url: '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + 'settings',
+            type: 'POST',
+            data: JSON.stringify(settings),
+            contentType: 'application/json',
+            success: function() {
+                console.log('Preferences saved successfully');
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+                console.log('Error saving preferences:', jqXHR.responseText);
+            }
+        });
+    }
+
 </script>
