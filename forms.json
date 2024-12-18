@@ -1,0 +1,146 @@
+{
+    "forms": {
+        "location_join_metadata_join_location": {
+            "formTitle": "New Location",
+            "sectionTitle": ["Metadata", "Location"],
+            "fields": {
+                "metadata_status": {
+                    "label": "Status",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Active" },
+                        { "value": "2", "label": "Deactivated" },
+                        { "value": "4", "label": "Offline" },
+                        { "value": "6", "label": "Unused" }
+                    ],
+                    "required": true
+                },
+                "metadata_caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "metadata_description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "metadata_specification": {
+                    "label": "Specification",
+                    "type": "textarea",
+                    "required": false
+                },
+                "metadata_tags": {
+                    "label": "Tags",
+                    "type": "text",
+                    "required": false
+                },
+                "location_type": {
+                    "label": "Type",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Region" },
+                        { "value": "2", "label": "Building Complex" },
+                        { "value": "4", "label": "Building" },
+                        { "value": "6", "label": "Room" },
+                        { "value": "8", "label": "Rack" }
+                    ],
+                    "required": true
+                },
+                "location_parent_location": {
+                    "label": "Parent Location",
+                    "type": "text",
+                    "required": false
+                },
+                "location_size": {
+                    "label": "Size",
+                    "type": "textarea",
+                    "required": false
+                },
+                "location_rotation": {
+                    "label": "Rotation",
+                    "type": "textarea",
+                    "required": false
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "metadata",
+                    "fields": ["metadata_status", "metadata_caption", "metadata_description", "metadata_specification", "metadata_tags"]
+                },
+                {
+                    "table": "location",
+                    "fields": ["location_type", "location_parent_location", "location_size", "location_rotation"],
+                    "useMetadataUUID": true
+                }
+            ]
+        },
+        "ip_range_join_metadata": {
+            "title": "New IP Range",
+            "fields": {
+                "metadata_status": {
+                    "label": "Status",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Active" },
+                        { "value": "2", "label": "Deactivated" },
+                        { "value": "4", "label": "Offline" },
+                        { "value": "6", "label": "Unused" }
+                    ],
+                    "required": true
+                },
+                "metadata_caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "metadata_description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "metadata_specification": {
+                    "label": "Specification",
+                    "type": "textarea",
+                    "required": false
+                },
+                "metadata_tags": {
+                    "label": "Tags",
+                    "type": "text",
+                    "required": false
+                },
+                "ip_range_start": {
+                    "label": "Start IP",
+                    "type": "text",
+                    "required": true
+                },
+                "ip_range_end": {
+                    "label": "End IP",
+                    "type": "text",
+                    "required": true
+                },
+                "ip_range_netmask": {
+                    "label": "Netmask",
+                    "type": "text",
+                    "required": false
+                },
+                "ip_range_gateway": {
+                    "label": "Gateway",
+                    "type": "text",
+                    "required": false
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "metadata",
+                    "fields": ["metadata_status", "metadata_caption", "metadata_description", "metadata_specification", "metadata_tags"]
+                },
+                {
+                    "table": "ip_range",
+                    "fields": ["ip_range_start", "ip_range_end", "ip_range_netmask", "ip_range_gateway"],
+                    "useMetadataUUID": true
+                }
+            ]
+        }
+    }
+}

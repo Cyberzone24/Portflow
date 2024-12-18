@@ -17,7 +17,7 @@
     $_SESSION['settings'] = '{"language": "de", "tables": { "location_join_metadata_join_location": ["type", "metadata_status_0", "metadata_tags_0", "metadata_caption_0"] } }';
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
-    <div class="basis-1/6 flex flex-col gap-6">  
+    <div class="basis-1/6 flex flex-col gap-6 overflow-y-scroll">  
         <p><?php echo $lang['it asset-management']; ?></p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
             <li onclick="loadTable('location_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0"><?php echo $lang['location']; ?></li>
@@ -28,7 +28,7 @@
             <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['connections']; ?></li>
         </ul>
     </div>
-    <div class="h-full basis-5/6 flex bg-white rounded-lg relative">
+    <div class="h-full basis-5/6 flex bg-white rounded-lg relative overflow-y-scroll">
         <div class="h-fit w-full p-4">
             <div class="flex justify-between mb-4">
                 <p id="count"></p>
@@ -73,115 +73,147 @@
             <div id="detailsContent" class="space-y-2"></div>
         </div>
 
-        <!-- New Entry Popup -->
-        <div class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden newEntry" id="location_join_metadata_join_location">
-            <div class="flex justify-between pb-6">
-                <div class="text-xl font-bold">
-                    New Location
-                </div>
-                <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
-                    <button type="button" onclick="closeNewEntry(this)" class="text-2xl text-white"><i data-lucide="x"></i></button>
-                </div>
-            </div>
-            <form id="metadata">
-                <div class="text-lg">
-                    Metadata
-                </div>
-                <div class="grid grid-cols-2 gap-4 justify-between">
-                    <div class="flex flex-col">
-                        <div class="pb-6 h-fit w-full max-w-lg ">
-                            <label class="block mb-2" for="type">
-                                Status
-                            </label>
-                            <select name="status" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                                <option value="0">Active</option>
-                                <option value="2">Deactivated</option>
-                                <option value="4">Offline</option>
-                                <option value="6">Unused</option>
-                            </select>
-                        </div>
-                        <div class="pb-6 h-fit w-full max-w-lg relative">
-                            <label class="block mb-2" for="type">
-                                Caption
-                            </label>
-                            <input type="text" name="caption" placeholder="Caption" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                        </div>
-                        <div class="pb-6 h-fit w-full max-w-lg relative">
-                            <label class="block mb-2" for="type">
-                                Description
-                            </label>
-                            <textarea name="description" placeholder="Description" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                        </div>
-                    </div>
-                    <div class="flex flex-col">
-                        <div class="pb-6 h-fit w-full max-w-lg relative">
-                            <label class="block mb-2" for="type">
-                                Specification
-                            </label>
-                            <textarea name="specification" placeholder="Specification" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                        </div>
-                        <div class="pb-6 h-fit w-full max-w-lg relative">
-                            <label class="block mb-2" for="type">
-                                Tags
-                            </label>
-                            <input type="text" name="tags" placeholder="Tags" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                        </div>
-                    </div>
-                </div>
-            </form>
-            <form id="location">
-                <input type="hidden" id="metadataUUID" name="metadata" value="">
-                <div class="text-lg">
-                    Location
-                </div>
-                <div class="grid grid-cols-2 gap-4 justify-between">
-                    <div class="flex flex-col">
-                        <div class="pb-6 h-fit w-full max-w-lg ">
-                            <label class="block mb-2" for="type">
-                                Type
-                            </label>
-                            <select id="type" name="type" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                                <option value="0">Region</option>
-                                <option value="2">Building complex</option>
-                                <option value="4">Building</option>
-                                <option value="6">Room</option>
-                                <option value="8">Rack</option>
-                            </select>
-                        </div>
-                        <div class="pb-6 h-fit w-full max-w-lg relative">
-                            <label class="block mb-2" for="type">
-                                Parent Location
-                            </label>
-                            <input type="text" id="search" placeholder="Parent Location" class="w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline">
-                            <input type="hidden" id="parent_location" name="parent_location" value="">
-                            <div id="location_search" class="absolute z-3 w-full bg-white mt-2 rounded-3xl shadow-lg border leading-tight hidden"></div>
-                        </div>
-                    </div>
-                    <div class="flex flex-col">
-                        <div class="pb-6 h-fit w-full max-w-lg relative">
-                            <label class="block mb-2" for="type">
-                                Size
-                            </label>
-                            <textarea name="size" placeholder="Size" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                        </div>
-                        <div class="pb-6 h-fit w-full max-w-lg">
-                            <label class="block mb-2" for="type">
-                                Rotation
-                            </label>
-                            <textarea name="rotation" placeholder="Rotation" class="w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline"></textarea>
-                        </div>
-                    </div>
-                </div>
-                <div class="h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                    <button type="button" onclick="submitForms(this)" class="text-2xl text-white">
-                        <i data-lucide="check"></i>
-                    </button>
-                </div>
-            </form>
-        </div>
+        <!-- New Location -->
+        <div id="formContainer" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 overflow-y-scroll hidden newEntry"></div>
     </div>
 </div>
 <script>
+// Generate form
+async function generateFormFromJSON(table = 'location_join_metadata_join_location') {
+    try {
+        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json');
+        const data = await response.json();
+
+        const formConfig = data.forms[table];
+        if (!formConfig) {
+            console.error(`No form configuration found for table: ${table}`);
+            return;
+        }
+
+        const container = document.getElementById('formContainer');
+        if (!container) {
+            console.error(`Container not found.`);
+            return;
+        }
+
+        // Clear the container
+        container.innerHTML = '';
+
+        // Add header with form title and buttons
+        if (formConfig.formTitle) {
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center pb-6';
+
+            const title = document.createElement('div');
+            title.className = 'text-2xl font-bold';
+            title.textContent = formConfig.formTitle;
+            header.appendChild(title);
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'flex gap-4';
+
+            const submitWrapper = document.createElement('div');
+            submitWrapper.className = 'h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md';
+
+            const submitButton = document.createElement('button');
+            submitButton.type = 'button';
+            submitButton.onclick = () => submitForms();
+            submitButton.className = 'text-2xl text-white';
+            submitButton.innerHTML = '<i data-lucide="check"></i>';
+            submitWrapper.appendChild(submitButton);
+
+            const cancelWrapper = document.createElement('div');
+            cancelWrapper.className = 'h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md';
+
+            const cancelButton = document.createElement('button');
+            cancelButton.type = 'button';
+            cancelButton.onclick = () => closeNewEntry();
+            cancelButton.className = 'text-2xl text-white';
+            cancelButton.innerHTML = '<i data-lucide="x"></i>';
+            cancelWrapper.appendChild(cancelButton);
+
+            buttonContainer.appendChild(submitWrapper);
+            buttonContainer.appendChild(cancelWrapper);
+            header.appendChild(buttonContainer);
+
+            container.appendChild(header);
+        }
+
+        // Iterate over postOrder to generate fields
+        formConfig.postOrder.forEach(post => {
+            const form = document.createElement('form');
+            form.id = post.table;
+
+            // Add section title if defined
+            if (post.sectionTitle) {
+                const sectionTitle = document.createElement('div');
+                sectionTitle.className = 'text-lg pb-4';
+                sectionTitle.textContent = post.sectionTitle;
+                form.appendChild(sectionTitle);
+            }
+
+            // Add fields
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-2 gap-4';
+            post.fields.forEach(fieldKey => {
+                const fieldConfig = formConfig.fields[fieldKey];
+                if (fieldConfig) {
+                    grid.appendChild(generateField(fieldKey, fieldConfig));
+                }
+            });
+
+            form.appendChild(grid);
+            container.appendChild(form);
+        });
+    } catch (error) {
+        console.error("Error loading or processing forms.json:", error);
+    }
+}
+
+function generateField(name, config) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pb-6 h-fit w-full max-w-lg relative';
+
+    // Create label
+    const label = document.createElement('label');
+    label.className = 'block mb-2';
+    label.setAttribute('for', name);
+    label.textContent = config.label;
+    wrapper.appendChild(label);
+
+    // Create input, textarea, or select
+    let field;
+    if (config.type === 'text') {
+        field = document.createElement('input');
+        field.type = 'text';
+    } else if (config.type === 'textarea') {
+        field = document.createElement('textarea');
+    } else if (config.type === 'dropdown') {
+        field = document.createElement('select');
+        config.options.forEach(optionText => {
+            const option = document.createElement('option');
+            option.value = optionText.value;
+            option.textContent = optionText.label;
+            field.appendChild(option);
+        });
+    }
+
+    if (field) {
+        field.name = name;
+        field.placeholder = config.label;
+        field.className = 'w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline';
+        if (config.type === 'textarea') {
+            field.className = field.className.replace('rounded-full', 'rounded-3xl');
+        }
+        if (config.required) {
+            field.required = true;
+        }
+        wrapper.appendChild(field);
+    }
+
+    return wrapper;
+}
+
 // General helper functions
 function ajaxGet(url, successCallback, errorCallback) {
     $.ajax({
@@ -283,6 +315,10 @@ function loadTable(table = 'location_join_metadata_join_location', search = '', 
     currentTable = table;
     const configUrl = `${'<?php echo PORTFLOW_HOSTNAME; ?>'}/includes/lang.php?nav`;
 
+    // Tabellenhervorhebung aktualisieren
+    updateActiveTab(table);
+    generateFormFromJSON(table);
+
     ajaxGet(configUrl, config => {
         let { columns, default: defaultColumns } = config[table];
         let userColumns = loadUserColumns(table, defaultColumns);
@@ -295,6 +331,23 @@ function loadTable(table = 'location_join_metadata_join_location', search = '', 
     });
 }
 loadTable();
+
+// Tabellenhervorhebung aktualisieren
+function updateActiveTab(table) {
+    // Alle Listenelemente zurücksetzen
+    const listItems = document.querySelectorAll('#itam_nav li');
+    listItems.forEach(item => {
+        // Standardklassen für nicht ausgewähltes Element setzen
+        item.className = 'bg-white py-2 px-4 rounded-lg mr-4';
+    });
+
+    // Das ausgewählte Listenelement hervorheben
+    const selectedItem = document.querySelector(`#itam_nav li[onclick="loadTable('${table}')"]`);
+    if (selectedItem) {
+        // Klassen für das ausgewählte Element setzen
+        selectedItem.className = 'bg-white py-2 px-4 rounded-l-lg pr-0';
+    }
+}
 
 // Display table content
 function displayTable(columnsConfig, userColumns, rows) {
@@ -330,12 +383,12 @@ function loadUserColumns(table, defaultColumns) {
 function openNewEntry() {
     // Öffnet das Formular für einen neuen Eintrag
     console.log("Neuer Eintrag wird erstellt");
-    document.getElementById('location_join_metadata_join_location').classList.remove('hidden');
+    document.getElementById('formContainer').classList.remove('hidden');
 }
 
 function closeNewEntry() {
     // Popup für neuen Eintrag ausblenden
-    document.getElementById('location_join_metadata_join_location').classList.add('hidden');
+    document.getElementById('formContainer').classList.add('hidden');
 }
 
 // Open and close details popup
@@ -351,11 +404,6 @@ function closeDetailsPopup() {
 
 // Search functions
 $(document).ready(function() {
-    $('#searchForm').on('change', function(event) {
-        event.preventDefault();
-        loadTable('location', $(this).find('input[name="search"]').val());
-    });
-
     $('#type').on('change', function() {
         var typeValue = $(this).val();
         var searchQuery = 'typeMax=' + typeValue;

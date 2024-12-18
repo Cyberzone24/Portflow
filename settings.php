@@ -104,19 +104,70 @@
             $query = "SELECT * FROM users";
             $results = $db_adapter->db_query($query);
 
-            var_dump($results);
+            if ($results) {
+                echo "<table border='1'>";
+                echo "<tr>";
+                foreach (array_keys($results[0]) as $header) {
+                    echo "<th>{$header}</th>";
+                }
+                echo "</tr>";
+                foreach ($results as $row) {
+                    echo "<tr>";
+                    foreach ($row as $column) {
+                        echo "<td>{$column}</td>";
+                    }
+                    echo "</tr>";
+                }
+                echo "</table>";
+            } else {
+                echo "No results found.";
+            }
 
             echo "<br><br>";
             $query = "SELECT * FROM role";
             $results = $db_adapter->db_query($query);
 
-            var_dump($results);
+            if ($results) {
+                echo "<table border='1'>";
+                echo "<tr>";
+                foreach (array_keys($results[0]) as $header) {
+                    echo "<th>{$header}</th>";
+                }
+                echo "</tr>";
+                foreach ($results as $row) {
+                    echo "<tr>";
+                    foreach ($row as $column) {
+                        echo "<td>{$column}</td>";
+                    }
+                    echo "</tr>";
+                }
+                echo "</table>";
+            } else {
+                echo "No results found.";
+            }
 
             echo "<br><br>";
             $query = "SELECT * FROM access";
             $results = $db_adapter->db_query($query);
 
-            var_dump($results);
+            if ($results) {
+                echo "<table border='1'>";
+                echo "<tr>";
+                foreach (array_keys($results[0]) as $header) {
+                    echo "<th>{$header}</th>";
+                }
+                echo "</tr>";
+                foreach ($results as $row) {
+                    echo "<tr>";
+                    foreach ($row as $column) {
+                        echo "<td>{$column}</td>";
+                    }
+                    echo "</tr>";
+                }
+                echo "</table>";
+            } else {
+                echo "No results found.";
+            }
     ?>
     <div>
     </div>
