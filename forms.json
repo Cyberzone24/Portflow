@@ -197,12 +197,12 @@
                 "ip_range": {
                     "label": "IP-Range",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "vlan": {
                     "label": "VLAN",
                     "type": "text",
-                    "required": true
+                    "required": false
                 }
             },
             "postOrder": [
@@ -256,82 +256,82 @@
                 "location": {
                     "label": "Location",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "expected_location": {
                     "label": "Expected Location",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "mac_address": {
                     "label": "Mac Address",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "hostname": {
                     "label": "Hostname",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "expected_hostname": {
                     "label": "Expected Hostname",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "serial": {
                     "label": "Serial",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "asset": {
                     "label": "Asset",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
-                "Manufacturer": {
+                "manufacturer": {
                     "label": "Manufacturer",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "model": {
                     "label": "Model",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "type": {
                     "label": "Type",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "anc": {
                     "label": "Active Network Component",
                     "type": "boolean",
-                    "required": true
+                    "required": false
                 },
                 "position": {
                     "label": "Position",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "rotation": {
                     "label": "Rotation",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "size": {
                     "label": "Size",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "item_group": {
-                    "label": "Expected Location",
+                    "label": "Item Group",
                     "type": "text",
-                    "required": true
+                    "required": false
                 },
                 "template": {
                     "label": "Template",
                     "type": "boolean",
-                    "required": true
+                    "required": false
                 }
             },
             "postOrder": [
@@ -341,9 +341,232 @@
                     "fields": ["status", "caption", "description", "specification", "tags"]
                 },
                 {
-                    "table": "vlan",
-                    "sectionTitle": "VLAN",
-                    "fields": ["ip_range", "vlan"],
+                    "table": "device",
+                    "sectionTitle": "Device",
+                    "fields": ["location", "expected_location", "mac_address", "hostname", "expected_hostname", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template"],
+                    "useMetadataUUID": true
+                }
+            ]
+        },
+        "device_port_join_metadata_join_device_join_vlan_join_vlan": {
+            "formTitle": "New Device-Port",
+            "fields": {
+                "status": {
+                    "label": "Status",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Active" },
+                        { "value": "2", "label": "Deactivated" },
+                        { "value": "4", "label": "Offline" },
+                        { "value": "6", "label": "Unused" }
+                    ],
+                    "required": true
+                },
+                "specification": {
+                    "label": "Specification",
+                    "type": "textarea",
+                    "required": false
+                },
+                "caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "tags": {
+                    "label": "Tags",
+                    "type": "text",
+                    "required": false
+                },
+                "description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "device": {
+                    "label": "Device",
+                    "type": "text",
+                    "required": false
+                },
+                "vlan": {
+                    "label": "VLAN",
+                    "type": "text",
+                    "required": false
+                },
+                "expected_vlan": {
+                    "label": "Expected VLAN",
+                    "type": "text",
+                    "required": false
+                },
+                "vlan_tagged": {
+                    "label": "VLAN tagged",
+                    "type": "boolean",
+                    "required": false
+                },
+                "expected_vlan_tagged": {
+                    "label": "Expected VLAN tagged",
+                    "type": "text",
+                    "required": false
+                },
+                "ip": {
+                    "label": "IP",
+                    "type": "text",
+                    "required": false
+                },
+                "expected_ip": {
+                    "label": "Expected IP",
+                    "type": "text",
+                    "required": false
+                },
+                "dhcp_address": {
+                    "label": "DHCP Address",
+                    "type": "text",
+                    "required": false
+                },
+                "expected_dhcp_address": {
+                    "label": "Expected DHCP Address",
+                    "type": "text",
+                    "required": false
+                },
+                "speed": {
+                    "label": "Speed",
+                    "type": "number",
+                    "required": false
+                },
+                "expected_speed": {
+                    "label": "Expected Speed",
+                    "type": "number",
+                    "required": false
+                },
+                "type": {
+                    "label": "Type",
+                    "type": "text",
+                    "required": false
+                },
+                "size": {
+                    "label": "Size",
+                    "type": "text",
+                    "required": false
+                },
+                "position": {
+                    "label": "Position",
+                    "type": "text",
+                    "required": false
+                },
+                "rotation": {
+                    "label": "Rotation",
+                    "type": "text",
+                    "required": false
+                },
+                "coupling": {
+                    "label": "Coupling",
+                    "type": "boolean",
+                    "required": false
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "metadata",
+                    "sectionTitle": "Metadata",
+                    "fields": ["status", "caption", "description", "specification", "tags"]
+                },
+                {
+                    "table": "device_port",
+                    "sectionTitle": "Device-Port",
+                    "fields": ["device", "vlan", "expected_vlan", "vlan_tagged", "expected_vlan_tagged", "ip", "expected_ip", "dhcp_address", "expected_dhcp_address", "speed", "expected_speed", "type", "size", "position", "rotation", "coupling"],
+                    "useMetadataUUID": true
+                }
+            ]
+        },
+        "connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port": {
+            "formTitle": "New Connection",
+            "fields": {
+                "status": {
+                    "label": "Status",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Active" },
+                        { "value": "2", "label": "Deactivated" },
+                        { "value": "4", "label": "Offline" },
+                        { "value": "6", "label": "Unused" }
+                    ],
+                    "required": true
+                },
+                "specification": {
+                    "label": "Specification",
+                    "type": "textarea",
+                    "required": false
+                },
+                "caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "tags": {
+                    "label": "Tags",
+                    "type": "text",
+                    "required": false
+                },
+                "description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "device_port_source": {
+                    "label": "Device Port Source",
+                    "type": "text",
+                    "required": false
+                },
+                "expected_device_port_source": {
+                    "label": "Expected Device Port Source",
+                    "type": "text",
+                    "required": false
+                },
+                "device_port_destination": {
+                    "label": "Device Port Destination",
+                    "type": "text",
+                    "required": false
+                },
+                "expected_device_port_destination": {
+                    "label": "Expected Device Port Destination",
+                    "type": "text",
+                    "required": false
+                },
+                "type": {
+                    "label": "Type",
+                    "type": "text",
+                    "required": false
+                },
+                "length": {
+                    "label": "Length",
+                    "type": "number",
+                    "required": false
+                },
+                "crossover": {
+                    "label": "Crossover",
+                    "type": "boolean",
+                    "required": false
+                },
+                "speed": {
+                    "label": "Speed",
+                    "type": "number",
+                    "required": false
+                },
+                "item_group": {
+                    "label": "Item Group",
+                    "type": "text",
+                    "required": false
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "metadata",
+                    "sectionTitle": "Metadata",
+                    "fields": ["status", "caption", "description", "specification", "tags"]
+                },
+                {
+                    "table": "connection",
+                    "sectionTitle": "Connection",
+                    "fields": ["device_port_source", "expected_device_port_source", "device_port_destination", "expected_device_port_destination", "type", "length", "crossover", "speed", "item_group"],
                     "useMetadataUUID": true
                 }
             ]

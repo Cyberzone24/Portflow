@@ -81,6 +81,7 @@
 // Generate form
 async function generateFormFromJSON(table = 'location_join_metadata_join_location') {
     try {
+        console.log('Loading form configuration for table:', table);
         const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json');
         const data = await response.json();
 
@@ -117,7 +118,7 @@ async function generateFormFromJSON(table = 'location_join_metadata_join_locatio
 
             const submitButton = document.createElement('button');
             submitButton.type = 'button';
-            submitButton.onclick = () => submitForms();
+            submitButton.onclick = () => submitForms(table);
             submitButton.className = 'text-2xl text-white';
             submitButton.innerHTML = '<i data-lucide="check"></i>';
             submitWrapper.appendChild(submitButton);
@@ -182,30 +183,40 @@ function generateField(name, config) {
     label.textContent = config.label;
     wrapper.appendChild(label);
 
-    // Create input, textarea, or select
-    let field;
-    if (config.type === 'text') {
-        field = document.createElement('input');
-        field.type = 'text';
-    } else if (config.type === 'textarea') {
-        field = document.createElement('textarea');
-    } else if (config.type === 'dropdown') {
-        field = document.createElement('select');
-        config.options.forEach(optionText => {
-            const option = document.createElement('option');
-            option.value = optionText.value;
-            option.textContent = optionText.label;
-            field.appendChild(option);
-        });
+    // Create input fields
+    switch (config.type) {
+        case 'text':
+        case 'number':
+            field = document.createElement('input');
+            field.type = config.type;
+            field.className = 'w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline';
+            break;
+        case 'textarea':
+            field = document.createElement('textarea');
+            field.className = 'w-full py-2 px-4 appearance-none border rounded-3xl leading-tight focus:outline-none focus:shadow-outline';
+            break;
+        case 'dropdown':
+            field = document.createElement('select');
+            field.className = 'w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline';
+            config.options.forEach(optionConfig => {
+                const option = document.createElement('option');
+                option.value = optionConfig.value;
+                option.textContent = optionConfig.label;
+                field.appendChild(option);
+            });
+            break;
+        case 'boolean':
+            field = document.createElement('input');
+            field.type = 'checkbox';
+            break;
+        default:
+            console.error(`Unsupported field type: ${config.type}`);
+            return wrapper;
     }
 
     if (field) {
         field.name = name;
         field.placeholder = config.label;
-        field.className = 'w-full py-2 px-4 appearance-none border rounded-full leading-tight focus:outline-none focus:shadow-outline';
-        if (config.type === 'textarea') {
-            field.className = field.className.replace('rounded-full', 'rounded-3xl');
-        }
         if (config.required) {
             field.required = true;
         }
@@ -216,7 +227,8 @@ function generateField(name, config) {
 }
 
 // submit forms
-function submitForms() {
+function submitForms(table) {
+    console.log('Submitting forms for table:', table);
     const forms = document.querySelectorAll('form');
 
     let metadataUUID = '';
@@ -248,7 +260,7 @@ function submitForms() {
                     // Continue with other forms
                     forms.forEach(innerForm => {
                         if (innerForm.id !== 'metadata') {
-                            submitOtherForms(innerForm, metadataUUID);
+                            submitOtherForms(innerForm, metadataUUID, table);
                         }
                     });
                 })
@@ -259,7 +271,8 @@ function submitForms() {
     });
 }
 
-function submitOtherForms(form, metadataUUID) {
+function submitOtherForms(form, metadataUUID, table) {
+    console.log('Submitting table:', table);
     const formData = new FormData(form);
     const postData = {};
 
@@ -282,10 +295,8 @@ function submitOtherForms(form, metadataUUID) {
         .then(response => response.json())
         .then(data => {
             console.log(`Erfolg bei ${form.id}:`, data);
-            if (form.id === 'ip_range' || form.id === 'location') {
-                closeNewEntry();
-                loadTable();
-            }
+            closeNewEntry();
+            loadTable(table);
         })
         .catch(error => {
             console.error(`Fehler beim Senden der ${form.id}-Daten:`, error);
@@ -352,7 +363,6 @@ function loadTable(table = 'location_join_metadata_join_location', search = '', 
 
     // Tabellenhervorhebung aktualisieren
     updateActiveTab(table);
-    generateFormFromJSON(table);
 
     ajaxGet(configUrl, config => {
         let { columns, default: defaultColumns } = config[table];
@@ -364,6 +374,10 @@ function loadTable(table = 'location_join_metadata_join_location', search = '', 
             generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
         });
     });
+
+    // Formular für neuen Eintrag generieren
+    console.log(table);
+    generateFormFromJSON(table);
 }
 loadTable();
 
