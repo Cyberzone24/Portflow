@@ -147,7 +147,7 @@ async function generateFormFromJSON(table = 'location_join_metadata_join_locatio
             // Add section title if defined
             if (post.sectionTitle) {
                 const sectionTitle = document.createElement('div');
-                sectionTitle.className = 'text-lg pb-4';
+                sectionTitle.className = 'text-lg py-4 font-bold';
                 sectionTitle.textContent = post.sectionTitle;
                 form.appendChild(sectionTitle);
             }
@@ -170,6 +170,7 @@ async function generateFormFromJSON(table = 'location_join_metadata_join_locatio
     }
 }
 
+// generate form fields
 function generateField(name, config) {
     const wrapper = document.createElement('div');
     wrapper.className = 'pb-6 h-fit w-full max-w-lg relative';
@@ -214,6 +215,83 @@ function generateField(name, config) {
     return wrapper;
 }
 
+// submit forms
+function submitForms() {
+    const forms = document.querySelectorAll('form');
+
+    let metadataUUID = '';
+
+    forms.forEach(form => {
+        const formData = new FormData(form);
+        const postData = {};
+
+        formData.forEach((value, key) => {
+            postData[key] = value;
+        });
+
+        const apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>` + '/api/' + form.id + '/';
+
+        // POST Metadata first
+        if (form.id === 'metadata') {
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(postData)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    metadataUUID = data[0].uuid;
+                    document.querySelectorAll('[name="metadata"]').forEach(input => {
+                        input.value = metadataUUID;
+                    });
+
+                    // Continue with other forms
+                    forms.forEach(innerForm => {
+                        if (innerForm.id !== 'metadata') {
+                            submitOtherForms(innerForm, metadataUUID);
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error('Fehler beim Senden der Metadata-Daten:', error);
+                });
+        }
+    });
+}
+
+function submitOtherForms(form, metadataUUID) {
+    const formData = new FormData(form);
+    const postData = {};
+
+    formData.forEach((value, key) => {
+        postData[key] = value;
+    });
+
+    // Include metadataUUID if required
+    if (form.id !== 'metadata') {
+        postData.metadata = metadataUUID;
+    }
+
+    const apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>` + '/api/' + form.id + '/';
+
+    fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(postData)
+    })
+        .then(response => response.json())
+        .then(data => {
+            console.log(`Erfolg bei ${form.id}:`, data);
+            if (form.id === 'ip_range' || form.id === 'location') {
+                closeNewEntry();
+                loadTable();
+            }
+        })
+        .catch(error => {
+            console.error(`Fehler beim Senden der ${form.id}-Daten:`, error);
+        });
+}
+
 // General helper functions
 function ajaxGet(url, successCallback, errorCallback) {
     $.ajax({
@@ -241,49 +319,6 @@ function ajaxPost(url, data, successCallback, errorCallback) {
         }
     });
 }
-
-// submit location form
-function submitForms(element) {
-    // Metadata-Formulardaten sammeln und senden
-    var metadataData = $('#metadata').serializeArray();
-    var metadataObj = {};
-    $.each(metadataData, function(index, item) {
-        metadataObj[item.name] = item.value;
-    });
-
-    ajaxPost(
-        '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/metadata/',
-        metadataObj,
-        function(response) {
-            var uuid = response[0].uuid;
-            $('#metadataUUID').val(uuid); // UUID in verstecktes Feld einfügen
-
-            // Location-Formulardaten sammeln und senden
-            var locationData = $('#location').serializeArray();
-            var locationObj = {};
-            $.each(locationData, function(index, item) {
-                locationObj[item.name] = item.value;
-            });
-
-            ajaxPost(
-                '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location/',
-                locationObj,
-                function(response) {
-                    console.log('Erfolg:', response);
-                    closeNewEntry(element);
-                    loadTable();
-                },
-                function(jqXHR, textStatus, errorThrown) {
-                    console.log('Fehler beim Senden der Location-Daten:', jqXHR.responseText);
-                }
-            );
-        },
-        function(jqXHR, textStatus, errorThrown) {
-            console.log('Fehler beim Senden der Metadata-Daten:', jqXHR.responseText);
-        }
-    );
-}
-
 
 // Generate pagination
 function generatePagination(totalPages, currentPage, search, limit) {

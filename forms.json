@@ -2,9 +2,8 @@
     "forms": {
         "location_join_metadata_join_location": {
             "formTitle": "New Location",
-            "sectionTitle": ["Metadata", "Location"],
             "fields": {
-                "metadata_status": {
+                "status": {
                     "label": "Status",
                     "type": "dropdown",
                     "options": [
@@ -15,27 +14,27 @@
                     ],
                     "required": true
                 },
-                "metadata_caption": {
-                    "label": "Caption",
-                    "type": "text",
-                    "required": true
-                },
-                "metadata_description": {
-                    "label": "Description",
-                    "type": "textarea",
-                    "required": false
-                },
-                "metadata_specification": {
+                "specification": {
                     "label": "Specification",
                     "type": "textarea",
                     "required": false
                 },
-                "metadata_tags": {
+                "caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "tags": {
                     "label": "Tags",
                     "type": "text",
                     "required": false
                 },
-                "location_type": {
+                "description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "type": {
                     "label": "Type",
                     "type": "dropdown",
                     "options": [
@@ -47,17 +46,17 @@
                     ],
                     "required": true
                 },
-                "location_parent_location": {
-                    "label": "Parent Location",
-                    "type": "text",
-                    "required": false
-                },
-                "location_size": {
+                "size": {
                     "label": "Size",
                     "type": "textarea",
                     "required": false
                 },
-                "location_rotation": {
+                "parent_location": {
+                    "label": "Parent Location",
+                    "type": "text",
+                    "required": false
+                },
+                "rotation": {
                     "label": "Rotation",
                     "type": "textarea",
                     "required": false
@@ -66,19 +65,21 @@
             "postOrder": [
                 {
                     "table": "metadata",
-                    "fields": ["metadata_status", "metadata_caption", "metadata_description", "metadata_specification", "metadata_tags"]
+                    "sectionTitle": "Metadata",
+                    "fields": ["status", "caption", "description", "specification", "tags"]
                 },
                 {
                     "table": "location",
-                    "fields": ["location_type", "location_parent_location", "location_size", "location_rotation"],
+                    "sectionTitle": "Location",
+                    "fields": ["type", "parent_location", "size", "rotation"],
                     "useMetadataUUID": true
                 }
             ]
         },
         "ip_range_join_metadata": {
-            "title": "New IP Range",
+            "formTitle": "New IP-Range",
             "fields": {
-                "metadata_status": {
+                "status": {
                     "label": "Status",
                     "type": "dropdown",
                     "options": [
@@ -89,43 +90,58 @@
                     ],
                     "required": true
                 },
-                "metadata_caption": {
-                    "label": "Caption",
-                    "type": "text",
-                    "required": true
-                },
-                "metadata_description": {
-                    "label": "Description",
-                    "type": "textarea",
-                    "required": false
-                },
-                "metadata_specification": {
+                "specification": {
                     "label": "Specification",
                     "type": "textarea",
                     "required": false
                 },
-                "metadata_tags": {
+                "caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "tags": {
                     "label": "Tags",
                     "type": "text",
                     "required": false
                 },
-                "ip_range_start": {
-                    "label": "Start IP",
+                "description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "ip_range": {
+                    "label": "IP-Range",
                     "type": "text",
                     "required": true
                 },
-                "ip_range_end": {
-                    "label": "End IP",
-                    "type": "text",
-                    "required": true
-                },
-                "ip_range_netmask": {
-                    "label": "Netmask",
+                "subnet": {
+                    "label": "Subnet",
                     "type": "text",
                     "required": false
                 },
-                "ip_range_gateway": {
+                "gateway": {
                     "label": "Gateway",
+                    "type": "text",
+                    "required": false
+                },
+                "broadcast": {
+                    "label": "Broadcast",
+                    "type": "text",
+                    "required": false
+                },
+                "dns_server": {
+                    "label": "DNS-Server",
+                    "type": "text",
+                    "required": false
+                },
+                "dns_zone": {
+                    "label": "DNS-Zone",
+                    "type": "text",
+                    "required": false
+                },
+                "dhcp_server": {
+                    "label": "DHCP-Server",
                     "type": "text",
                     "required": false
                 }
@@ -133,11 +149,201 @@
             "postOrder": [
                 {
                     "table": "metadata",
-                    "fields": ["metadata_status", "metadata_caption", "metadata_description", "metadata_specification", "metadata_tags"]
+                    "sectionTitle": "Metadata",
+                    "fields": ["status", "caption", "description", "specification", "tags"]
                 },
                 {
                     "table": "ip_range",
-                    "fields": ["ip_range_start", "ip_range_end", "ip_range_netmask", "ip_range_gateway"],
+                    "sectionTitle": "IP-Range",
+                    "fields": ["ip_range", "subnet", "gateway", "broadcast", "dns_server", "dns_zone", "dhcp_server"],
+                    "useMetadataUUID": true
+                }
+            ]
+        },
+        "vlan_join_metadata_join_ip_range": {
+            "formTitle": "New VLAN",
+            "fields": {
+                "status": {
+                    "label": "Status",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Active" },
+                        { "value": "2", "label": "Deactivated" },
+                        { "value": "4", "label": "Offline" },
+                        { "value": "6", "label": "Unused" }
+                    ],
+                    "required": true
+                },
+                "specification": {
+                    "label": "Specification",
+                    "type": "textarea",
+                    "required": false
+                },
+                "caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "tags": {
+                    "label": "Tags",
+                    "type": "text",
+                    "required": false
+                },
+                "description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "ip_range": {
+                    "label": "IP-Range",
+                    "type": "text",
+                    "required": true
+                },
+                "vlan": {
+                    "label": "VLAN",
+                    "type": "text",
+                    "required": true
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "metadata",
+                    "sectionTitle": "Metadata",
+                    "fields": ["status", "caption", "description", "specification", "tags"]
+                },
+                {
+                    "table": "vlan",
+                    "sectionTitle": "VLAN",
+                    "fields": ["ip_range", "vlan"],
+                    "useMetadataUUID": true
+                }
+            ]
+        },
+        "device_join_metadata_join_location_join_location": {
+            "formTitle": "New Device",
+            "fields": {
+                "status": {
+                    "label": "Status",
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "0", "label": "Active" },
+                        { "value": "2", "label": "Deactivated" },
+                        { "value": "4", "label": "Offline" },
+                        { "value": "6", "label": "Unused" }
+                    ],
+                    "required": true
+                },
+                "specification": {
+                    "label": "Specification",
+                    "type": "textarea",
+                    "required": false
+                },
+                "caption": {
+                    "label": "Caption",
+                    "type": "text",
+                    "required": true
+                },
+                "tags": {
+                    "label": "Tags",
+                    "type": "text",
+                    "required": false
+                },
+                "description": {
+                    "label": "Description",
+                    "type": "textarea",
+                    "required": false
+                },
+                "location": {
+                    "label": "Location",
+                    "type": "text",
+                    "required": true
+                },
+                "expected_location": {
+                    "label": "Expected Location",
+                    "type": "text",
+                    "required": true
+                },
+                "mac_address": {
+                    "label": "Mac Address",
+                    "type": "text",
+                    "required": true
+                },
+                "hostname": {
+                    "label": "Hostname",
+                    "type": "text",
+                    "required": true
+                },
+                "expected_hostname": {
+                    "label": "Expected Hostname",
+                    "type": "text",
+                    "required": true
+                },
+                "serial": {
+                    "label": "Serial",
+                    "type": "text",
+                    "required": true
+                },
+                "asset": {
+                    "label": "Asset",
+                    "type": "text",
+                    "required": true
+                },
+                "Manufacturer": {
+                    "label": "Manufacturer",
+                    "type": "text",
+                    "required": true
+                },
+                "model": {
+                    "label": "Model",
+                    "type": "text",
+                    "required": true
+                },
+                "type": {
+                    "label": "Type",
+                    "type": "text",
+                    "required": true
+                },
+                "anc": {
+                    "label": "Active Network Component",
+                    "type": "boolean",
+                    "required": true
+                },
+                "position": {
+                    "label": "Position",
+                    "type": "text",
+                    "required": true
+                },
+                "rotation": {
+                    "label": "Rotation",
+                    "type": "text",
+                    "required": true
+                },
+                "size": {
+                    "label": "Size",
+                    "type": "text",
+                    "required": true
+                },
+                "item_group": {
+                    "label": "Expected Location",
+                    "type": "text",
+                    "required": true
+                },
+                "template": {
+                    "label": "Template",
+                    "type": "boolean",
+                    "required": true
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "metadata",
+                    "sectionTitle": "Metadata",
+                    "fields": ["status", "caption", "description", "specification", "tags"]
+                },
+                {
+                    "table": "vlan",
+                    "sectionTitle": "VLAN",
+                    "fields": ["ip_range", "vlan"],
                     "useMetadataUUID": true
                 }
             ]
