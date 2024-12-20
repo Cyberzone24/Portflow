@@ -317,10 +317,10 @@ function ajaxGet(url, successCallback, errorCallback) {
     });
 }
 
-function ajaxPost(url, data, successCallback, errorCallback) {
+function ajaxPost(url, type, data, successCallback, errorCallback) {
     $.ajax({
         url: url,
-        type: 'POST',
+        type: type,
         data: JSON.stringify(data),
         contentType: 'application/json',
         success: successCallback,
@@ -412,10 +412,13 @@ function displayTable(columnsConfig, userColumns, rows) {
         let tr = $('<tr class="hover:bg-gray-200">');
         userColumns.forEach(colKey => tr.append($('<td class="p-2 border-b">').text(row[colKey] || '--')));
         
-        let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 text-white flex items-center justify-center">')
+        let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
             .html('<i data-lucide="info"></i>')
             .click(() => openDetailsPopup(row));
-        tr.append($('<td class="p-2 border-b">').append(detailsButton));
+        let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
+            .html('<i data-lucide="trash"></i>')
+            .click(() => deleteEntry(row.uuid, row));
+        tr.append($('<td class="p-2 border-b flex flex-row gap-4">').append(detailsButton).append(deleteButton));
         $tableBody.append(tr);
     });
 
@@ -449,6 +452,77 @@ function openDetailsPopup(rowData) {
 
 function closeDetailsPopup() {
     $('#detailsPopup').addClass('hidden');
+}
+
+// Delete entry
+function deleteEntry(uuid, rowData) {
+    console.log(rowData);
+    if (confirm('Möchten Sie diesen Eintrag wirklich löschen?')) {
+        fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json')
+        .then(response => response.json())
+        .then(data => {
+            var formConfig = data.forms[currentTable];
+            if (!formConfig) {
+                console.error(`No form configuration found for table: ${currentTable}`);
+                return;
+            }
+
+            // Umgekehrte Reihenfolge der Tabellen für das Löschen
+            var tablesToDelete = formConfig.postOrder.map(item => item.table).reverse();
+
+            // Extrahieren Sie alle UUIDs aus rowData
+            var uuidsToDelete = {};
+            Object.entries(rowData).forEach(([key, value]) => {
+                if (key.match(/_uuid(_\d+)?$/)) {
+                    var table = key.split('_uuid')[0];
+                    uuidsToDelete[table] = value;
+                }
+            });
+
+            // Fügen Sie die initiale UUID für die erste Tabelle hinzu
+            uuidsToDelete[currentTable] = uuid;
+
+            // Funktion zum rekursiven Löschen der Einträge
+            function deleteNextTable(index) {
+                if (index >= tablesToDelete.length) {
+                    console.log('Alle Einträge wurden gelöscht.');
+                    return;
+                }
+
+                var table = tablesToDelete[index];
+                var tableUuid;
+
+                // Verwenden Sie die übergebene UUID für die erste Tabelle
+                if (index === 0) {
+                    tableUuid = uuid;
+                } else {
+                    tableUuid = uuidsToDelete[table];
+                }
+
+                if (!tableUuid) {
+                    console.error(`No UUID found for table: ${table}`);
+                    deleteNextTable(index + 1);
+                    return;
+                }
+
+                console.log('deleteEntry: ' + table);
+
+                var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + table + '/' + tableUuid;
+                ajaxPost(url, 'DELETE', {}, function() {
+                    console.log('Eintrag in Tabelle ' + table + ' gelöscht.');
+                    deleteNextTable(index + 1);
+                }, function(error) {
+                    console.error('Fehler beim Löschen des Eintrags in Tabelle ' + table + ':', error);
+                });
+            }
+
+            // Starten Sie den Löschvorgang mit der ersten Tabelle
+            deleteNextTable(0);
+        })
+        .catch(error => {
+            console.error('Error fetching forms.json:', error);
+        });
+    }
 }
 
 // Search functions
@@ -503,7 +577,7 @@ function loadDropdown(search) {
 // Save user column preferences
 function saveUserColumnPreferences(table, selectedColumns) {
     const settings = { [table]: { columns: selectedColumns } };
-    ajaxPost(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/settings`, settings, () => console.log('Preferences saved successfully'));
+    ajaxPost(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/settings`, 'POST', settings, () => console.log('Preferences saved successfully'));
 }
 </script>
 <?php
