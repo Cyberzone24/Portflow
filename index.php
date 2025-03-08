@@ -77,7 +77,7 @@
               <label class="block mb-2" for="email">
                 E-Mail
               </label>
-              <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email">
+              <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254">
             </div>
           HTML;
         }
@@ -86,13 +86,13 @@
         <label class="block mb-2" for="username">
           Username
         </label>
-        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="username" name="username">
+        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="username" name="username" min="2" max="255">
       </div>
       <div class="pb-6">
         <label class="block mb-2" for="password">
           Password
         </label>
-        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password">
+        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password" min="8" max="128">
       </div>
       <div class="pt-6 flex justify-between items-center">
         <input type="hidden" name="csrf" value="<?php echo $auth->csrf(); ?>">

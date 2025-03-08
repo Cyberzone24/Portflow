@@ -190,7 +190,7 @@ class Auth {
         return $ip;
     }
 
-    private function random_string($length) {
+    public function random_string($length) {
         // generate random string
         return substr(str_shuffle(MD5(microtime())), 0, $length);
     }
@@ -205,8 +205,7 @@ class Auth {
         }
 
         // try local_signin
-        $local_signin_result = $this->local_signin();
-        if ($local_signin_result) {
+        if ($this->local_signin()) {
             return true;
         } else {
             // Log the failure of local_signin
@@ -229,6 +228,7 @@ class Auth {
         header("Location: " . PORTFLOW_HOSTNAME);
         exit();
     }
+
     private function local_signin() {
         try {
             if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
@@ -614,19 +614,17 @@ class Auth {
             $this->logger->log('creating user account');
 
             if ($result) {
-                $this->logger->log('user account created successfully', 1);
-
                 // send activation mail
                 $activate_link = PORTFLOW_HOSTNAME . '?code=' . $activation_code . '&email=' . $this->email; 
                 $subject = 'Portflow: Activate your account';
                 $message = 'To activate your account, please click the following link: <a href="' . $activate_link . '">Activate</a>';
                 $mail_to = ['email' => $this->email, 'username' => $this->username];
                 if ($this->mail->send($mail_to, $subject, $message)) {
-                    $this->logger->log('activation code sent successfully', 1);
+                    $this->logger->log('Account successfully created. An activation code has been sent to your e-mail.', 1, echoToWeb: true);
                     header('Location: ' . PORTFLOW_HOSTNAME);
                 } else {
-                    $this->logger->log('could not send activation code', 3, echoToWeb: true);
-                    throw new \Exception('could not send activation code');
+                    $this->logger->log('Account successfully created. An error occured while sending an activation code to your e-mail.', 3, echoToWeb: true);
+                    throw new \Exception('Account successfully created. An error occured while sending an activation code to your e-mail.');
                 }
             } else {
                 $this->logger->log('failed to create user account', 3, echoToWeb: true);
@@ -657,15 +655,16 @@ class Auth {
             if ($result) {
                 $this->logger->log('account with mail exists', 1);
                 if ($result[0]['activation_code'] == $code) {
-                    $this->logger->log("verified account with mail: '$email'", 1);
+                    $this->logger->log("Your account with the e-mail: '$email' is now verified.", 1, echoToWeb: true);
                     $query = "UPDATE users SET activation_code = :activation_code WHERE uuid = :uuid";
                     $result = $this->db_adapter->db_query($query, ['activation_code' => 'activated', 'uuid' => $result[0]['uuid']]);
-                    $this->logger->log('updated database', 1);
+                    $this->logger->log('updated database', 0);
                     header('Location: ' . PORTFLOW_HOSTNAME);
                 } elseif ($result[0]['activation_code'] == 'activated') {
-                    $this->logger->log("account with mail: '$email' already verified", 1);
-                    throw new \Exception('account already verified');
+                    $this->logger->log("Your account with the e-mail: '$email' is already verified", 1, echoToWeb: true);
                 }
+            } else {
+                $this->logger->log("The activation code is incorrect", 2, echoToWeb: true);
             }
         } catch (\Exception $e) {
             // Log the exception message with ERROR level

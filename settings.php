@@ -19,6 +19,14 @@
     use Portflow\Core\DatabaseAdapter;
     $db_adapter = new DatabaseAdapter();
 
+    // import logger
+    use Portflow\Core\Logger;
+    $logger = new Logger();
+
+    // import mail
+    use Portflow\Core\Mail;
+    $mail = new Mail();
+
     include_once __DIR__ . '/includes/header.php';
 
     $site = $_GET['site'] ?? 'account';
@@ -30,28 +38,169 @@
             case 'username':
                 $username = $_POST['username'] ?? null;
                 $password = $_POST['password'] ?? null;
-                $csrf = $_POST['csrf'] ?? null;
 
-                if ($auth->csrf($csrf)) {
-                    $auth->set_username($username, $password);
+                if ($auth->csrf_check()) {
+                    // check inputs
+                    if (mb_strlen($username) > 255 || mb_strlen($username) < 2) {
+                        $logger->log('username length not correct', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if (mb_strlen($password) > 128 || mb_strlen($password) < 8) {
+                        $logger->log('password length not correct', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if (empty($username) || empty($password)) {
+                        $logger->log('username or password empty', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+
+                    // Prüfen, ob der neue Username bereits vergeben ist
+                    $query = "SELECT 1 FROM users WHERE username = :new_username";
+                    $taken = $db_adapter->db_query($query, ['new_username' => $username]);
+                    if (!empty($taken)) {
+                        $logger->log('username already exists', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+
+                    // check if user exists and password is correct
+                    $query = "SELECT password FROM users WHERE uuid = :uuid";
+                    $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
+                    $result = !empty($result) ? $result[0] : null;
+
+                    if (!empty($result)) {
+                        if (password_verify($password, $result['password'])) {
+                            // update database
+                            $query = "UPDATE users SET username = :new_username WHERE uuid = :uuid";
+                            $result = $db_adapter->db_query($query, ['new_username' => $username, 'uuid' => $_SESSION['uuid']]);
+                            $_SESSION['name'] = $username;
+                            $logger->log('username updated', 1, echoToWeb: true);
+                        } else {
+                            $logger->log('password incorrect', 2, echoToWeb: true);
+                        }
+                    } else {
+                        $logger->log('user does not exist', 2, echoToWeb: true);
+                    }
+                    header('Location: ?site=account');
                 }
                 break;
             case 'email':
                 $email = $_POST['email'] ?? null;
                 $password = $_POST['password'] ?? null;
-                $csrf = $_POST['csrf'] ?? null;
 
-                if ($auth->csrf($csrf)) {
-                    $auth->set_email($email, $password);
+                if ($auth->csrf_check()) {
+                    // check inputs
+                    if (mb_strlen($email) > 254 || mb_strlen($email) < 3) {
+                        $logger->log('email length not correct', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if (mb_strlen($password) > 128 || mb_strlen($password) < 8) {
+                        $logger->log('password length not correct', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if (empty($email) || empty($password)) {
+                        $logger->log('email or password empty', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if(!filter_var($email, FILTER_VALIDATE_EMAIL)){
+                        $this->logger->log('email not valid', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+
+                    // Prüfen, ob die neue E-Mail bereits vergeben ist
+                    $query = "SELECT * FROM users WHERE email = :new_email";
+                    $result = $db_adapter->db_query($query, ['new_email' => $email]);
+                    if (!empty($result[0])) {
+                        $logger->log('email already exists', 2, echoToWeb: true);
+                        echo 'taken: ' . print_r($result[0], true) . '<br>';
+                        header('Location: ?site=account');
+                        die();
+                    }
+
+                    // check if user exists and password is correct
+                    $query = "SELECT password FROM users WHERE uuid = :uuid";
+                    $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
+                    $result = !empty($result) ? $result[0] : null;
+
+                    if (!empty($result)) {
+                        if (password_verify($password, $result['password'])) {
+                            // generate activation code
+                            $activation_code = $auth->random_string(10);
+
+                            // update database
+                            $query = "UPDATE users SET email = :new_email, activation_code = :activation_code WHERE uuid = :uuid";
+                            $result = $db_adapter->db_query($query, ['new_email' => $email, 'activation_code' => $activation_code, 'uuid' => $_SESSION['uuid']]);
+
+                            // send activation mail
+                            $activate_link = PORTFLOW_HOSTNAME . '?code=' . $activation_code . '&email=' . $email; 
+                            $subject = 'Portflow: Activate your account';
+                            $message = 'To activate your account, please click the following link: <a href="' . $activate_link . '">Activate</a>';
+                            $mail_to = ['email' => $email, 'username' => $_SESSION['name']];
+                            if ($mail->send($mail_to, $subject, $message)) {
+                                $logger->log('E-Mail successfully updated. An activation code has been sent to your new e-mail.', 1, echoToWeb: true);
+                                header('Location: ' . PORTFLOW_HOSTNAME);
+                            } else {
+                                $logger->log('E-Mail successfully updated. But an error occured while sending an activation code to your new e-mail.', 3, echoToWeb: true);
+                                throw new \Exception('E-Mail successfully updated. But an error occured while sending an activation code to your new e-mail.');
+                            }
+                            session_destroy();
+                            header('Location: ' . PORTFLOW_HOSTNAME);
+                        } else {
+                            $logger->log('password incorrect', 2, echoToWeb: true);
+                        }
+                    } else {
+                        $logger->log('user does not exist', 2, echoToWeb: true);
+                    }
+                    header('Location: ?site=account');
                 }
                 break;
             case 'password':
                 $password = $_POST['password'] ?? null;
                 $old_password = $_POST['old_password'] ?? null;
-                $csrf = $_POST['csrf'] ?? null;
 
-                if ($auth->csrf($csrf)) {
-                    $auth->set_password($password, $old_password);
+                if ($auth->csrf_check()) {
+                    // check inputs
+                    if (mb_strlen($password) > 128 || mb_strlen($password) < 8) {
+                        $logger->log('password length not correct', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if (mb_strlen($old_password) > 128 || mb_strlen($old_password) < 8) {
+                        $logger->log('old password length not correct', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+                    if (empty($password) || empty($old_password)) {
+                        $logger->log('password or old password empty', 2, echoToWeb: true);
+                        header('Location: ?site=account');
+                        die();
+                    }
+
+                    // check if user exists and password is correct
+                    $query = "SELECT password FROM users WHERE uuid = :uuid";
+                    $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
+                    $result = !empty($result) ? $result[0] : null;
+
+                    if (!empty($result)) {
+                        if (password_verify($old_password, $result['password'])) {
+                            // update database
+                            $query = "UPDATE users SET password = :new_password WHERE uuid = :uuid";
+                            $result = $db_adapter->db_query($query, ['new_password' => password_hash($password, PASSWORD_DEFAULT), 'uuid' => $_SESSION['uuid']]);
+                            $logger->log('password updated', 1, echoToWeb: true);
+                        } else {
+                            $logger->log('old password incorrect', 2, echoToWeb: true);
+                        }
+                    } else {
+                        $logger->log('user does not exist', 2, echoToWeb: true);
+                    }
+                    header('Location: ?site=account');
                 }
                 break;
         }
@@ -195,16 +344,16 @@ switch ($site) {
                             <label class="block mb-2" for="username">
                                 New Username
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username" name="username">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username" name="username" min="2" max="255">
                         </div>
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
                                 Password
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
-                            <input type="hidden" name="csrf" value="echo $csrf;">
+                            <input type="hidden" name="csrf" value="$csrf">
                             <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
                         </div>
                     </form>
@@ -216,16 +365,16 @@ switch ($site) {
                             <label class="block mb-2" for="email">
                                 New E-Mail
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254">
                             </div>
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
                                 Password
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
-                            <input type="hidden" name="csrf" value="echo $csrf;">
+                            <input type="hidden" name="csrf" value="$csrf">
                             <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
                         </div>
                     </form>
@@ -237,16 +386,16 @@ switch ($site) {
                             <label class="block mb-2" for="password">
                                 New Password
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
                                 Old Password
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="old_password" type="password" placeholder="Password" name="old_password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
-                            <input type="hidden" name="csrf" value="echo $csrf;>">
+                            <input type="hidden" name="csrf" value="$csrf">
                             <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
                         </div>
                     </div>
