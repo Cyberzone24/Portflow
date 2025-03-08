@@ -111,6 +111,7 @@ if (isset($_GET['nav'])) {
         $lang['appearance'] = 'Appearance';
         $lang['notifications'] = 'Notifications';
         $lang['configuration'] = 'Configuration';
+        $lang['scripts'] = 'Scripts';
         $lang['access_management'] = 'Access Management';
         $lang['search'] = 'Search';
         $lang['it asset-management'] = 'IT Asset-Management';

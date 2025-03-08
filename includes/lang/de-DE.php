@@ -276,6 +276,7 @@ if (isset($_GET['nav'])) {
         $lang['appearance'] = 'Darstellung';
         $lang['notifications'] = 'Benachrichtigungen';
         $lang['configuration'] = 'Konfiguration';
+        $lang['scripts'] = 'Skripte';
         $lang['access_management'] = 'Zugangsverwaltung';
         $lang['search'] = 'Suchen';
         $lang['it asset-management'] = 'IT-Anlagenmanagement';
