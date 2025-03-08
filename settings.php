@@ -27,10 +27,6 @@
     use Portflow\Core\Mail;
     $mail = new Mail();
 
-    include_once __DIR__ . '/includes/header.php';
-
-    $site = $_GET['site'] ?? 'account';
-
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $set = $_GET['set'] ?? null;
 
@@ -233,44 +229,107 @@
                 header('Location: ?site=appearance');
                 break;
         }
-    } 
+    } else {
+        // import header
+        include_once __DIR__ . '/includes/header.php';
+
+        // get user role from db
+        $query = "SELECT role.caption AS role FROM users INNER JOIN role ON users.role = role.uuid WHERE users.uuid = :uuid";
+        $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
+        $role = $result[0]['role'];
+
+        // get site
+        $site = $_GET['site'] ?? 'account';
+    }
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6">  
         <p><?php echo $lang['settings']; ?></p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <!-- maybe dont show account section if ldap user ?? -->
-            <a href="?site=account"><li class="bg-white py-2 px-4 <?php echo ($site == 'account') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['account']; ?></li></a>
             <a href="?site=appearance"><li class="bg-white py-2 px-4 <?php echo ($site == 'appearance') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['appearance']; ?></li></a>
+            <?php echo ($role !== 'ldap') ? '<a href="?site=account"><li class="bg-white py-2 px-4 ' . ($site == 'account' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['account'] . '</li></a>' : ''; ?>
             <a href="?site=notifications"><li class="bg-white py-2 px-4 <?php echo ($site == 'notifications') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['notifications']; ?></li></a>
             <a href="?site=configuration"><li class="bg-white py-2 px-4 <?php echo ($site == 'configuration') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['configuration']; ?></li></a>
-            <a href="?site=access"><li class="bg-white py-2 px-4 <?php echo ($site == 'access') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['access_management']; ?></li></a>
+            <?php echo ($role == 'admin') ? '<a href="?site=access"><li class="bg-white py-2 px-4 ' . ($site == 'access' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative overflow-y-scroll">
 <?php 
 switch ($site) {        
-    case 'appearance':
+    case 'account':
+        // check if user is ldap
+        if ($role == 'ldap') {
+            $logger->log('user is ldap', 2, echoToWeb: true);
+            header('Location: ?site=appearance');
+            die();
+        }
+
+        $csrf = $auth->csrf();
         echo <<<HTML
             <div class="h-fit w-full p-4">
-                <p>Farbschema, Schriftart, Schriftgröße</p>
                 <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold pb-6">Sprache</div>
-                    <form action="?set=language" method="post">
+                    <div class="text-xl font-bold pb-6">Username</div>
+                    <form action="?set=username" method="post">
                         <div class="pb-6">
                             <label class="block mb-2" for="username">
-                                Sprache
+                                New Username
                             </label>
-                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
-                                <option value="de-DE">Deutsch</option>
-                                <option value="en-EN">English</option>
-                            </select>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username" name="username" min="2" max="255">
+                        </div>
+                        <div class="pb-6">
+                            <label class="block mb-2" for="password">
+                                Password
+                            </label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
+                            <input type="hidden" name="csrf" value="$csrf">
                             <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
                         </div>
                     </form>
                 </div>
+                <div class="h-fit max-w-lg">
+                    <div class="text-xl font-bold py-6">E-Mail</div>
+                    <form action="?set=email" method="post">
+                        <div class="pb-6">
+                            <label class="block mb-2" for="email">
+                                New E-Mail
+                            </label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254">
+                            </div>
+                        <div class="pb-6">
+                            <label class="block mb-2" for="password">
+                                Password
+                            </label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
+                        </div>
+                        <div class="pb-6 flex justify-between items-center">
+                            <input type="hidden" name="csrf" value="$csrf">
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                        </div>
+                    </form>
+                </div>
+                <div class="h-fit max-w-lg">
+                    <div class="text-xl font-bold py-6">Password</div>
+                    <form action="?set=password" method="post">
+                        <div class="pb-6">
+                            <label class="block mb-2" for="password">
+                                New Password
+                            </label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
+                        </div>
+                        <div class="pb-6">
+                            <label class="block mb-2" for="password">
+                                Old Password
+                            </label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="old_password" type="password" placeholder="Password" name="old_password" min="8" max="128">
+                        </div>
+                        <div class="pb-6 flex justify-between items-center">
+                            <input type="hidden" name="csrf" value="$csrf">
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                        </div>
+                    </div>
+                </form>
             </div>
         HTML;
         break;
@@ -281,6 +340,13 @@ switch ($site) {
         echo "Datenbank, LDAP, Mail, Backup";
         break;
     case 'access':
+        // check if user is admin
+        if ($role !== 'admin') {
+            $logger->log('user is not admin', 2, echoToWeb: true);
+            header('Location: ?site=appearance');
+            die();
+        }
+
         echo '<div class="h-fit w-full p-4">';
 
         echo "
@@ -366,73 +432,27 @@ switch ($site) {
         echo "</div>";
         break;
     default:
-        $csrf = $auth->csrf();
         echo <<<HTML
-            <div class="h-fit w-full p-4">
-                <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold pb-6">Username</div>
-                    <form action="?set=username" method="post">
-                        <div class="pb-6">
-                            <label class="block mb-2" for="username">
-                                New Username
-                            </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username" name="username" min="2" max="255">
-                        </div>
-                        <div class="pb-6">
-                            <label class="block mb-2" for="password">
-                                Password
-                            </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
-                        </div>
-                        <div class="pb-6 flex justify-between items-center">
-                            <input type="hidden" name="csrf" value="$csrf">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
-                        </div>
-                    </form>
-                </div>
-                <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold py-6">E-Mail</div>
-                    <form action="?set=email" method="post">
-                        <div class="pb-6">
-                            <label class="block mb-2" for="email">
-                                New E-Mail
-                            </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254">
-                            </div>
-                        <div class="pb-6">
-                            <label class="block mb-2" for="password">
-                                Password
-                            </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
-                        </div>
-                        <div class="pb-6 flex justify-between items-center">
-                            <input type="hidden" name="csrf" value="$csrf">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
-                        </div>
-                    </form>
-                </div>
-                <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold py-6">Password</div>
-                    <form action="?set=password" method="post">
-                        <div class="pb-6">
-                            <label class="block mb-2" for="password">
-                                New Password
-                            </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
-                        </div>
-                        <div class="pb-6">
-                            <label class="block mb-2" for="password">
-                                Old Password
-                            </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="old_password" type="password" placeholder="Password" name="old_password" min="8" max="128">
-                        </div>
-                        <div class="pb-6 flex justify-between items-center">
-                            <input type="hidden" name="csrf" value="$csrf">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
-                        </div>
+        <div class="h-fit w-full p-4">
+            <p>Farbschema, Schriftart, Schriftgröße</p>
+            <div class="h-fit max-w-lg">
+                <div class="text-xl font-bold pb-6">Sprache</div>
+                <form action="?set=language" method="post">
+                    <div class="pb-6">
+                        <label class="block mb-2" for="username">
+                            Sprache
+                        </label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
+                            <option value="de-DE">Deutsch</option>
+                            <option value="en-EN">English</option>
+                        </select>
+                    </div>
+                    <div class="pb-6 flex justify-between items-center">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
                     </div>
                 </form>
             </div>
+        </div>
         HTML;
         break;
 };

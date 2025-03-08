@@ -535,6 +535,19 @@ class Auth {
             $result = $this->db_adapter->db_query($query);
             if (empty($result)) {
 
+                // create user role
+                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
+                $params = ['caption' => 'user', 'description' => 'user role created by portflow'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->role = $result[0]['uuid'];
+                $this->logger->log('creating user role', 1);
+
+                // set access right
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '0'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('disallowing api access for user role', 0);
+
                 // create ldap role
                 $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
                 $params = ['caption' => 'ldap', 'description' => 'ldap role created by portflow'];
@@ -566,6 +579,13 @@ class Auth {
                 $config = str_replace("const PORTFLOW_FIRST_RUN = TRUE;", "const PORTFLOW_FIRST_RUN = FALSE;", $config);
                 file_put_contents(__DIR__ . '/config.php', $config);
                 $this->logger->log('setting PORTFLOW_FIRST_RUN to FALSE', 0);
+            } else {
+                // get user role uuid
+                $query = "SELECT uuid FROM role WHERE caption = :caption";
+                $params = ['caption' => 'user'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->role = $result[0]['uuid'];
+                $this->logger->log('retrieving user role uuid', 1);
             }
 
             // check if user exists
