@@ -7,7 +7,9 @@ if (!defined('APP_NAME')) {
 }
 
 // import config
-include_once __DIR__ . '/config.php';
+if (file_exists(__DIR__ . '/config.php')) {
+    include_once __DIR__ . '/config.php';
+}
 
 // import logger
 include_once __DIR__ . '/logger.php';
@@ -23,23 +25,34 @@ class DatabaseAdapter {
 
     public function __construct() {
         $this->logger = new Logger();
-        $this->db_conn();
+
+        if (file_exists(__DIR__ . '/config.php')) {
+            $this->db_conn();
+        } else {
+            $this->logger->log('config.php not found', 3);
+        }
     }
 
     private function db_conn(){
         // server settings
-        $db_type = DB_TYPE;
-        $db_server = DB_SERVER;
-        $db_port = DB_PORT;
-        $db_dbname = DB_NAME;
-        $db_username = DB_USER;
-        $db_password = DB_PASSWORD;
+        $dbType = DB_TYPE;
+        $dbServer = DB_SERVER;
+        $dbPort = DB_PORT;
+        $dbName = DB_NAME;
+        $dbUsername = DB_USER;
+        $dbPassword = DB_PASSWORD;
+        $dbType = DB_TYPE;
+        $dbServer = DB_SERVER;
+        $dbPort = DB_PORT;
+        $dbName = DB_NAME;
+        $dbUsername = DB_USER;
+        $dbPassword = DB_PASSWORD;
 
         // create and check connection
         try {
-            $this->pdo = new PDO("$db_type:host=$db_server;port=$db_port;dbname=$db_dbname", $db_username, $db_password);
+            $this->pdo = new PDO("$dbType:host=$dbServer;port=$dbPort;dbname=$dbName", $dbUsername, $dbPassword);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $this->logger->log('pdo connection established');
+            $this->logger->log('pdo connection established', 0);
         } catch (PDOException $e) {
             $this->logger->log('pdo connection error: ' . $e->getMessage());
             throw new \Exception('pdo connection error ' . $e->getMessage());
@@ -51,7 +64,7 @@ class DatabaseAdapter {
             $stmt = $this->pdo->prepare("SELECT to_regclass('public.$tableName')");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
             if ($result && $result['to_regclass'] === null) {
                 $this->logger->log('table ' . $tableName . ' does not exist.', 3, echoToWeb: true);
                 // Die Tabelle existiert nicht
@@ -65,9 +78,8 @@ class DatabaseAdapter {
         }
     }
 
-
     public function db_query($query, $params = []){
-        $this->logger->log('starting query');
+        $this->logger->log("starting query: $query", 0);
     
         // prepare query
         $stmt = $this->pdo->prepare($query);
@@ -79,23 +91,45 @@ class DatabaseAdapter {
             }
             $stmt->bindValue(':'.$param, $value);
         }
+    
+        try {
+            $stmt->execute();
+            // Fetch results and return
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return $results;
+        } catch (\Exception $e) {
+            $this->logger->log('error during query execution: ' . $query . ' - ' . $e->getMessage());
+            throw $e;
+        }
 
-        $stmt->execute();
-
-        // fetch results and return
-        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        return $results;
+        // ============================================================= HIER CHANGELOG =============================================================
     }
-
+    
     public function db_init() {
         // get content of db_tables.json, convert to array
-        $db_tables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
-    
+        $dbTables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
+
+        // Store foreign keys for view creation
+        $foreignKeys = [];
+
         // iterate over array and create tables
-        foreach ($db_tables as $db_table => $columns) {
-            $query = "CREATE TABLE IF NOT EXISTS $db_table (";
-            foreach ($columns as $column => $column_type) {
-                $query .= "$column $column_type, ";
+        foreach ($dbTables as $dbTable => $columns) {
+            $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
+            foreach ($columns as $column => $columnType) {
+                $query .= "$column $columnType, ";
+                $this->logger->log("Column $column with type $columnType added to table $dbTable", 0);
+
+                // Check for foreign key definition
+                if (strpos($columnType, 'REFERENCES') !== false) {
+                    preg_match('/([a-zA-Z0-9_]+) REFERENCES ([a-zA-Z0-9_]+)\(([^)]+)\)/i', $columnType, $matches);
+                    if ($matches) {
+                        $foreignKeys[$dbTable][] = [
+                            'column' => $column,
+                            'referenced_table' => $matches[2],
+                            'referenced_column' => $matches[3]
+                        ];
+                    }
+                }
             }
             $query = rtrim($query, ', ') . ');';
 
@@ -109,12 +143,92 @@ class DatabaseAdapter {
                 // commit transaction
                 $this->pdo->commit();
 
-                $this->logger->log("finished for $db_table");
+                $this->logger->log("Created table $dbTable");
             } catch (\Exception $e) {
                 // roll back transaction if there was an error
                 $this->pdo->rollBack();
-                $this->logger->log('error during initialization of database: ' . $e->getMessage());
+                $this->logger->log('Error during initialization of database: ' . $e->getMessage());
+            }
+
+            try {
+                // create folder for each database table
+                $excludedTables = ['role', 'users', 'changelog', 'metadata', 'access', 'device_lifecycle'];
+                if (!file_exists(__DIR__ . '/../../data/' . $dbTable) && !in_array($dbTable, $excludedTables, true)) {
+                    mkdir(__DIR__ . '/../../data/' . $dbTable);
+                    $this->logger->log("Created folder for table $dbTable");
+                }
+            } catch (\Exception $e) {
+                $this->logger->log('Error during creation of folder for table: ' . $e->getMessage());
             }
         }
-    }        
+    
+        // Create views based on foreign keys
+        foreach ($foreignKeys as $mainTable => $fks) {
+            // Initialize the base SELECT clause and the JOIN clauses
+            $selectClause = [];
+            $joinClauses = [];
+            $mainTableAlias = 'm';
+
+            // Get columns of the main table
+            $mainColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$mainTable'");
+            $mainColumns = array_column($mainColumnsQuery, 'column_name');
+
+            // Add main table columns to the select clause
+            foreach ($mainColumns as $column) {
+                $selectClause[] = "$mainTableAlias.$column AS $column";
+            }
+
+            // Process each foreign key and create join clauses
+            foreach ($fks as $index => $fk) {
+                $referencedTable = $fk['referenced_table'];
+                $referencedTableAlias = 'r' . $index;
+
+                // Get columns of the referenced table
+                $referencedColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$referencedTable'");
+                $referencedColumns = array_column($referencedColumnsQuery, 'column_name');
+
+                // Add referenced table columns to the select clause with aliases
+                foreach ($referencedColumns as $column) {
+                    $selectClause[] = "$referencedTableAlias.$column AS {$referencedTable}_{$column}_$index";
+                }
+
+                // Add join clause for the foreign key
+                $joinClauses[] = "LEFT JOIN $referencedTable $referencedTableAlias ON $mainTableAlias.{$fk['column']} = $referencedTableAlias.{$fk['referenced_column']}";
+            }
+
+            // Combine all parts to create the view query
+            $selectClause = implode(', ', $selectClause);
+            $joinClauses = implode(' ', $joinClauses);
+
+            // Create the view name by adding '_join_' before each table
+            $viewNameParts = array_column($fks, 'referenced_table');
+            array_unshift($viewNameParts, $mainTable);
+            $viewName = implode('_join_', $viewNameParts);
+
+            $createViewQuery = "
+                CREATE OR REPLACE VIEW $viewName AS
+                SELECT $selectClause
+                FROM $mainTable $mainTableAlias
+                $joinClauses;
+            ";
+
+            try {
+                // start transaction
+                $this->pdo->beginTransaction();
+
+                // execute view creation query
+                $this->db_query($createViewQuery, []);
+
+                // commit transaction
+                $this->pdo->commit();
+
+                $this->logger->log("Created view $viewName");
+            } catch (\Exception $e) {
+                // roll back transaction if there was an error
+                $this->pdo->rollBack();
+                $this->logger->log('Error during creation of view: ' . $e->getMessage());
+            }
+        }
+        $this->logger->log("DB initialized");
+    }    
 }

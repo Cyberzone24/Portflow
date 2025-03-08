@@ -28,11 +28,11 @@ class Auth {
     private $username;
     private $password;
     private $email;
-    private $account_level;
+    private $role;
     // local_signin / local_signup
     private $uuid;
     private $password_db;
-    private $language;
+    private $settings;
     private $login_attempts;
     // ldap_signin
     private $ldap_server;
@@ -41,14 +41,15 @@ class Auth {
     private $ldap_userdn;
     private $ldap_found_user_dn;
     private $ldap_binduser_dn;
+    private $activation_code;
 
     public function __construct() {
         // define post variables
         $this->csrf = $_POST['csrf'] ?? NULL;
-        $this->username = $_POST['username'] ?? null;
-        $this->password = $_POST['password'] ?? null;
-        $this->email = $_POST['email'] ?? null;
-        $this->account_level = $_POST['account_level'] ?? 0;
+        $this->username = $_POST['username'] ?? NULL;
+        $this->password = $_POST['password'] ?? NULL;
+        $this->email = $_POST['email'] ?? NULL;
+        $this->role = $_POST['role'] ?? NULL;
 
         // create logger and db_adapter
         $this->logger = new Logger();
@@ -196,12 +197,13 @@ class Auth {
 
     public function signin() {
         // check csrf token
-        if ($this->csrf_check($_POST['csrf'])) {
+        if ($this->csrf_check()) {
             $this->logger->log('CSRF token correct', 1);
         } else {
             $this->logger->log('CSRF token not correct', 2, echoToWeb: true);
             throw new \Exception('CSRF token not correct');
         }
+
         // try local_signin
         $local_signin_result = $this->local_signin();
         if ($local_signin_result) {
@@ -212,16 +214,18 @@ class Auth {
         }
 
         // Try ldap_signin
-        $ldap_signin_result = $this->ldap_signin();
-        if ($ldap_signin_result) {
-            return true;
-        } else {
-            // Log the failure of ldap_signin
-            $this->logger->log("ldap_signin of '$this->username' failed", 3);
+        if (LDAP_ENABLED == TRUE) {
+            $ldap_signin_result = $this->ldap_signin();
+            if ($ldap_signin_result) {
+                return true;
+            } else {
+                // Log the failure of ldap_signin
+                $this->logger->log("ldap_signin of '$this->username' failed", 3);
+            }
         }
 
         // If both methods fail, redirect to the URI returned by PORTFLOW_HOSTNAME
-        $this->logger->log('all available signin methods failed. redirecting to ' . PORTFLOW_HOSTNAME, 0);
+        $this->logger->log('all available signin methods failed', 0, echoToWeb: true);
         header("Location: " . PORTFLOW_HOSTNAME);
         exit();
     }
@@ -235,23 +239,21 @@ class Auth {
             $this->local_signon('signin');
         
             // check if user exists
-            $query = "SELECT uuid, password, email, notification_setting, language, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
-            # for testing
-            # $query = "SELECT uuid, password, email, notification_setting, language, login_attempts FROM users WHERE username = :username";
-
+            $query = "SELECT uuid, password, email, notification_setting, settings, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
+            
             // execute query
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'activation_code' => 'activated']);
             # for testing
             # $result = $this->db_adapter->db_query($query, ['username' => $this->username]);
             $result = !empty($result) ? $result[0] : null;
             $this->logger->log('checking if user exists and account is activated');
-        
+
             if (!empty($result)) {
                 $this->logger->log('user exists and account is activated', 1);
 
                 $this->uuid = $result['uuid'];
                 $this->password_db = $result['password'];
-                $this->language = $result['language'];
+                $this->settings = $result['settings'];
                 $this->login_attempts = $result['login_attempts'];
 
                 // check if login attempts exceeded
@@ -265,6 +267,7 @@ class Auth {
                         $_SESSION['loggedin'] = TRUE;
                         $_SESSION['name'] = $this->username;
                         $_SESSION['uuid'] = $this->uuid;
+                        $_SESSION['settings'] = $this->settings;
 
                         // update database
                         $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
@@ -322,9 +325,6 @@ class Auth {
                     }
                 }
 
-            }else {
-                $this->logger->log('user does not exist or account is not activated', 2, echoToWeb: true);
-                throw new \Exception('user does not exist or account is not activated');
             }
         } catch (\Exception $e) {
             // Log the exception message with ERROR level
@@ -392,7 +392,7 @@ class Auth {
 
             if ($user_entries["count"] == 1) {
                 $this->logger->log("user '$this->username' matched with filter: '" . $filter . "'", 0);
-               
+
                 # Get User dn  
                 if (isset($user_entries[0]["dn"])) {
                     // Zugriff auf den 'dn' Wert des aktuellen Eintrags
@@ -404,12 +404,80 @@ class Auth {
                         // If the bind is successful, the user's credentials are valid
                         $this->logger->log("password verification successful", 0);
 
+                        // check if user exists
+                        $query = "SELECT uuid, notification_setting, activation_code, settings FROM users WHERE username = :username AND login_provider = :login_provider";
+            
+                        // execute query
+                        $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
+                        $result = !empty($result) ? $result[0] : null;
+                        $this->logger->log('checking if user exists in database');
+
+                        if (!empty($result)) {
+                            $this->logger->log('user exists in database', 1);
+
+                            $this->uuid = $result['uuid'];
+                            $this->password_db = $result['password'];
+                            $this->activation_code = $result['activation_code'] ?? NULL;
+                            $this->settings = $result['settings'];
+
+                            // update database
+                            $query = "UPDATE users SET last_login = NOW(), ip_address = :ip_address WHERE uuid = :uuid";
+
+                            // execute query
+                            $result = $this->db_adapter->db_query($query, ['ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+                        } else {
+                            $this->logger->log('user does not exist in database', 1);
+
+                            // get ldap role uuid
+                            $query = "SELECT uuid FROM role WHERE caption = :caption";
+                            $params = ['caption' => 'ldap'];
+                            $result = $this->db_adapter->db_query($query, $params);
+
+                            if (!empty($result)) {
+
+                                // create user account
+                                $query = "INSERT INTO users (role, login_provider, username, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :settings, :ip_address, :created, :changed) RETURNING uuid"; 
+
+                                // prepare vars for query
+                                $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
+                                $settings = [
+                                    'language' => $language
+                                ];
+
+                                // execute query
+                                $params = [
+                                    'role' => $result[0]['uuid'],
+                                    'login_provider' => 'ldap',
+                                    'username' => $this->username,
+                                    'settings' => json_encode($settings),
+                                    'ip_address' => $this->ip(),
+                                    'created' => 'NOW()',
+                                    'changed' => 'NOW()'
+                                ];
+                                $result = $this->db_adapter->db_query($query, $params);
+                                $this->uuid = $result[0]['uuid'];
+                                $this->logger->log('creating user account in database');
+                                $this->settings = $params['settings'];
+
+                            } else {
+                                $this->logger->log('ldap role does not exist', 3, echoToWeb: true);
+                                throw new \Exception('ldap role does not exist');
+                            }
+                        }
+
+                        // Check if the user is activated if LDAP_TRUST is TRUE
+                        if (LDAP_TRUST === TRUE && $this->activation_code !== 'activated') {
+                            $this->logger->log("user '$this->username' not activated", 2, true);
+                            throw new \Exception("user '$this->username' not activated");
+                        }
+
                         // create session
                         session_regenerate_id();
                         $_SESSION['loggedin'] = TRUE;
-                        $_SESSION['name'] = $this->username; // Oder $user_entries[0]["displayname"][0] für den vollständigen Namen
+                        $_SESSION['name'] = $this->username;
                         $_SESSION['uuid'] = $this->uuid;
-                    
+                        $_SESSION['settings'] = $this->settings;
+
                         if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME)) {
                             header('Location: ' . $_SESSION['referrer']);
                         } else {
@@ -420,6 +488,7 @@ class Auth {
 
                     } else {
                         // If the bind fails, the user's credentials are invalid
+                        $this->logger->log('password verification failed', echoToWeb: true);
                         throw new \Exception('password verification failed');
                     }
 
@@ -439,7 +508,7 @@ class Auth {
             // Log the exception message with ERROR level
             $this->logger->log($e->getMessage(), 3);
             return false;
-         } finally {
+        } finally {
             // Dieser Block wird ausgeführt, egal ob eine Ausnahme aufgetreten ist oder nicht.
             // Schließen Sie hier die LDAP-Verbindung
             if (isset($ldap_connection)) {
@@ -449,13 +518,56 @@ class Auth {
     }
 
     public function signup() {
+        if (PORTFLOW_FIRST_RUN === FALSE && PORTFLOW_REGISTER === FALSE) {
+            $this->logger->log('registration disabled', 2, echoToWeb: true);
+            throw new \Exception('registration disabled');
+        }
+
         try {
             if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
                 die("the database table 'users' doesn't exist. please run the init script.");
             }
             // check post data
             $this->local_signon('signup');
-        
+
+            // check if first user
+            $query = "SELECT uuid FROM users";
+            $result = $this->db_adapter->db_query($query);
+            if (empty($result)) {
+
+                // create ldap role
+                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
+                $params = ['caption' => 'ldap', 'description' => 'ldap role created by portflow'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->role = $result[0]['uuid'];
+                $this->logger->log('creating ldap role', 1);
+
+                // set access right
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '0'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('disallowing api access for ldap role', 0);
+
+                // create admin role
+                $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
+                $params = ['caption' => 'admin', 'description' => 'administrator role created by portflow'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->role = $result[0]['uuid'];
+                $this->logger->log('creating admin role and retrieving uuid', 1);
+
+                // set access right
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '7'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('allowing api access for admin role', 0);
+
+                // set FIRST_RUN to FALSE
+                $config = file_get_contents(__DIR__ . '/config.php');
+                $config = str_replace("const PORTFLOW_FIRST_RUN = TRUE;", "const PORTFLOW_FIRST_RUN = FALSE;", $config);
+                file_put_contents(__DIR__ . '/config.php', $config);
+                $this->logger->log('setting PORTFLOW_FIRST_RUN to FALSE', 0);
+            }
+
             // check if user exists
             $query = "SELECT uuid FROM users WHERE username = :username OR email = :email";
         
@@ -466,17 +578,20 @@ class Auth {
             foreach ($result as $row) {
                 if (!empty($row['uuid'])) {
                     $this->logger->log('user already exists', 2, echoToWeb: true);
-                    throw new \Exception('user exists');
+                    throw new \Exception('user already exists');
                 }
             }
             $this->logger->log('user does not exist', 1);
 
             // create user account
-            $query = "INSERT INTO users (username, password, email, activation_code, account_level, notification_setting, language, ip_address, created, last_changed) VALUES (:username, :password, :email, :activation_code, :account_level, :notification_setting, :language, :ip_address, :created, :last_changed)"; 
+            $query = "INSERT INTO users (role, login_provider, username, password, email, activation_code, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :password, :email, :activation_code, :settings, :ip_address, :created, :changed)"; 
 
             // prepare vars for query
             $activation_code = $this->random_string(10);
             $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
+            $settings = [
+                'language' => $language
+            ];
             
             // hash password
             $this->password = password_hash($this->password, PASSWORD_DEFAULT);
@@ -484,16 +599,16 @@ class Auth {
 
             // execute query
             $params = [
+                'login_provider' => 'local',
+                'role' => $this->role,
                 'username' => $this->username,
                 'password' => $this->password,
                 'email' => $this->email,
                 'activation_code' => $activation_code,
-                'account_level' => $this->account_level,
-                'notification_setting' => 5,
-                'language' => $language,
+                'settings' => json_encode($settings),
                 'ip_address' => $this->ip(),
                 'created' => 'NOW()',
-                'last_changed' => 'NOW()'
+                'changed' => 'NOW()'
             ];
             $result = $this->db_adapter->db_query($query, $params);
             $this->logger->log('creating user account');
@@ -562,4 +677,3 @@ class Auth {
         }
     }
 }
-?>

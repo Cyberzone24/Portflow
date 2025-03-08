@@ -6,6 +6,9 @@
     exit;
   }
 
+  // import alert function
+  include_once __DIR__ . '/includes/alert.php';
+
   // import auth
   include_once __DIR__ . '/includes/core/auth.php';
   use Portflow\Core\Auth;
@@ -26,12 +29,26 @@
     $auth->verify($_GET['code'], $_GET['email']);
   }
 
+  if (PORTFLOW_REGISTER === TRUE || PORTFLOW_FIRST_RUN === TRUE) {
+    $signup = TRUE;
+  } else {
+    $signup = FALSE;
+  }
+
   if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_GET['signup'])) {
+    if (isset($_GET['signup']) && $signup === TRUE) {
       $auth->signup();
     } elseif (isset($_GET['signin'])) {
       $auth->signin();
+    } else {
+      header('Location: ./');
+      exit;
     }
+  }
+
+  if (isset($_GET['signup']) && $signup === FALSE) {
+    header('Location: ./');
+    exit;
   }
 
   // Import alert function
@@ -40,11 +57,12 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portflow</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portflow</title>
+  <link rel="icon" href="./includes/img/portflow.ico" type="image/x-icon">
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="flex flex-col items-center justify-center h-screen bg-gray-200">
   <div class="bg-white shadow-lg rounded-2xl p-12 w-full max-w-lg">
@@ -53,14 +71,15 @@
         <img src='includes/img/portflow.png' alt='Portflow' class='max-h-18'>
       </div>
       <?php
-        if (isset($_GET['signup'])) {
-          echo '
+        if (isset($_GET['signup']) && $signup === TRUE) {
+          echo <<<HTML
             <div class="pb-6">
-              <label class="block mb-2" for="mail">
+              <label class="block mb-2" for="email">
                 E-Mail
               </label>
               <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email">
-            </div>';
+            </div>
+          HTML;
         }
       ?>
       <div class="pb-6">
@@ -77,8 +96,8 @@
       </div>
       <div class="pt-6 flex justify-between items-center">
         <input type="hidden" name="csrf" value="<?php echo $auth->csrf(); ?>">
-        <?php echo $instead; ?>
         <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="<?php echo $button; ?>">
+        <?php if ($signup === TRUE) { echo $instead; } ?>
       </div>
     </form>
   </div>

@@ -92,8 +92,8 @@ function displayForm($step) {
             });
         </script>
     </head>
-    <body>
-        <div class="flex flex-col items-center justify-center h-screen bg-gray-200">
+    <body class="bg-gray-300">
+        <div class="flex flex-col items-center justify-center h-screen">
             <div class="bg-white shadow-lg rounded-2xl p-12 w-full max-w-lg">
     HTML;
 
@@ -251,6 +251,10 @@ function displayForm($step) {
                     <input type="checkbox" id="ssl" name="ssl" value="true" checked class="border rounded w-5 h-5 focus:outline-none focus:shadow-outline">
                 </div>
                 <div class="pb-6">
+                    <label for="register">Allow user registration</label>
+                    <input type="checkbox" id="register" name="register" value="true" class="border rounded w-5 h-5 focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="pb-6">
                     <label for="log_level">Log Level</label>
                     <select id="log_level" name="log_level" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline">
                         <option value="0">DEBUG</option>
@@ -353,6 +357,10 @@ function displayForm($step) {
                     <h1 class='text-4xl font-bold'>LDAP Configuration (Optional)</h1>
                 </div>
                 <div class='pb-6'>
+                    <label class='block mb-2' for='ldap_enabled'>Enable LDAP Module</label>
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_enabled' name='ldap_enabled' value='false'>
+                </div>
+                <div class='pb-6'>
                     <label class='block mb-2' for='ldap_server'>LDAP Server</label>
                     <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_server' name='ldap_server' placeholder='ldap.domain.tld'>
                 </div>
@@ -383,6 +391,11 @@ function displayForm($step) {
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_bind_password'>LDAP Bind Password</label>
                     <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_bind_password' name='ldap_bind_password' placeholder='password'>
+                </div>
+                div class='pb-6'>
+                    <label class='block mb-2' for='ldap_trust'>LDAP Trust</label>
+                    <p>Allows the login of ldap accounts without activating them beforehand.</p>
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_trust' name='ldap_trust' value='false'>
                 </div>
                 <input type='hidden' name='step' value='4'>
                 <div class='pt-6 flex justify-between items-center'>
@@ -447,6 +460,7 @@ if (isset($_SESSION['step'])) {
         // SSL and hostname
         if (substr(filter_var($_POST['hostname'], FILTER_SANITIZE_URL), -1) === '/') { $config['HOSTNAME'] = rtrim(filter_var($_POST['hostname'], FILTER_SANITIZE_URL), '/'); }
         $config['SSL'] = isset($_POST['ssl']) ? 'TRUE' : 'FALSE';
+        $config['REGISTER'] = isset($_POST['register']) ? 'TRUE' : 'FALSE';
         $config['LOG_LEVEL'] = filter_var($_POST['log_level'], FILTER_SANITIZE_NUMBER_INT);
     } elseif ($step === 4) {
         // Server time
@@ -478,6 +492,7 @@ if (isset($_SESSION['step'])) {
         }
     } elseif ($step === 6) {
         // LDAP settings
+        $config['LDAP_ENABLED'] = isset($_POST['ldap_enabled']) ? 'TRUE' : 'FALSE';
         $config['LDAP_SERVER'] = isset($_POST['ldap_server']) ? filter_var($_POST['ldap_server'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
         $config['LDAP_PORT'] = isset($_POST['ldap_port']) ? filter_var($_POST['ldap_port'], FILTER_SANITIZE_NUMBER_INT) : NULL;
         $config['LDAP_BASEDN'] = isset($_POST['ldap_basedn']) ? filter_var($_POST['ldap_basedn'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
@@ -486,6 +501,7 @@ if (isset($_SESSION['step'])) {
         $config['LDAP_BIND'] = isset($_POST['ldap_bind']) ? 'TRUE' : 'FALSE';
         $config['LDAP_BIND_USER'] = isset($_POST['ldap_bind_user']) ? filter_var($_POST['ldap_bind_user'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
         $config['LDAP_BIND_PASSWORD'] = isset($_POST['ldap_bind_password']) ? filter_var($_POST['ldap_bind_password'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
+        $config['LDAP_TRUST'] = isset($_POST['ldap_trust']) ? 'TRUE' : 'FALSE';
     }
 
     if ($step < 6) {
@@ -528,7 +544,6 @@ if (isset($_SESSION['step'])) {
 }
 
 function createConfigFile($config) {
-    $portflowDevices = "array('--' => '<i class='fa-solid fa-ban'></i>', 'phone' => '<i class='fa-solid fa-phone'></i>', 'notebook' => '<i class='fa-solid fa-laptop'></i>', 'switch' => '<i class='fa-solid fa-network-wired'></i>', 'zeroclient' => '<i class='fa-solid fa-desktop'></i>', 'thinclient' => '<i class='fa-solid fa-computer'></i>', 'desktop' => '<i class='fa-brands fa-windows'></i>', 'access_point' => '<i class='fa-solid fa-wifi'></i>', 'printer' => '<i class='fa-solid fa-print'></i>', 'other' => '<i class='fa-solid fa-question'></i>')";
     $configContent = 
 "<?php
 // check if APP_NAME is defined
@@ -544,13 +559,15 @@ const DB_USER = '{$config['DB_USER']}';
 const DB_PASSWORD = '{$config['DB_PASSWORD']}';
 const PORTFLOW_HOSTNAME = '{$config['HOSTNAME']}';
 const PORTFLOW_SECURE = {$config['SSL']};
-const PORTFLOW_DEVICES = " . '"' . $portflowDevices . '"' . ";
+const PORTFLOW_REGISTER = {$config['REGISTER']};
+const PORTFLOW_FIRST_RUN = TRUE;
 const MAIL_HOST = '{$config['MAIL_HOST']}';
 const MAIL_USER = '{$config['MAIL_USER']}';
 const MAIL_PASSWORD = '{$config['MAIL_PASSWORD']}';
 const MAIL_PORT = '{$config['MAIL_PORT']}';
 const MAIL_SMTPAUTH = {$config['MAIL_SMTPAUTH']};
 const MAIL_SMTPSECURE = '{$config['MAIL_SMTPSECURE']}';
+const LDAP_ENABLED = '{$config['LDAP_ENABLED']}';
 const LDAP_SERVER = '{$config['LDAP_SERVER']}';
 const LDAP_PORT = '{$config['LDAP_PORT']}';
 const LDAP_BASEDN = '{$config['LDAP_BASEDN']}';
@@ -559,6 +576,7 @@ const LDAP_FILTER = '{$config['LDAP_FILTER']}';
 const LDAP_BIND = {$config['LDAP_BIND']};
 const LDAP_BIND_USER = '{$config['LDAP_BIND_USER']}';
 const LDAP_BIND_PASSWORD = '{$config['LDAP_BIND_PASSWORD']}';
+const LDAP_TRUST = {$config['LDAP_TRUST']};
 ";
 
     file_put_contents('includes/core/config.php', $configContent);
