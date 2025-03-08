@@ -336,7 +336,11 @@ function displayForm($step) {
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_smtpsecure'>SMTP Secure</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_smtpsecure' name='mail_smtpsecure' placeholder='tls / ssl'>
+                    <select class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id='mail_smtpsecure' name='mail_smtpsecure'>
+                        <option value=''>None</option>
+                        <option value='tls'>TLS</option>
+                        <option value='ssl'>SSL</option>
+                    </select>
                 </div>
                 <input type='hidden' name='step' value='3'>
                 <div class='pt-6 flex justify-between items-center'>
@@ -392,7 +396,7 @@ function displayForm($step) {
                     <label class='block mb-2' for='ldap_bind_password'>LDAP Bind Password</label>
                     <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_bind_password' name='ldap_bind_password' placeholder='password'>
                 </div>
-                div class='pb-6'>
+                <div class='pb-6'>
                     <label class='block mb-2' for='ldap_trust'>LDAP Trust</label>
                     <p>Allows the login of ldap accounts without activating them beforehand.</p>
                     <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_trust' name='ldap_trust' value='false'>
@@ -445,11 +449,13 @@ if (isset($_SESSION['step'])) {
         $config['DB_USER'] = filter_var($_POST['db_user'], FILTER_SANITIZE_SPECIAL_CHARS);
         $config['DB_PASSWORD'] = filter_var($_POST['db_password'], FILTER_SANITIZE_SPECIAL_CHARS);
 
-        // Create config file (needed for db_init)
+        // Create temporary config file (needed for db_init)
         $config['LOG_LEVEL'] = 1;
         $config['SSL'] = isset($_POST['ssl']) ? 'TRUE' : 'FALSE';
+        $config['REGISTER'] = isset($_POST['register']) ? 'TRUE' : 'FALSE';
         $config['MAIL_SMTPAUTH'] = isset($_POST['mail_smtpauth']) ? 'TRUE' : 'FALSE';
         $config['LDAP_BIND'] = isset($_POST['ldap_bind']) ? 'TRUE' : 'FALSE';
+        $config['LDAP_TRUST'] = isset($_POST['ldap_trust']) ? 'TRUE' : 'FALSE';
         createConfigFile($config);
 
         // Use db_init to create database
