@@ -84,18 +84,4 @@ class Mail {
             return true;
         }
     }
-
-    public function check() {
-        // check if mail is set
-        if (!isset($this->mail)) {
-            return false;
-        }
-
-        // check if mail is connected
-        if ($this->mail->isConnected()) {
-            return true;
-        }
-
-        return false;   
-    }
 }
