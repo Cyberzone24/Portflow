@@ -203,6 +203,35 @@
                     header('Location: ?site=account');
                 }
                 break;
+        
+            case 'language':
+                $language = $_POST['language'] ?? null;
+
+                // check inputs
+                if (mb_strlen($language) !== 5) {
+                    $logger->log('language length not correct', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+                if (empty($language)) {
+                    $logger->log('language empty', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                // find language in settings
+                $settings = json_decode($_SESSION['settings']);
+                $settings->language = $language;
+
+                // update session
+                $_SESSION['settings'] = json_encode($settings);
+
+                // update database
+                $query = "UPDATE users SET settings = :settings WHERE uuid = :uuid";
+                $result = $db_adapter->db_query($query, ['settings' => json_encode($settings), 'uuid' => $_SESSION['uuid']]);
+                $logger->log('language updated', 1, echoToWeb: true);
+                header('Location: ?site=appearance');
+                break;
         }
     } 
 ?>
@@ -210,6 +239,7 @@
     <div class="basis-1/6 flex flex-col gap-6">  
         <p><?php echo $lang['settings']; ?></p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
+            <!-- maybe dont show account section if ldap user ?? -->
             <a href="?site=account"><li class="bg-white py-2 px-4 <?php echo ($site == 'account') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['account']; ?></li></a>
             <a href="?site=appearance"><li class="bg-white py-2 px-4 <?php echo ($site == 'appearance') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['appearance']; ?></li></a>
             <a href="?site=notifications"><li class="bg-white py-2 px-4 <?php echo ($site == 'notifications') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['notifications']; ?></li></a>
@@ -226,18 +256,20 @@ switch ($site) {
                 <p>Farbschema, Schriftart, Schriftgröße</p>
                 <div class="h-fit max-w-lg">
                     <div class="text-xl font-bold pb-6">Sprache</div>
-                    <div class="pb-6">
-                        <label class="block mb-2" for="username">
-                            Sprache
-                        </label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
-                            <option value="de-DE">Deutsch</option>
-                            <option value="en-EN">English</option>
-                        </select>
-                    </div>
-                    <div class="pb-6 flex justify-between items-center">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
-                    </div>
+                    <form action="?set=language" method="post">
+                        <div class="pb-6">
+                            <label class="block mb-2" for="username">
+                                Sprache
+                            </label>
+                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
+                                <option value="de-DE">Deutsch</option>
+                                <option value="en-EN">English</option>
+                            </select>
+                        </div>
+                        <div class="pb-6 flex justify-between items-center">
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                        </div>
+                    </form>
                 </div>
             </div>
         HTML;
