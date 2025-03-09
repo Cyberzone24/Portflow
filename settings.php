@@ -32,10 +32,12 @@
     $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
     $role = $result[0]['role'];
 
-    // handle post requests
-    if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-        $set = $_GET['set'] ?? null;
+    // handle requests
+    $set = $_GET['set'] ?? null;
+    $get = $_GET['get'] ?? null;
 
+    // post
+    if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         switch ($set) {
             case 'username':
                 $username = $_POST['username'] ?? null;
@@ -257,7 +259,61 @@
                 $logger->log('account deleted', 1, echoToWeb: true);
                 header('Location: ?site=access');
                 break;
+            case 'activate_account':
+                $uuid = $_POST['uuid'] ?? null;
+
+                // check if user is admin
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // check inputs
+                if (empty($uuid)) {
+                    $logger->log('uuid empty', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // activate account
+                $query = "UPDATE users SET activation_code = :activation_code, changed = NOW() WHERE uuid = :uuid";
+                $result = $db_adapter->db_query($query, ['activation_code' => 'activated', 'uuid' => $uuid]);
+                $logger->log('account activated', 1, echoToWeb: true);
+                header('Location: ?site=access');
+                break;
+            default:
+                $logger->log('no set parameter', 2, echoToWeb: true);
+                header('Location: ?site=appearance');
+                die();
             }
+    // get
+    } elseif ($_SERVER['REQUEST_METHOD'] == 'GET' && $get == 'details') {
+        $uuid = $_GET['uuid'] ?? null;
+
+        // check if user is admin
+        if ($role !== 'admin') {
+            $logger->log('user is not admin', 2, echoToWeb: true);
+            header('Location: ?site=access');
+            die();
+        }
+
+        // check inputs
+        if (empty($uuid)) {
+            $logger->log('uuid empty', 2, echoToWeb: true);
+            header('Location: ?site=access');
+            die();
+        }
+
+        // get details
+        $query = "SELECT * FROM users WHERE uuid = :uuid";
+        $result = $db_adapter->db_query($query, ['uuid' => $uuid]);
+        $result = !empty($result) ? $result[0] : null;
+
+        if (!empty($result)) {
+            echo json_encode($result);
+        }
+        die();
     } else {
         // import header
         include_once __DIR__ . '/includes/header.php';
@@ -410,23 +466,11 @@ switch ($site) {
 
         echo '<div class="h-fit w-full p-4">';
 
-        echo "
-        - LDAP Accounts manuell erlauben
-        - Rollen verwalten
-        - Benutzer verwalten";
-
-        echo "
-        users 10 einträge, dann scroll
-
-        rollen 10 einträge, dann scroll
-
-        acl 10 einträge, dann scroll";
-
-        $query = "SELECT users.uuid, users.username, users.email, role.caption AS role, users.login_provider, users.ip_address, users.activation_code, TO_CHAR (users.last_login, 'HH24:MI DD.MM.YYYY') AS last_login, TO_CHAR (users.created, 'HH24:MI DD.MM.YYYY') AS created FROM users INNER JOIN role ON users.role = role.uuid";
+        $query = "SELECT users.uuid, users.username, users.email, role.caption AS role, users.login_provider, users.ip_address, CASE WHEN users.activation_code = 'activated' THEN 'activated' ELSE 'deactivated' END AS activation_code, TO_CHAR (users.last_login, 'HH24:MI DD.MM.YYYY') AS last_login, TO_CHAR (users.created, 'HH24:MI DD.MM.YYYY') AS created FROM users INNER JOIN role ON users.role = role.uuid";
         $results = $db_adapter->db_query($query);
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-6'>Accounts</div><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead>";
+            echo "<div class='text-xl font-bold pb-6'>Accounts</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
             echo "<tr class='border-b bg-gray-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
@@ -438,15 +482,30 @@ switch ($site) {
                 foreach ($row as $column) {
                     echo "<td class='p-2 border-b'>{$column}</td>";
                 }
-                echo "<td class='p-2 border-b flex flex-row gap-4'><form action='?set=delete_account' method='post'><input type='hidden' name='uuid' value='$uuid'><button class='h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center'><i data-lucide='trash'></i></button></form></td></tr>";
+                echo <<<HTML
+                    <td class='p-2 border-b flex flex-row gap-4'>
+                        <form action='?set=activate_account' method='post'>
+                            <input type='hidden' name='uuid' value='$uuid'>
+                            <button class='h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 text-white flex items-center justify-center'>
+                                <i data-lucide='check'></i>
+                            </button>
+                        </form>
+                        <button class='h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center' onclick="openDetailsPopup('$uuid')">
+                            <i data-lucide='info'></i>
+                        </button>
+                        <form action='?set=delete_account' method='post'>
+                            <input type='hidden' name='uuid' value='$uuid'>
+                            <button class='h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center'>
+                                <i data-lucide='trash'></i>
+                            </button>
+                        </form>
+                    </td>
+                HTML;
+                echo "</tr>";
+
                 $uuid = NULL;}
-            echo "</tbody></table>";
-            echo "username
-                password
-                email
-                role
-                remove tfa
-                de-/activate";
+
+            echo "</tbody></table></div>";
         } else {
             echo "No results found.";
         }
@@ -456,7 +515,7 @@ switch ($site) {
         $results = $db_adapter->db_query($query);
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-6'>Roles</div><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead>";
+            echo "<div class='text-xl font-bold pb-6'>Roles</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
             echo "<tr class='border-b bg-gray-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
@@ -469,7 +528,7 @@ switch ($site) {
                 }
                 echo "</tr>";
             }
-            echo "</tbody></table>";
+            echo "</tbody></table></div>";
         } else {
             echo "No results found.";
         }
@@ -479,7 +538,7 @@ switch ($site) {
         $results = $db_adapter->db_query($query);
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-6'>Access Rights</div><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead>";
+            echo "<div class='text-xl font-bold pb-6'>Access Rights</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
             echo "<tr class='border-b bg-gray-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
@@ -492,12 +551,57 @@ switch ($site) {
                 }
                 echo "</tr>";
             }
-            echo "</tbody></table>";
+            echo "</tbody></table></div>";
         } else {
             echo "No results found.";
         }
 
-        echo "</div>";
+        echo <<<HTML
+        <pre>
+        - LDAP Accounts manuell erlauben
+
+        username
+        password
+        email
+        role
+        remove tfa
+        de-/activate
+        </pre>
+            </div>
+            <!-- Details Popup -->
+            <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden">
+                <div class="flex justify-between pb-6">
+                    <div class="text-xl font-bold">Details</div>
+                    <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
+                        <button type="button" onclick="closeDetailsPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
+                    </div>
+                </div>
+                <div id="detailsContent" class="space-y-2"></div>
+            </div>
+            <script>
+                function openDetailsPopup(uuid) {
+                    ajaxGet('?get=details&uuid=' + uuid, function(response) {
+                        let formatted = JSON.stringify(response, null, 2);
+                        document.getElementById('detailsContent').innerHTML = '<pre>' + formatted + '</pre>';
+                    });
+                
+                    document.getElementById('detailsPopup').classList.remove('hidden');
+                    document.getElementById('detailsContent').innerHTML = 'Details for ' + uuid;
+                }
+                function ajaxGet(url, successCallback, errorCallback) {
+                    $.ajax({
+                        url: url,
+                        type: 'GET',
+                        dataType: 'json',
+                        success: successCallback,
+                        error: function(jqXHR) {
+                            console.log('Error:', jqXHR.responseText);
+                            if (errorCallback) errorCallback(jqXHR);
+                        }
+                    });
+                }
+            </script>
+        HTML;
         break;
     case 'scripts':
         echo "Skripte für Automatisierung, Cronjobs";

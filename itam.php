@@ -416,7 +416,7 @@ function displayTable(columnsConfig, userColumns, rows) {
 
     let trHead = $('<tr class="border-b bg-gray-200">');
     userColumns.forEach(colKey => trHead.append($('<th class="p-2">').text(columnsConfig[colKey] || colKey)));
-    trHead.append($('<th class="p-2">Details</th>'));
+    trHead.append($('<th class="p-2">Actions</th>'));
     $tableHead.append(trHead);
 
     rows.forEach(row => {
