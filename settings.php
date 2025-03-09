@@ -27,6 +27,12 @@
     use Portflow\Core\Mail;
     $mail = new Mail();
 
+    // get user role from db
+    $query = "SELECT role.caption AS role FROM users INNER JOIN role ON users.role = role.uuid WHERE users.uuid = :uuid";
+    $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
+    $role = $result[0]['role'];
+
+    // handle post requests
     if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $set = $_GET['set'] ?? null;
 
@@ -70,7 +76,7 @@
                     if (!empty($result)) {
                         if (password_verify($password, $result['password'])) {
                             // update database
-                            $query = "UPDATE users SET username = :new_username WHERE uuid = :uuid";
+                            $query = "UPDATE users SET username = :new_username, changed = NOW() WHERE uuid = :uuid";
                             $result = $db_adapter->db_query($query, ['new_username' => $username, 'uuid' => $_SESSION['uuid']]);
                             $_SESSION['name'] = $username;
                             $logger->log('username updated', 1, echoToWeb: true);
@@ -131,7 +137,7 @@
                             $activation_code = $auth->random_string(10);
 
                             // update database
-                            $query = "UPDATE users SET email = :new_email, activation_code = :activation_code WHERE uuid = :uuid";
+                            $query = "UPDATE users SET email = :new_email, activation_code = :activation_code, changed = NOW() WHERE uuid = :uuid";
                             $result = $db_adapter->db_query($query, ['new_email' => $email, 'activation_code' => $activation_code, 'uuid' => $_SESSION['uuid']]);
 
                             // send activation mail
@@ -187,7 +193,7 @@
                     if (!empty($result)) {
                         if (password_verify($old_password, $result['password'])) {
                             // update database
-                            $query = "UPDATE users SET password = :new_password WHERE uuid = :uuid";
+                            $query = "UPDATE users SET password = :new_password, changed = NOW() WHERE uuid = :uuid";
                             $result = $db_adapter->db_query($query, ['new_password' => password_hash($password, PASSWORD_DEFAULT), 'uuid' => $_SESSION['uuid']]);
                             $logger->log('password updated', 1, echoToWeb: true);
                         } else {
@@ -223,30 +229,48 @@
                 $_SESSION['settings'] = json_encode($settings);
 
                 // update database
-                $query = "UPDATE users SET settings = :settings WHERE uuid = :uuid";
+                $query = "UPDATE users SET settings = :settings, changed = NOW() WHERE uuid = :uuid";
                 $result = $db_adapter->db_query($query, ['settings' => json_encode($settings), 'uuid' => $_SESSION['uuid']]);
                 $logger->log('language updated', 1, echoToWeb: true);
                 header('Location: ?site=appearance');
                 break;
-        }
+            case 'delete_account':
+                $uuid = $_POST['uuid'] ?? null;
+
+                // check if user is admin
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // check inputs
+                if (empty($uuid)) {
+                    $logger->log('uuid empty', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // delete account
+                $query = "DELETE FROM users WHERE uuid = :uuid";
+                $result = $db_adapter->db_query($query, ['uuid' => $uuid]);
+                $logger->log('account deleted', 1, echoToWeb: true);
+                header('Location: ?site=access');
+                break;
+            }
     } else {
         // import header
         include_once __DIR__ . '/includes/header.php';
 
-        // get user role from db
-        $query = "SELECT role.caption AS role FROM users INNER JOIN role ON users.role = role.uuid WHERE users.uuid = :uuid";
-        $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
-        $role = $result[0]['role'];
-
         // get site
-        $site = $_GET['site'] ?? 'account';
+        $site = $_GET['site'] ?? NULL;
     }
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6">  
         <p><?php echo $lang['settings']; ?></p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <a href="?site=appearance"><li class="bg-white py-2 px-4 <?php echo ($site == 'appearance') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['appearance']; ?></li></a>
+            <a href="?site=appearance"><li class="bg-white py-2 px-4 <?php echo ($site == 'appearance' || $site == NULL) ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['appearance']; ?></li></a>
             <?php echo ($role !== 'ldap') ? '<a href="?site=account"><li class="bg-white py-2 px-4 ' . ($site == 'account' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['account'] . '</li></a>' : ''; ?>
             <a href="?site=notifications"><li class="bg-white py-2 px-4 <?php echo ($site == 'notifications') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['notifications']; ?></li></a>
             <a href="?site=configuration"><li class="bg-white py-2 px-4 <?php echo ($site == 'configuration') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['configuration']; ?></li></a>
@@ -335,7 +359,36 @@ switch ($site) {
         HTML;
         break;
     case 'notifications':
-        echo "Benachrichtigungen, Anbieter";
+        echo <<<HTML
+        <div class="h-fit w-full p-4">
+            <div class="h-fit max-w-lg">
+                <div class="text-xl font-bold pb-6">Benachrichtigungen</div>
+                <form action="?set=notification" method="post">
+                    <div class="pb-6">
+                        <label class="block mb-2" for="notification">
+                            Benachrichtigung
+                        </label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification" type="text" name="notification">
+                            <option value="1">Level 1</option>
+                            <option value="2">Level 2</option>
+                            <option value="3">Level 3</option>
+                        </select>
+                    </div>
+                    <div class="pb-6">
+                        <label class="block mb-2" for="provider">
+                            Anbieter
+                        </label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="provider" type="text" name="provider">
+                            <option value="mail">Mail</option>
+                        </select>
+                    </div>
+                    <div class="pb-6 flex justify-between items-center">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                    </div>
+                </form>
+            </div>
+        </div>
+        HTML;
         break;
     case 'configuration':
         // check if user is admin
@@ -369,7 +422,7 @@ switch ($site) {
 
         acl 10 einträge, dann scroll";
 
-        $query = "SELECT users.username, users.email, role.caption AS role, users.login_provider, users.ip_address, users.activation_code, users.last_login, users.created FROM users INNER JOIN role ON users.role = role.uuid";
+        $query = "SELECT users.uuid, users.username, users.email, role.caption AS role, users.login_provider, users.ip_address, users.activation_code, TO_CHAR (users.last_login, 'HH24:MI DD.MM.YYYY') AS last_login, TO_CHAR (users.created, 'HH24:MI DD.MM.YYYY') AS created FROM users INNER JOIN role ON users.role = role.uuid";
         $results = $db_adapter->db_query($query);
 
         if ($results) {
@@ -378,15 +431,22 @@ switch ($site) {
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
             }
-            echo "</tr></thead><tbody>";
-            foreach ($results as $row) {
+            echo "<th class='p-2'>Actions</th></tr></thead><tbody>";
+            foreach ($results as $row) { 
+                $uuid = $row['uuid'];
                 echo "<tr class='hover:bg-gray-200'>";
                 foreach ($row as $column) {
                     echo "<td class='p-2 border-b'>{$column}</td>";
                 }
-                echo "</tr>";
-            }
+                echo "<td class='p-2 border-b flex flex-row gap-4'><form action='?set=delete_account' method='post'><input type='hidden' name='uuid' value='$uuid'><button class='h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center'><i data-lucide='trash'></i></button></form></td></tr>";
+                $uuid = NULL;}
             echo "</tbody></table>";
+            echo "username
+                password
+                email
+                role
+                remove tfa
+                de-/activate";
         } else {
             echo "No results found.";
         }
@@ -446,12 +506,11 @@ switch ($site) {
     default:
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <p>Farbschema, Schriftart, Schriftgröße</p>
             <div class="h-fit max-w-lg">
                 <div class="text-xl font-bold pb-6">Sprache</div>
                 <form action="?set=language" method="post">
                     <div class="pb-6">
-                        <label class="block mb-2" for="username">
+                        <label class="block mb-2" for="language">
                             Sprache
                         </label>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
@@ -464,6 +523,7 @@ switch ($site) {
                     </div>
                 </form>
             </div>
+            <p>Farbschema, Schriftart, Schriftgröße</p>
         </div>
         HTML;
         break;
