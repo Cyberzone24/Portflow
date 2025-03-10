@@ -55,7 +55,10 @@
                     "label": "Parent Location",
                     "type": "searchDropdown",
                     "resource": "location_join_metadata_join_location",
-                    "valueKey": "uuid",
+                    "dependencies": {
+                        "typeMax": "type",
+                        "location": "parent_location"
+                    },
                     "required": false
                 },
                 "rotation": {

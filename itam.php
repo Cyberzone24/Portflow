@@ -230,11 +230,23 @@ function generateField(name, config) {
             textInput.addEventListener('input', async () => {
                 try {
                     dropdownList.innerHTML = '';
-                    const search = textInput.value;
-                    const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/' + config.resource + '?search=' + encodeURIComponent(search));
+                    let searchUrl = '<?php echo PORTFLOW_HOSTNAME; ?>/api/' + config.resource;
+                    const params = new URLSearchParams();
+                    params.set('search', textInput.value);
+            
+                    if(config.dependencies) {
+                        Object.entries(config.dependencies).forEach(([queryParam, fieldName]) => {
+                            const depField = document.querySelector(`[name="${fieldName}"]`);
+                            if(depField && depField.value) {
+                                params.set(queryParam, depField.value);
+                            }
+                        });
+                    }
+            
+                    const response = await fetch(searchUrl + '?' + params.toString());
                     const results = await response.json();
                     dropdownList.classList.remove('hidden');
-        
+                    
                     results.items.forEach(item => {
                         const entry = document.createElement('div');
                         entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
@@ -246,7 +258,7 @@ function generateField(name, config) {
                         };
                         dropdownList.appendChild(entry);
                     });
-                } catch (e) {
+                } catch(e) {
                     console.error(e);
                 }
             });
