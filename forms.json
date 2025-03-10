@@ -201,7 +201,11 @@
                 },
                 "ip_range": {
                     "label": "IP-Range",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "ip_range_join_metadata",
+                    "dependencies": {
+                        "ip_range": "ip_range"
+                    },
                     "required": false
                 },
                 "vlan": {

@@ -13,8 +13,6 @@
     include_once __DIR__ . '/includes/header.php';
 
     $limit = $_COOKIE['table_limit'] ?? 100;
-
-    $_SESSION['settings'] = '{"language": "de", "tables": { "location_join_metadata_join_location": ["type", "metadata_status_0", "metadata_tags_0", "metadata_caption_0"] } }';
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/6 flex flex-col gap-6 overflow-y-scroll">  
@@ -78,6 +76,17 @@
     </div>
 </div>
 <script>
+// search
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.querySelector('#searchForm input[name="search"]');
+    searchInput.addEventListener('input', () => {
+        loadTable(currentTable, searchInput.value);
+    });
+});
+function searchTable(event) {
+    event.preventDefault();
+}
+
 // Generate form
 async function generateFormFromJSON(table = 'location_join_metadata_join_location') {
     try {
@@ -437,7 +446,9 @@ function loadTable(table = 'location_join_metadata_join_location', search = '', 
         let { columns, default: defaultColumns } = config[table];
         let userColumns = loadUserColumns(table, defaultColumns);
 
-        ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}`, data => {
+        if (search) { query = `?search=${search}`; } else { query = ''; }
+
+        ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
             $('#count').text('Datensätze: ' + parseInt(data.pageInfo.totalResults));
             displayTable(columns, userColumns, data.items);
             generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
@@ -593,55 +604,6 @@ function deleteEntry(uuid, rowData) {
             console.error('Error fetching forms.json:', error);
         });
     }
-}
-
-// Search functions
-$(document).ready(function() {
-    $('#type').on('change', function() {
-        var typeValue = $(this).val();
-        var searchQuery = 'typeMax=' + typeValue;
-        loadDropdown(searchQuery);
-    });
-    $('#search').on('input', function() {
-            var search = $(this).val();
-            var typeValue = $('#type').val();
-            var searchQuery = 'typeMax=' + typeValue + '&search=' + search;
-            loadDropdown(searchQuery);
-        });
-});
-
-// Dropdown
-function loadDropdown(search) {
-    var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/location_join_metadata_join_location/?' + search;
-
-    // AJAX-GET-Anfrage mit Helferfunktionen
-    $.get(url, function(data) {
-        var dropdown = $('#location_search');
-        dropdown.empty(); // Vorhandene Optionen löschen
-
-        if (data && data.items && data.items.length > 0) {
-            data.items.forEach(function(item) {
-                var option = $('<div class="hover:bg-gray-100 py-2 px-4 rounded-3xl cursor-pointer">')
-                    .text(item.metadata_caption_0)
-                    .attr('data-value', item.uuid);
-
-                dropdown.append(option);
-
-                // Klick-Event für die Dropdown-Option
-                option.on('click', function() {
-                    $('#search').val(item.metadata_caption_0);
-                    $('#parent_location').val(item.uuid);
-                    dropdown.hide();
-                });
-            });
-            dropdown.show(); // Dropdown anzeigen, wenn Optionen hinzugefügt wurden
-        } else {
-            dropdown.append($('<div class="p-2 text-gray-500">').text('Keine Ergebnisse gefunden'));
-            dropdown.show();
-        }
-    }).fail(function(jqXHR, textStatus, errorThrown) {
-        console.log('Fehler beim Laden der Dropdown-Daten:', jqXHR.responseText);
-    });
 }
 
 // Save user column preferences
