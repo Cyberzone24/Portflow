@@ -404,8 +404,11 @@ class Auth {
                         // If the bind is successful, the user's credentials are valid
                         $this->logger->log("password verification successful", 0);
 
+                        // get user email from ldap
+                        $this->email = $user_entries[0]["mail"][0] ?? NULL;
+
                         // check if user exists
-                        $query = "SELECT uuid, notification_setting, activation_code, settings FROM users WHERE username = :username AND login_provider = :login_provider";
+                        $query = "SELECT uuid, email, activation_code, notification_setting, settings, login_attempts FROM users WHERE username = :username AND login_provider = :login_provider";
             
                         // execute query
                         $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
@@ -416,15 +419,25 @@ class Auth {
                             $this->logger->log('user exists in database', 1);
 
                             $this->uuid = $result['uuid'];
+                            $this->email = $result['email'];
                             $this->password_db = $result['password'];
                             $this->activation_code = $result['activation_code'] ?? NULL;
                             $this->settings = $result['settings'];
+                            $this->login_attempts = $result['login_attempts'];
 
-                            // update database
-                            $query = "UPDATE users SET last_login = NOW(), ip_address = :ip_address WHERE uuid = :uuid";
+                            if ($this->login_attempts <= 3 && $this->email !== NULL) {
+                                // update database
+                                $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
 
-                            // execute query
-                            $result = $this->db_adapter->db_query($query, ['ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+                                // execute query
+                                $result = $this->db_adapter->db_query($query, ['login_attempts' => NULL, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+                            } else {
+                                // update database
+                                $query = "UPDATE users SET activation_code = :activation_code, last_login_attempt = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
+
+                                // execute query
+                                $result = $this->db_adapter->db_query($query, ['activation_code' => $this->random_string(10), 'login_attempts' => $this->login_attempts + 1, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+                            }
                         } else {
                             $this->logger->log('user does not exist in database', 1);
 
@@ -436,7 +449,7 @@ class Auth {
                             if (!empty($result)) {
 
                                 // create user account
-                                $query = "INSERT INTO users (role, login_provider, username, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :settings, :ip_address, :created, :changed) RETURNING uuid"; 
+                                $query = "INSERT INTO users (role, login_provider, username, email, activation_code, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :email, :activation_code, :settings, :ip_address, :created, :changed) RETURNING uuid"; 
 
                                 // prepare vars for query
                                 $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
@@ -444,11 +457,15 @@ class Auth {
                                     'language' => $language
                                 ];
 
+                                LDAP_TRUST ? $this->activation_code = 'activated' : $this->activation_code = $this->random_string(10);
+
                                 // execute query
                                 $params = [
                                     'role' => $result[0]['uuid'],
                                     'login_provider' => 'ldap',
                                     'username' => $this->username,
+                                    'email' => $this->email,
+                                    'activation_code' => $this->activation_code,
                                     'settings' => json_encode($settings),
                                     'ip_address' => $this->ip(),
                                     'created' => 'NOW()',
@@ -467,6 +484,12 @@ class Auth {
 
                         // Check if the user is activated if LDAP_TRUST is TRUE
                         if (LDAP_TRUST === TRUE && $this->activation_code !== 'activated') {
+                            $this->logger->log("user '$this->username' not activated", 2, true);
+                            throw new \Exception("user '$this->username' not activated");
+                        } elseif (LDAP_TRUST === FALSE && $this->activation_code !== 'activated') {
+                            $this->logger->log("user '$this->username' not activated", 2, true);
+                            throw new \Exception("user '$this->username' not activated");
+                        } elseif ($this->activation_code == 'deactivated') {
                             $this->logger->log("user '$this->username' not activated", 2, true);
                             throw new \Exception("user '$this->username' not activated");
                         }

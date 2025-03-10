@@ -214,13 +214,59 @@ function generateField(name, config) {
             field = document.createElement('input');
             field.type = 'checkbox';
             break;
+        case 'searchDropdown': {
+            const textInput = document.createElement('input');
+            textInput.type = 'text';
+            textInput.placeholder = config.placeholder || config.label;
+            textInput.className = 'w-full py-2 px-4 border rounded-full';
+        
+            const hiddenField = document.createElement('input');
+            hiddenField.type = 'hidden';
+            hiddenField.name = name;
+
+            const dropdownList = document.createElement('div');
+            dropdownList.className = 'absolute bg-white border rounded-lg w-full z-10 mt-12 hidden';
+
+            textInput.addEventListener('input', async () => {
+                try {
+                    dropdownList.innerHTML = '';
+                    const search = textInput.value;
+                    const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/' + config.resource + '?search=' + encodeURIComponent(search));
+                    const results = await response.json();
+                    dropdownList.classList.remove('hidden');
+        
+                    results.items.forEach(item => {
+                        const entry = document.createElement('div');
+                        entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
+                        entry.textContent = item.metadata_caption_0;
+                        entry.onclick = () => {
+                            textInput.value = item.metadata_caption_0;
+                            hiddenField.value = item.uuid;
+                            dropdownList.classList.add('hidden');
+                        };
+                        dropdownList.appendChild(entry);
+                    });
+                } catch (e) {
+                    console.error(e);
+                }
+            });
+
+            field = textInput;
+
+            wrapper.appendChild(field);
+            wrapper.appendChild(hiddenField);
+            wrapper.appendChild(dropdownList);
+            break;
+        }
         default:
             console.error(`Unsupported field type: ${config.type}`);
             return wrapper;
     }
 
     if (field) {
-        field.name = name;
+        if (config.type !== 'searchDropdown') {
+            field.name = name;
+        }
         field.placeholder = config.label;
         if (config.required) {
             field.required = true;

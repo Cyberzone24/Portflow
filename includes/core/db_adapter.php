@@ -154,7 +154,7 @@ class DatabaseAdapter {
                 // create folder for each database table
                 $excludedTables = ['role', 'users', 'changelog', 'metadata', 'access', 'device_lifecycle'];
                 if (!file_exists(__DIR__ . '/../../data/' . $dbTable) && !in_array($dbTable, $excludedTables, true)) {
-                    mkdir(__DIR__ . '/../../data/' . $dbTable);
+                    mkdir(__DIR__ . '/../../data/' . $dbTable, 0755, true);
                     $this->logger->log("Created folder for table $dbTable");
                 }
             } catch (\Exception $e) {

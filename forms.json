@@ -53,7 +53,9 @@
                 },
                 "parent_location": {
                     "label": "Parent Location",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "location_join_metadata_join_location",
+                    "valueKey": "uuid",
                     "required": false
                 },
                 "rotation": {

@@ -239,6 +239,13 @@
             case 'delete_account':
                 $uuid = $_POST['uuid'] ?? null;
 
+                // check if uuid is from user itself
+                if ($uuid == $_SESSION['uuid']) {
+                    $logger->log('user tried to delete itself', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
                 // check if user is admin
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -280,6 +287,36 @@
                 $query = "UPDATE users SET activation_code = :activation_code, changed = NOW() WHERE uuid = :uuid";
                 $result = $db_adapter->db_query($query, ['activation_code' => 'activated', 'uuid' => $uuid]);
                 $logger->log('account activated', 1, echoToWeb: true);
+                header('Location: ?site=access');
+                break;
+            case 'deactivate_account':
+                $uuid = $_POST['uuid'] ?? null;
+
+                // check if uuid is from user itself
+                if ($uuid == $_SESSION['uuid']) {
+                    $logger->log('user tried to deactivate itself', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // check if user is admin
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // check inputs
+                if (empty($uuid)) {
+                    $logger->log('uuid empty', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                // deactivate account
+                $query = "UPDATE users SET activation_code = :activation_code, changed = NOW() WHERE uuid = :uuid";
+                $result = $db_adapter->db_query($query, ['activation_code' => 'deactivated', 'uuid' => $uuid]);
+                $logger->log('account deactivated', 1, echoToWeb: true);
                 header('Location: ?site=access');
                 break;
             default:
@@ -478,22 +515,37 @@ switch ($site) {
             echo "<th class='p-2'>Actions</th></tr></thead><tbody>";
             foreach ($results as $row) { 
                 $uuid = $row['uuid'];
+                $activation_code = $row['activation_code'];
+
+                if ($activation_code == 'activated') {
+                    $form_action = 'deactivate_account';
+                    $button = "
+                            <button class='h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center'>
+                                <i data-lucide='x'></i>
+                            </button>";
+                } else {
+                    $form_action = 'activate_account';
+                    $button = "
+                            <button class='h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 text-white flex items-center justify-center'>
+                                <i data-lucide='check'></i>
+                            </button>";
+                }
+
                 echo "<tr class='hover:bg-gray-200'>";
                 foreach ($row as $column) {
                     echo "<td class='p-2 border-b'>{$column}</td>";
                 }
+
                 echo <<<HTML
                     <td class='p-2 border-b flex flex-row gap-4'>
-                        <form action='?set=activate_account' method='post'>
+                        <form action='?set=$form_action' method='post' class='m-0'>
                             <input type='hidden' name='uuid' value='$uuid'>
-                            <button class='h-10 w-10 rounded-full bg-green-500 hover:bg-green-700 text-white flex items-center justify-center'>
-                                <i data-lucide='check'></i>
-                            </button>
+                            $button
                         </form>
                         <button class='h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center' onclick="openDetailsPopup('$uuid')">
                             <i data-lucide='info'></i>
                         </button>
-                        <form action='?set=delete_account' method='post'>
+                        <form action='?set=delete_account' method='post' class='m-0'>
                             <input type='hidden' name='uuid' value='$uuid'>
                             <button class='h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center'>
                                 <i data-lucide='trash'></i>
@@ -558,14 +610,11 @@ switch ($site) {
 
         echo <<<HTML
         <pre>
-        - LDAP Accounts manuell erlauben
-
         username
         password
         email
         role
         remove tfa
-        de-/activate
         </pre>
             </div>
             <!-- Details Popup -->
@@ -587,6 +636,9 @@ switch ($site) {
                 
                     document.getElementById('detailsPopup').classList.remove('hidden');
                     document.getElementById('detailsContent').innerHTML = 'Details for ' + uuid;
+                }
+                function closeDetailsPopup() {
+                    document.getElementById('detailsPopup').classList.add('hidden');
                 }
                 function ajaxGet(url, successCallback, errorCallback) {
                     $.ajax({
