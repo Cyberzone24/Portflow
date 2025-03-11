@@ -236,13 +236,25 @@ function generateField(name, config) {
             const dropdownList = document.createElement('div');
             dropdownList.className = 'absolute bg-white border rounded-lg w-full z-10 mt-12 hidden';
 
+            let lastSelectedText = '';
+
             textInput.addEventListener('input', async () => {
+                // Falls keine Eingabe:
+                if (!textInput.value) {
+                    hiddenField.value = '';
+                }
+                // Falls es wieder eine Abweichung vom zuletzt gewählten Eintrag gibt:
+                else if (textInput.value !== lastSelectedText) {
+                    hiddenField.value = '';
+                }
+
                 try {
+                    // Danach das Dropdown neu laden
                     dropdownList.innerHTML = '';
                     let searchUrl = '<?php echo PORTFLOW_HOSTNAME; ?>/api/' + config.resource;
                     const params = new URLSearchParams();
                     params.set('search', textInput.value);
-            
+
                     if(config.dependencies) {
                         Object.entries(config.dependencies).forEach(([queryParam, fieldName]) => {
                             const depField = document.querySelector(`[name="${fieldName}"]`);
@@ -251,11 +263,11 @@ function generateField(name, config) {
                             }
                         });
                     }
-            
+
                     const response = await fetch(searchUrl + '?' + params.toString());
                     const results = await response.json();
                     dropdownList.classList.remove('hidden');
-                    
+
                     results.items.forEach(item => {
                         const entry = document.createElement('div');
                         entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
@@ -263,6 +275,7 @@ function generateField(name, config) {
                         entry.onclick = () => {
                             textInput.value = item.metadata_caption_0;
                             hiddenField.value = item.uuid;
+                            lastSelectedText = item.metadata_caption_0;
                             dropdownList.classList.add('hidden');
                         };
                         dropdownList.appendChild(entry);
@@ -442,6 +455,9 @@ function loadTable(table = 'location_join_metadata_join_location', search = '', 
     // Tabellenhervorhebung aktualisieren
     updateActiveTab(table);
 
+    // Close Details Popup
+    closeDetailsPopup();
+
     ajaxGet(configUrl, config => {
         let { columns, default: defaultColumns } = config[table];
         let userColumns = loadUserColumns(table, defaultColumns);
@@ -531,7 +547,10 @@ function openDetailsPopup(rowData) {
 }
 
 function closeDetailsPopup() {
-    $('#detailsPopup').addClass('hidden');
+    // only if detailsPopup is open
+    if (!$('#detailsPopup').hasClass('hidden')) {
+        $('#detailsPopup').addClass('hidden');
+    }
 }
 
 // Delete entry

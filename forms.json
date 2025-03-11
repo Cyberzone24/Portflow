@@ -264,7 +264,11 @@
                 },
                 "location": {
                     "label": "Location",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "location_join_metadata_join_location",
+                    "dependencies": {
+                        "location": "location"
+                    },
                     "required": false
                 },
                 "expected_location": {
