@@ -408,12 +408,20 @@
                 },
                 "device": {
                     "label": "Device",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "device_join_metadata_join_location_join_location",
+                    "dependencies": {
+                        "device": "device"
+                    },
                     "required": false
                 },
                 "vlan": {
                     "label": "VLAN",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "vlan_join_metadata_join_ip_range",
+                    "dependencies": {
+                        "vlan": "vlan"
+                    },
                     "required": false
                 },
                 "expected_vlan": {
@@ -443,12 +451,12 @@
                 },
                 "dhcp_address": {
                     "label": "DHCP Address",
-                    "type": "text",
+                    "type": "boolean",
                     "required": false
                 },
                 "expected_dhcp_address": {
                     "label": "Expected DHCP Address",
-                    "type": "text",
+                    "type": "boolean",
                     "required": false
                 },
                 "speed": {
@@ -537,7 +545,11 @@
                 },
                 "device_port_source": {
                     "label": "Device Port Source",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "device_port_join_metadata_join_device_join_vlan_join_vlan",
+                    "dependencies": {
+                        "device_port_source": "device_port_source"
+                    },
                     "required": false
                 },
                 "expected_device_port_source": {
@@ -547,7 +559,11 @@
                 },
                 "device_port_destination": {
                     "label": "Device Port Destination",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "device_port_join_metadata_join_device_join_vlan_join_vlan",
+                    "dependencies": {
+                        "device_port_destination": "device_port_destination"
+                    },
                     "required": false
                 },
                 "expected_device_port_destination": {

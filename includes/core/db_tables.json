@@ -82,7 +82,7 @@
         "asset": "VARCHAR(255)",
         "manufacturer": "VARCHAR(255)",
         "model": "VARCHAR(255)",
-        "type": "VARCHAR(255)",
+        "type": "FLOAT",
         "anc": "BOOLEAN",
         "position": "FLOAT",
         "rotation": "INT",
@@ -98,16 +98,16 @@
         "subnet": "INT",
         "gateway": "VARCHAR(255)",
         "broadcast": "VARCHAR(255)",
-        "dns_server": "VARCHAR(255)",
-        "dns_zone": "VARCHAR(255)",
-        "dhcp_server": "VARCHAR(255)",
+        "dns_server": "TEXT",
+        "dns_zone": "TEXT",
+        "dhcp_server": "TEXT",
         "PRIMARY KEY": "(uuid)"
     },
     "vlan": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid)",
         "ip_range": "UUID REFERENCES ip_range(uuid)",
-        "vlan": "INT NOT NULL",
+        "vlan": "VARCHAR(255) NOT NULL",
         "PRIMARY KEY": "(uuid)"
     },
     "device_port": {
@@ -124,7 +124,7 @@
         "expected_dhcp_address": "BOOLEAN DEFAULT FALSE",
         "speed": "FLOAT",
         "expected_speed": "FLOAT",
-        "type": "VARCHAR(255)",
+        "type": "FLOAT",
         "size": "TEXT",
         "position": "TEXT",
         "rotation": "TEXT",

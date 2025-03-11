@@ -275,7 +275,7 @@ class API {
                 // Tabellenspalten abfragen
                 $columns = $this->dbAdapter->db_query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'");
                 $textColumns = array_filter($columns, function($column) {
-                    return in_array($column['data_type'], ['text', 'character varying']);
+                    return in_array($column['data_type'], ['character varying']);
                 });
                 // Bedingung für die Suchabfrage erstellen
                 $searchConditions = [];

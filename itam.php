@@ -223,7 +223,7 @@ function generateField(name, config) {
             field = document.createElement('input');
             field.type = 'checkbox';
             break;
-        case 'searchDropdown': {
+        case 'searchDropdown':
             const textInput = document.createElement('input');
             textInput.type = 'text';
             textInput.placeholder = config.placeholder || config.label;
@@ -291,7 +291,6 @@ function generateField(name, config) {
             wrapper.appendChild(hiddenField);
             wrapper.appendChild(dropdownList);
             break;
-        }
         default:
             console.error(`Unsupported field type: ${config.type}`);
             return wrapper;
