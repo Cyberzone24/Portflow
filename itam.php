@@ -493,7 +493,6 @@ function updateActiveTab(table) {
     }
 }
 
-// Display table content
 function displayTable(columnsConfig, userColumns, rows) {
     var $tableHead = $('.static thead').empty();
     var $tableBody = $('.static tbody').empty();
@@ -503,19 +502,120 @@ function displayTable(columnsConfig, userColumns, rows) {
     trHead.append($('<th class="p-2">Actions</th>'));
     $tableHead.append(trHead);
 
-    rows.forEach(row => {
-        let tr = $('<tr class="hover:bg-gray-200">');
-        userColumns.forEach(colKey => tr.append($('<td class="p-2 border-b">').text(row[colKey] || '--')));
-        
-        let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-            .html('<i data-lucide="info"></i>')
-            .click(() => openDetailsPopup(row));
-        let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-            .html('<i data-lucide="trash"></i>')
-            .click(() => deleteEntry(row.uuid, row));
-        tr.append($('<td class="p-2 border-b flex flex-row gap-4">').append(detailsButton).append(deleteButton));
-        $tableBody.append(tr);
-    });
+    // Nur für location_join_metadata_join_location: Hierarchie aufbauen
+    if (currentTable === 'location_join_metadata_join_location') {
+        // Map für schnellen Zugriff
+        const byParent = {};
+        rows.forEach(row => {
+            const parent = row.parent_location || 'root';
+            if (!byParent[parent]) byParent[parent] = [];
+            byParent[parent].push(row);
+        });
+
+        // Rekursive Funktion zum Rendern
+        function renderRows(parent, level = 0) {
+            (byParent[parent] || []).forEach(row => {
+                let tr = $('<tr class="hover:bg-gray-200">');
+                userColumns.forEach(colKey => {
+                    let td;
+                    let dashes = level > 0 ? Array(level + 1).join('— ') : '';
+
+                    if (colKey === 'type') {
+                        let iconHtml = '';
+                        let typeTitle = '';
+                        let statusColor = '';
+                        switch (row.metadata_status_0) {
+                            case 0: statusColor = 'color: #22c55e;'; break;
+                            case 2: statusColor = 'color: #eab308;'; break;
+                            case 4: statusColor = 'color: #ef4444;'; break;
+                            case 6: statusColor = 'color: #6b7280;'; break;
+                            default: statusColor = '';
+                        }
+                        switch (row[colKey]) {
+                            case '0':
+                                iconHtml = `${dashes}<i data-lucide="scan" title="Campus" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
+                                typeTitle = 'Region';
+                                break;
+                            case '2':
+                                iconHtml = `${dashes}<i data-lucide="land-plot" title="Standort" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
+                                typeTitle = 'Komplex';
+                                break;
+                            case '4':
+                                iconHtml = `${dashes}<i data-lucide="school" title="Gebäude" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
+                                typeTitle = 'Gebäude';
+                                break;
+                            case '6':
+                                iconHtml = `${dashes}<i data-lucide="door-closed" title="Raum" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
+                                typeTitle = 'Raum';
+                                break;
+                            case '8':
+                                iconHtml = `${dashes}<i data-lucide="server" title="Gerät" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
+                                typeTitle = 'Rack';
+                                break;
+                            default:
+                                iconHtml = dashes + (row[colKey] || '--');
+                                typeTitle = '';
+                        }
+                        iconHtml += ` <span>${row.metadata_caption_0 || ''}</span>`;
+                        td = $('<td class="p-2 border-b">').html(iconHtml).attr('title', typeTitle);
+                    } else {
+                        td = $('<td class="p-2 border-b">').text(row[colKey] || '--');
+                    }
+                    tr.append(td);
+                });
+                let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
+                    .html('<i data-lucide="info"></i>')
+                    .click(() => openDetailsPopup(row));
+                let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
+                    .html('<i data-lucide="trash"></i>')
+                    .click(() => deleteEntry(row.uuid, row));
+                tr.append($('<td class="p-2 border-b flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+                $tableBody.append(tr);
+
+                // Rekursiv für Kinder
+                renderRows(row.uuid, level + 1);
+            });
+        }
+        renderRows('root');
+    } else {
+        // Standardanzeige
+        rows.forEach(row => {
+            let tr = $('<tr class="hover:bg-gray-200">');
+            userColumns.forEach(colKey => {
+                let td;
+                if (colKey === 'metadata_tags_0') {
+                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
+                    let tags = '';
+                    if (row['metadata_tags_0']) {
+                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
+                        row['metadata_tags_0'].split(',').forEach(function(tag) {
+                            tag = tag.trim();
+                            if (!tag) return;
+                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
+                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
+                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
+                        });
+                    }
+                    td = $('<td class="p-2 border-b">').html(
+                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
+                    );
+                } else {
+                    td = $('<td class="p-2 border-b">').text(row[colKey] || '--');
+                }
+                tr.append(td);
+            });
+
+            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
+                .html('<i data-lucide="info"></i>')
+                .click(() => openDetailsPopup(row));
+            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
+                .html('<i data-lucide="trash"></i>')
+                .click(() => deleteEntry(row.uuid, row));
+            tr.append($('<td class="p-2 border-b flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+
+            $tableBody.append(tr);
+        });
+    }
 
     lucide.createIcons();
 }
@@ -584,7 +684,7 @@ function deleteEntry(uuid, rowData) {
             function deleteNextTable(index) {
                 if (index >= tablesToDelete.length) {
                     console.log('Alle Einträge wurden gelöscht.');
-                    loadTable();
+                    loadTable(currentTable);
                     return;
                 }
 

@@ -2,7 +2,7 @@
 if (isset($_GET['nav'])) {
     $nav = [];
     $nav['location_join_metadata_join_location'] = [
-        'default' => ['type', 'metadata_status_0', 'metadata_caption_0', 'metadata_tags_0'],
+        'default' => ['type', 'metadata_tags_0'],
         'columns' => [
             'uuid' => 'Standort UUID',
             'type' => 'Standort Typ',

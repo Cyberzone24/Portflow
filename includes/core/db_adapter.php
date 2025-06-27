@@ -98,7 +98,7 @@ class DatabaseAdapter {
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             return $results;
         } catch (\Exception $e) {
-            $this->logger->log('error during query execution: ' . $query . ' - ' . $e->getMessage());
+            $this->logger->log('error during query execution: ' . $query . ' - ' . $e->getMessage(), 1);
             throw $e;
         }
 
