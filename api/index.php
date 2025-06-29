@@ -250,6 +250,10 @@ class API {
     }
 
     private function post($resource, $data) {
+        // add users uuid to data if not provided
+        if ($resource === 'metadata' && empty($data['users']) && !empty($_SESSION['uuid'])) {
+            $data['users'] = $_SESSION['uuid'];
+        }
         try {
             $query = "INSERT INTO $resource (" . implode(', ', array_keys($data)) . ") VALUES (:" . implode(', :', array_keys($data)) . ") RETURNING *";
             $results = $this->dbAdapter->db_query($query, $data);
