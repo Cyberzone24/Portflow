@@ -506,13 +506,20 @@ function displayTable(columnsConfig, userColumns, rows) {
     if (currentTable === 'location_join_metadata_join_location') {
         // Map für schnellen Zugriff
         const byParent = {};
+        const allParents = new Set();
+        const allUuids = new Set();
+    
         rows.forEach(row => {
             const parent = row.parent_location || 'root';
             if (!byParent[parent]) byParent[parent] = [];
             byParent[parent].push(row);
+            allParents.add(parent);
+            allUuids.add(row.uuid);
         });
-
-        // Rekursive Funktion zum Rendern
+    
+        // Finde alle Wurzeln: Eltern, die selbst nicht als Kind vorkommen
+        const roots = Array.from(allParents).filter(parent => !allUuids.has(parent));
+    
         function renderRows(parent, level = 0) {
             (byParent[parent] || []).forEach(row => {
                 let tr = $('<tr class="hover:bg-gray-200">');
@@ -575,8 +582,9 @@ function displayTable(columnsConfig, userColumns, rows) {
                 // Rekursiv für Kinder
                 renderRows(row.uuid, level + 1);
             });
-        }
-        renderRows('root');
+        }    
+        // Für alle Wurzeln rendern
+        roots.forEach(root => renderRows(root));
     } else {
         // Standardanzeige
         rows.forEach(row => {
