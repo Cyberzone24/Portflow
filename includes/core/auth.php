@@ -277,11 +277,10 @@ class Auth {
 
                         if (!empty($result)) {
                             $this->logger->log("user '$this->username' logged in. database updated", 1);
-                            if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME)) {
+                            if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME) === 0) {
                                 header('Location: ' . $_SESSION['referrer']);
                             } else {
                                 header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
-                                #header('Location: '. '/portview.php');
                             }
                         } else {
                             // database could not update
@@ -501,7 +500,7 @@ class Auth {
                         $_SESSION['uuid'] = $this->uuid;
                         $_SESSION['settings'] = $this->settings;
 
-                        if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME)) {
+                        if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME) === 0) {
                             header('Location: ' . $_SESSION['referrer']);
                         } else {
                             header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
