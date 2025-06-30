@@ -18,7 +18,7 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-if (empty($_SESSION['loggedin']) || $_SESSION['loggedin'] !== TRUE) {
+if (empty($_SESSION['uuid']) || empty($_SESSION['loggedin']) || $_SESSION['loggedin'] !== TRUE) {
     $_SESSION['referrer'] = uri();
     header('Location: ' . PORTFLOW_HOSTNAME);
     exit();

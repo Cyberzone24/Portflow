@@ -316,13 +316,20 @@
                     "type": "dropdown",
                     "options": [
                         { "value": "--", "label": "--" },
+                        { "value": "patchpanel", "label": "Patchpanel" },
+                        { "value": "net_outlet", "label": "Network Outlet" },
                         { "value": "phone", "label": "Phone" },
                         { "value": "notebook", "label": "Notebook" },
                         { "value": "thinclient", "label": "Thinclient" },
                         { "value": "desktop", "label": "Desktop" },
                         { "value": "accesspoint", "label": "Accesspoint" },
-                        { "value": "switch", "label": "Switch" },
                         { "value": "printer", "label": "Printer" },
+                        { "value": "switch", "label": "Switch" },
+                        { "value": "server", "label": "Server" },
+                        { "value": "router", "label": "Router" },
+                        { "value": "firewall", "label": "Firewall" },
+                        { "value": "loadbalancer", "label": "Loadbalancer" },
+                        { "value": "storage", "label": "Storage" },
                         { "value": "sensor", "label": "Sensor" }
                     ],
                     "required": false

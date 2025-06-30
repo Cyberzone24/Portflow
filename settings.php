@@ -366,7 +366,7 @@
             <a href="?site=appearance"><li class="bg-white py-2 px-4 <?php echo ($site == 'appearance' || $site == NULL) ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['appearance']; ?></li></a>
             <?php echo ($role !== 'ldap') ? '<a href="?site=account"><li class="bg-white py-2 px-4 ' . ($site == 'account' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['account'] . '</li></a>' : ''; ?>
             <a href="?site=notifications"><li class="bg-white py-2 px-4 <?php echo ($site == 'notifications') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['notifications']; ?></li></a>
-            <a href="?site=configuration"><li class="bg-white py-2 px-4 <?php echo ($site == 'configuration') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['configuration']; ?></li></a>
+            <?php echo ($role == 'admin') ? '<a href="?site=configuration"><li class="bg-white py-2 px-4' . ($site == 'configuration') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4' . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
             <?php echo ($role == 'admin') ? '<a href="?site=scripts"><li class="bg-white py-2 px-4 ' . ($site == 'scripts' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
             <?php echo ($role == 'admin') ? '<a href="?site=access"><li class="bg-white py-2 px-4 ' . ($site == 'access' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
         </ul>
