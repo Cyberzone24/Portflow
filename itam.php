@@ -497,14 +497,141 @@ function displayTable(columnsConfig, userColumns, rows) {
     var $tableHead = $('.static thead').empty();
     var $tableBody = $('.static tbody').empty();
 
+    // Standard Farben für Status
+    const STATUS_COLORS = {
+        0: '#22c55e',  // Aktiv - Grün
+        2: '#eab308',  // Deaktiviert - Gelb
+        4: '#ef4444',  // Offline - Rot
+        6: '#6b7280',  // Ungenutzt - Grau
+        default: '#6b7280'  // Unbekannt - Grau
+    };
+
+    const STATUS_TITLES = {
+        0: 'Aktiv',
+        2: 'Deaktiviert', 
+        4: 'Offline',
+        6: 'Ungenutzt',
+        default: 'Unbekannt'
+    };
+
+    // Tag Farben
+    const TAG_COLORS = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
+
+    // Tabellenkopf erstellen
     let trHead = $('<tr class="border-b bg-gray-200">');
     userColumns.forEach(colKey => trHead.append($('<th class="p-2">').text(columnsConfig[colKey] || colKey)));
     trHead.append($('<th class="p-2">Actions</th>'));
     $tableHead.append(trHead);
 
-    // Nur für location_join_metadata_join_location: Hierarchie aufbauen
-    if (currentTable === 'location_join_metadata_join_location') {
-        // Map für schnellen Zugriff
+    // Hilfsfunktionen
+    function getStatusColor(status) {
+        return STATUS_COLORS[status] || STATUS_COLORS.default;
+    }
+
+    function getStatusTitle(status) {
+        return STATUS_TITLES[status] || STATUS_TITLES.default;
+    }
+
+    function createStatusIcon(iconName, status, title = null) {
+        const color = getStatusColor(status);
+        const statusTitle = title || getStatusTitle(status);
+        return `<span class="h-10 w-10 rounded-full flex items-center justify-center">
+                    <i data-lucide="${iconName}" style="color:${color};vertical-align:middle" title="${statusTitle}"></i>
+                </span>`;
+    }
+
+    function createTagsHtml(tagsString) {
+        if (!tagsString) return '--';
+        
+        let tags = '';
+        tagsString.split(',').forEach(function(tag) {
+            tag = tag.trim();
+            if (!tag) return;
+            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
+            var tagColor = TAG_COLORS[Math.abs(tagHash) % TAG_COLORS.length];
+            tags += `<span class='py-1 px-2 rounded-full text-white ${tagColor} mr-2 mb-2 text-xs inline-block'>#${tag}</span> `;
+        });
+        return `<div class="mt-1">${tags}</div>`;
+    }
+
+    function calculateUsableIPs(ipRange, subnet) {
+        if (!ipRange || !subnet) return '';
+        
+        function ipToInt(ip) {
+            return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
+        }
+        
+        let [rangeBase] = ipRange.split('/');
+        let subnetInt = parseInt(subnet);
+        let hostBits = 32 - subnetInt;
+        let count = Math.pow(2, hostBits);
+        
+        if (count > 2) return `Nutzbare Adressen: ${count - 2}`;
+        if (count > 0) return `Nutzbare Adressen: ${count}`;
+        return '';
+    }
+
+    function getSubnetMask(subnet) {
+        if (!subnet) return '';
+        
+        let mask = [];
+        let subnetInt = parseInt(subnet);
+        for (let i = 0; i < 4; i++) {
+            let n = Math.min(8, subnetInt);
+            mask.push(256 - Math.pow(2, 8 - n));
+            subnetInt -= n;
+        }
+        return `Subnetz-Maske: ${mask.join('.')}`;
+    }
+
+    function getNetworkInfo(ipRange, subnet) {
+        if (!ipRange || !subnet) return { type: '', class: '' };
+        
+        function ipToInt(ip) {
+            return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
+        }
+        
+        let [rangeBase] = ipRange.split('/');
+        let ipInt = ipToInt(rangeBase);
+        let subnetInt = parseInt(subnet);
+        
+        // Netzklasse einfach aus Subnet bestimmen
+        let netClass = '';
+        if (subnetInt <= 8) netClass = 'A';
+        else if (subnetInt <= 16) netClass = 'B';
+        else if (subnetInt <= 24) netClass = 'C';
+        else if (subnetInt <= 30) netClass = 'D';
+        else if (subnetInt <= 32) netClass = 'E';
+        else netClass = ''; // Subnet (kleiner als C)
+        
+        // Privat/Öffentlich bestimmen
+        let isPrivate = (
+            (ipInt >= ipToInt('10.0.0.0') && ipInt <= ipToInt('10.255.255.255')) ||
+            (ipInt >= ipToInt('172.16.0.0') && ipInt <= ipToInt('172.31.255.255')) ||
+            (ipInt >= ipToInt('192.168.0.0') && ipInt <= ipToInt('192.168.255.255'))
+        );
+        
+        let netType = isPrivate ? 
+            `<i data-lucide="lock-keyhole" style="color:#6366f1;vertical-align:middle" title="Privates Netz"></i>` :
+            `<i data-lucide="lock-keyhole-open" style="color:#f59e42;vertical-align:middle" title="Öffentliches Netz"></i>`;
+        
+        let netClassHtml = `<span class="h-10 w-10 rounded-full bg-gray-200 text-white flex items-center justify-center font-bold"><p>${netClass}</p></span>`;
+        
+        return { type: netType, class: netClassHtml };
+    }
+
+    // Spezielle Renderer für verschiedene Tabellen
+    const renderers = {
+        'location_join_metadata_join_location': renderLocationHierarchy,
+        'ip_range_join_metadata': renderIPRanges,
+        'vlan_join_metadata_join_ip_range': renderVLANs,
+        'device_join_metadata_join_location_join_location': renderDevices,
+        'device_port_join_metadata_join_device_join_vlan_join_vlan': renderDevicePorts,
+        'connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port': renderConnections
+    };
+
+    function renderLocationHierarchy(rows) {
+        // Hierarchie aufbauen
         const byParent = {};
         const allParents = new Set();
         const allUuids = new Set();
@@ -517,538 +644,231 @@ function displayTable(columnsConfig, userColumns, rows) {
             allUuids.add(row.uuid);
         });
     
-        // Finde alle Wurzeln: Eltern, die selbst nicht als Kind vorkommen
         const roots = Array.from(allParents).filter(parent => !allUuids.has(parent));
     
         function renderRows(parent, level = 0) {
             (byParent[parent] || []).forEach(row => {
                 let tr = $('<tr class="border-b hover:bg-gray-200">');
+                let dashes = level > 0 ? Array(level + 1).join('— ') : '';
+                
                 userColumns.forEach(colKey => {
                     let td;
-                    let dashes = level > 0 ? Array(level + 1).join('— ') : '';
-
                     if (colKey === 'type') {
-                        let iconHtml = '';
-                        let typeTitle = '';
-                        let statusColor = '';
-                        switch (row.metadata_status_0) {
-                            case 0: statusColor = 'color: #22c55e;'; break;
-                            case 2: statusColor = 'color: #eab308;'; break;
-                            case 4: statusColor = 'color: #ef4444;'; break;
-                            case 6: statusColor = 'color: #6b7280;'; break;
-                            default: statusColor = '';
-                        }
-                        switch (row[colKey]) {
-                            case '0':
-                                iconHtml = `${dashes}<i data-lucide="scan" title="Campus" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
-                                typeTitle = 'Region';
-                                break;
-                            case '2':
-                                iconHtml = `${dashes}<i data-lucide="land-plot" title="Standort" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
-                                typeTitle = 'Komplex';
-                                break;
-                            case '4':
-                                iconHtml = `${dashes}<i data-lucide="school" title="Gebäude" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
-                                typeTitle = 'Gebäude';
-                                break;
-                            case '6':
-                                iconHtml = `${dashes}<i data-lucide="door-closed" title="Raum" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
-                                typeTitle = 'Raum';
-                                break;
-                            case '8':
-                                iconHtml = `${dashes}<i data-lucide="server" title="Gerät" style="${statusColor};display:inline-block;vertical-align:middle"></i>`;
-                                typeTitle = 'Rack';
-                                break;
-                            default:
-                                iconHtml = dashes + (row[colKey] || '--');
-                                typeTitle = '';
-                        }
+                        const locationIcons = {
+                            '0': { icon: 'scan', title: 'Region' },
+                            '2': { icon: 'land-plot', title: 'Komplex' },
+                            '4': { icon: 'school', title: 'Gebäude' },
+                            '6': { icon: 'door-closed', title: 'Raum' },
+                            '8': { icon: 'server', title: 'Rack' }
+                        };
+                        
+                        const config = locationIcons[row[colKey]] || { icon: 'help-circle', title: 'Unbekannt' };
+                        const color = getStatusColor(row.metadata_status_0);
+                        
+                        let iconHtml = `${dashes}<i data-lucide="${config.icon}" style="color:${color};display:inline-block;vertical-align:middle" title="${config.title}"></i>`;
                         iconHtml += ` <span>${row.metadata_caption_0 || ''}</span>`;
-                        td = $('<td class="p-2">').html(iconHtml).attr('title', typeTitle);
+                        
+                        td = $('<td class="p-2">').html(iconHtml).attr('title', config.title);
                     } else {
                         td = $('<td class="p-2">').text(row[colKey] || '--');
                     }
                     tr.append(td);
                 });
-                let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                    .html('<i data-lucide="info"></i>')
-                    .click(() => openDetailsPopup(row));
-                let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                    .html('<i data-lucide="trash"></i>')
-                    .click(() => deleteEntry(row.uuid, row));
-                tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+                
+                tr.append(createActionButtons(row));
                 $tableBody.append(tr);
-
-                // Rekursiv für Kinder
                 renderRows(row.uuid, level + 1);
             });
-        }    
-        // Für alle Wurzeln rendern
+        }
+        
         roots.forEach(root => renderRows(root));
+    }
 
-    } else if (currentTable === 'ip_range_join_metadata') {
-        // IP-Bereiche anzeigen
+    function renderIPRanges(rows) {
         rows.forEach(row => {
             let tr = $('<tr class="border-b hover:bg-gray-200">');
+            
             userColumns.forEach(colKey => {
                 let td;
                 if (colKey === 'ip_range') {
-                    // Tooltip für nutzbare Adressen
-                    let usable = '';
-                    if (row.ip_range && row.subnet) {
-                        // IPv4: Berechne Start/Ende aus Range und Subnet
-                        function ipToInt(ip) {
-                            return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
-                        }
-                        function intToIp(int) {
-                            return [24,16,8,0].map(shift => (int >> shift) & 255).join('.');
-                        }
-                        let [rangeBase] = row.ip_range.split('/');
-                        let subnet = parseInt(row.subnet);
-                        let start = ipToInt(rangeBase);
-                        let hostBits = 32 - subnet;
-                        let count = Math.pow(2, hostBits);
-                        let end = start + count - 1;
-                        if (count > 2) usable = `Nutzbare Adressen: ${count - 2}`;
-                        else if (count > 0) usable = `Nutzbare Adressen: ${count}`;
-                    }
-                    td = $('<td class="p-2">')
-                        .text(row.ip_range || '--')
-                        .attr('title', usable);
+                    let usable = calculateUsableIPs(row.ip_range, row.subnet);
+                    td = $('<td class="p-2">').text(row.ip_range || '--').attr('title', usable);
                 } else if (colKey === 'subnet') {
-                    // Tooltip für Subnetzmaske
-                    let mask = row['subnet'] ? (function(subnet) {
-                        let mask = [];
-                        for (let i = 0; i < 4; i++) {
-                            let n = Math.min(8, subnet);
-                            mask.push(256 - Math.pow(2, 8 - n));
-                            subnet -= n;
-                        }
-                        return mask.join('.');
-                    })(parseInt(row['subnet'])) : '';
-                    td = $('<td class="p-2">')
-                        .text(row[colKey] !== undefined ? row[colKey] : '--')
-                        .attr('title', mask ? `Subnetz-Maske: ${mask}` : '');
+                    let mask = getSubnetMask(row[colKey]);
+                    td = $('<td class="p-2">').text(row[colKey] !== undefined ? row[colKey] : '--').attr('title', mask);
                 } else if (colKey === 'metadata_status_0') {
-                    // Status-Icon mit Farbe und Netztyp + Netzklasse
-                    let statusColor = '';
-                    let statusTitle = '';
-                    switch (row.metadata_status_0) {
-                        case 0: statusColor = '#22c55e'; statusTitle = 'Aktiv'; break;
-                        case 2: statusColor = '#eab308'; statusTitle = 'Reserviert'; break;
-                        case 4: statusColor = '#ef4444'; statusTitle = 'Inaktiv'; break;
-                        case 6: statusColor = '#6b7280'; statusTitle = 'Archiviert'; break;
-                        default: statusColor = '#64748b'; statusTitle = 'Unbekannt';
-                    }
-                
-                    // Netztyp (privat/öffentlich) und Netzklasse anhand ip_range berechnen
-                    let netType = '';
-                    let netClass = '';
-                    if (row.ip_range && row.subnet) {
-                        function ipToInt(ip) {
-                            return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
-                        }
-                        let [rangeBase] = row.ip_range.split('/');
-                        let ipInt = ipToInt(rangeBase);
-                
-                        // Netzklasse bestimmen
-                        if (ipInt >= ipToInt('0.0.0.0') && ipInt <= ipToInt('127.255.255.255')) netClass = 'A';
-                        else if (ipInt >= ipToInt('128.0.0.0') && ipInt <= ipToInt('191.255.255.255')) netClass = 'B';
-                        else if (ipInt >= ipToInt('192.0.0.0') && ipInt <= ipToInt('223.255.255.255')) netClass = 'C';
-                        else if (ipInt >= ipToInt('224.0.0.0') && ipInt <= ipToInt('239.255.255.255')) netClass = 'D';
-                        else if (ipInt >= ipToInt('240.0.0.0') && ipInt <= ipToInt('255.255.255.255')) netClass = 'E';
-                
-                        // Privat/Öffentlich bestimmen
-                        let isPrivate = (
-                            (ipInt >= ipToInt('10.0.0.0')   && ipInt <= ipToInt('10.255.255.255')) ||
-                            (ipInt >= ipToInt('172.16.0.0') && ipInt <= ipToInt('172.31.255.255')) ||
-                            (ipInt >= ipToInt('192.168.0.0')&& ipInt <= ipToInt('192.168.255.255'))
-                        );
-                        if (isPrivate) {
-                            netType = `<i data-lucide="lock-keyhole" style="color:#6366f1;vertical-align:middle" title="Privates Netz"></i>`;
-                        } else {
-                            netType = `<i data-lucide="lock-keyhole-open" style="color:#f59e42;vertical-align:middle" title="Öffentliches Netz"></i>`;
-                        }
-                        if (netClass) {
-                            netClass = `<span class="h-10 w-10 rounded-full bg-gray-200 text-white flex items-center justify-center font-bold"><p>${netClass}</p></span>`;
-                        }
-                    }
-                
+                    let networkInfo = getNetworkInfo(row.ip_range, row.subnet);
                     td = $('<td class="p-2 flex flex-row gap-4">').html(
-                        `<span class="h-10 w-10 rounded-full flex items-center justify-center"><i data-lucide="chevrons-left-right-ellipsis" style="color:${statusColor};vertical-align:middle" title="${statusTitle}"></i></span> <span class="h-10 w-10 rounded-full flex items-center justify-center">${netType}</span> ${netClass}`
+                        createStatusIcon('chevrons-left-right-ellipsis', row.metadata_status_0) +
+                        `<span class="h-10 w-10 rounded-full flex items-center justify-center">${networkInfo.type}</span> ${networkInfo.class}`
                     );
                 } else if (colKey === 'metadata_tags_0') {
-                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
-                    let tags = '';
-                    if (row['metadata_tags_0']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['metadata_tags_0'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            if (!tag) return;
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
-                        });
-                    }
-                    td = $('<td class="p-2">').html(
-                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
-                    );
+                    td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] !== undefined ? row[colKey] : '--');
                 }
                 tr.append(td);
             });
-    
-            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                .html('<i data-lucide="info"></i>')
-                .click(() => openDetailsPopup(row));
-            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                .html('<i data-lucide="trash"></i>')
-                .click(() => deleteEntry(row.uuid, row));
-            tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+            
+            tr.append(createActionButtons(row));
             $tableBody.append(tr);
         });
-    } else if (currentTable === 'vlan_join_metadata_join_ip_range') {
-        // VLANs anzeigen
+    }
+
+    function renderVLANs(rows) {
         rows.forEach(row => {
             let tr = $('<tr class="border-b hover:bg-gray-200">');
+            
             userColumns.forEach(colKey => {
                 let td;
                 if (colKey === 'vlan_id') {
-                    // VLAN ID mit Status-Icon
-                    let statusColor = '';
-                    switch (row.metadata_status_0) {
-                        case 0: statusColor = '#22c55e'; break; // Aktiv
-                        case 2: statusColor = '#eab308'; break; // Reserviert
-                        case 4: statusColor = '#ef4444'; break; // Inaktiv
-                        case 6: statusColor = '#6b7280'; break; // Archiviert
-                        default: statusColor = '#64748b'; // Unbekannt
-                    }
                     td = $('<td class="p-2">').html(
-                        `<span class="h-10 w-10 rounded-full flex items-center justify-center"><i data-lucide="chevrons-left-right-ellipsis" style="color:${statusColor};vertical-align:middle" title="${row.metadata_status_0}"></i></span> ${row[colKey] || '--'}`
+                        createStatusIcon('chevrons-left-right-ellipsis', row.metadata_status_0) + ` ${row[colKey] || '--'}`
                     );
                 } else if (colKey === 'metadata_status_0') {
-                    // Status-Icon mit Farbe
-                    let statusColor = '';
-                    switch (row.metadata_status_0) {
-                        case 0: statusColor = '#22c55e'; break; // Aktiv
-                        case 2: statusColor = '#eab308'; break; // Reserviert
-                        case 4: statusColor = '#ef4444'; break; // Inaktiv
-                        case 6: statusColor = '#6b7280'; break; // Archiviert
-                        default: statusColor = '#64748b'; // Unbekannt
-                    }
-                    td = $('<td class="p-2">').html(
-                        `<span class="h-10 w-10 rounded-full flex items-center justify-center"><i data-lucide="workflow" style="color:${statusColor};vertical-align:middle" title="${row.metadata_status_0}"></i></span>`
-                    );
-                } else if (colKey === 'metadata_tags_0') {
-                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
-                    let tags = '';
-                    if (row['metadata_tags_0']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['metadata_tags_0'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            if (!tag) return;
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
-                        });
-                    }
-                    td = $('<td class="p-2">').html(
-                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
-                    );
+                    td = $('<td class="p-2">').html(createStatusIcon('workflow', row.metadata_status_0));
                 } else if (colKey === 'ip_range') {
-                    // IP-Bereich anzeigen
-                    let usable = '';
-                    if (row.ip_range && row.subnet) {
-                        // IPv4: Berechne Start/Ende aus Range und Subnet
-                        function ipToInt(ip) {
-                            return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
-                        }
-                        function intToIp(int) {
-                            return [24,16,8,0].map(shift => (int >> shift) & 255).join('.');
-                        }
-                        let [rangeBase] = row.ip_range.split('/');
-                        let subnet = parseInt(row.subnet);
-                        let start = ipToInt(rangeBase);
-                        let hostBits = 32 - subnet;
-                        let count = Math.pow(2, hostBits);
-                        let end = start + count - 1;
-                        if (count > 2) usable = `Nutzbare Adressen: ${count - 2}`;
-                        else if (count > 0) usable = `Nutzbare Adressen: ${count}`;
-                    }
-                    td = $('<td class="p-2">')
-                        .text(row.ip_range || '--')
-                        .attr('title', usable);
+                    let usable = calculateUsableIPs(row.ip_range, row.subnet);
+                    td = $('<td class="p-2">').text(row.ip_range || '--').attr('title', usable);
+                } else if (colKey === 'metadata_tags_0') {
+                    td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');
                 }
                 tr.append(td);
             });
-            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                .html('<i data-lucide="info"></i>')
-                .click(() => openDetailsPopup(row));
-            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                .html('<i data-lucide="trash"></i>')
-                .click(() => deleteEntry(row.uuid, row));
-            tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+            
+            tr.append(createActionButtons(row));
             $tableBody.append(tr);
         });
-    
-    } else if (currentTable === 'device_join_metadata_join_location_join_location') {
-        // Geräte anzeigen
+    }
+
+    function renderDevices(rows) {
+        const deviceIcons = {
+            'Patchpanel': 'rectangle-ellipsis',
+            'net_outlet': 'ethernet-port',
+            'phone': 'phone',
+            'notebook': 'laptop',
+            'thinclient': 'monitor-smartphone',
+            'desktop': 'pc-case',
+            'accesspoint': 'wifi',
+            'printer': 'printer',
+            'switch': 'network',
+            'server': 'server',
+            'router': 'router',
+            'firewall': 'brick-wall-fire',
+            'loadbalancer': 'loader-circle',
+            'storage': 'hard-drive',
+            'sensor': 'thermometer',
+            'ups': 'battery-full'
+        };
+
         rows.forEach(row => {
             let tr = $('<tr class="border-b hover:bg-gray-200">');
+            
             userColumns.forEach(colKey => {
                 let td;
-                if (colKey === 'metadata_tags_0') {
-                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
-                    let tags = '';
-                    if (row['metadata_tags_0']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['metadata_tags_0'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            if (!tag) return;
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
-                        });
-                    }
+                if (colKey === 'type') {
+                    const icon = deviceIcons[row[colKey]] || 'server';
+                    const color = getStatusColor(row.metadata_status_0);
                     td = $('<td class="p-2">').html(
-                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
+                        `<i data-lucide="${icon}" title="${row[colKey]}" style="color:${color};vertical-align:middle"></i>`
                     );
-                } else if (colKey === 'type') {
-                    // Gerätetyp mit Icon und Statusfarbe
-                    let iconHtml = '';
-                    let statusColor = '';
-                    switch (row.metadata_status_0) {
-                        case 0: statusColor = '#22c55e'; break; // Aktiv
-                        case 2: statusColor = '#eab308'; break; // Reserviert
-                        case 4: statusColor = '#ef4444'; break; // Inaktiv
-                        case 6: statusColor = '#6b7280'; break; // Archiviert
-                        default: statusColor = '#64748b'; // Unbekannt
-                    }
-                    switch (row[colKey]) {
-                        case '--':
-                            iconHtml = `<i data-lucide="ban" title="Unbekannt" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'Patchpanel':
-                            iconHtml = `<i data-lucide="rectangle-ellipsis" title="Patchpanel" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'net_outlet':
-                            iconHtml = `<i data-lucide="ethernet-port" title="Netzwerkdose" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'phone':
-                            iconHtml = `<i data-lucide="phone" title="Telefon" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'notebook':
-                            iconHtml = `<i data-lucide="laptop" title="Notebook" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'thinclient':
-                            iconHtml = `<i data-lucide="monitor-smartphone" title="Thin Client" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'desktop':
-                            iconHtml = `<i data-lucide="pc-case" title="Desktop" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'accesspoint':
-                            iconHtml = `<i data-lucide="wifi" title="Access Point" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'printer':
-                            iconHtml = `<i data-lucide="printer" title="Drucker" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'switch':
-                            iconHtml = `<i data-lucide="network" title="Switch" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'server':
-                            iconHtml = `<i data-lucide="server" title="Server" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'router':
-                            iconHtml = `<i data-lucide="router" title="Router" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'firewall':
-                            iconHtml = `<i data-lucide="brick-wall-fire" title="Firewall" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'loadbalancer':
-                            iconHtml = `<i data-lucide="loader-circle" title="Load Balancer" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'storage':
-                            iconHtml = `<i data-lucide="hard-drive" title="Storage" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'sensor':
-                            iconHtml = `<i data-lucide="thermometer" title="Sensor" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        case 'ups':
-                            iconHtml = `<i data-lucide="battery-full" title="USV" style="color:${statusColor};vertical-align:middle"></i>`;
-                            break;
-                        default:
-                            iconHtml = `<i data-lucide="server" title="${row[colKey]}" style="color:${statusColor};vertical-align:middle"></i>`;
-                    }
-                    td = $('<td class="p-2">').html(
-                        `${iconHtml} <span class="ml-2">${row[colKey] || '--'}</span>`
-                    );
+                } else if (colKey === 'metadata_tags_0') {
+                    td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');
                 }
                 tr.append(td);
             });
-            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                .html('<i data-lucide="info"></i>')
-                .click(() => openDetailsPopup(row));
-            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                .html('<i data-lucide="trash"></i>')
-                .click(() => deleteEntry(row.uuid, row));
-            tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+            
+            tr.append(createActionButtons(row));
             $tableBody.append(tr);
         });
+    }
 
-    } else if (currentTable === 'device_port_join_metadata_join_device_join_vlan_join_vlan') {
-        // Device Ports anzeigen
+    function renderDevicePorts(rows) {
         rows.forEach(row => {
             let tr = $('<tr class="border-b hover:bg-gray-200">');
+            
             userColumns.forEach(colKey => {
                 let td;
                 if (colKey === 'device_port') {
-                    // Portnummer mit Gerät und VLAN
                     td = $('<td class="p-2">').html(
                         `${row.device_port || '--'} <br> <span class="text-xs text-gray-500">${row.device_name || '--'}</span> <br> <span class="text-xs text-gray-500">${row.vlan_id || '--'}</span>`
                     );
                 } else if (colKey === 'metadata_status_0') {
-                    // Status-Icon mit Farbe
-                    let statusColor = '';
-                    switch (row.metadata_status_0) {
-                        case 0: statusColor = '#22c55e'; break; // Aktiv
-                        case 2: statusColor = '#eab308'; break; // Reserviert
-                        case 4: statusColor = '#ef4444'; break; // Inaktiv
-                        case 6: statusColor = '#6b7280'; break; // Archiviert
-                        default: statusColor = '#64748b'; // Unbekannt
-                    }
-                    td = $('<td class="p-2">').html(
-                        `<span class="h-10 w-10 rounded-full flex items-center justify-center"><i data-lucide="ethernet-port" style="color:${statusColor};vertical-align:middle" title="${row.metadata_status_0}"></i></span>`
-                    );
+                    td = $('<td class="p-2">').html(createStatusIcon('ethernet-port', row.metadata_status_0));
                 } else if (colKey === 'metadata_tags_0') {
-                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
-                    let tags = '';
-                    if (row['metadata_tags_0']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['metadata_tags_0'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            if (!tag) return;
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
-                        });
-                    }
-                    td = $('<td class="p-2">').html(
-                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
-                    );
+                    td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');
                 }
                 tr.append(td);
             });
-            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                .html('<i data-lucide="info"></i>')
-                .click(() => openDetailsPopup(row));
-            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                .html('<i data-lucide="trash"></i>')
-                .click(() => deleteEntry(row.uuid, row));
-            tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
+            
+            tr.append(createActionButtons(row));
             $tableBody.append(tr);
-        });    
+        });
+    }
 
-    } else if (currentTable === 'connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port') {
-        // Verbindungen anzeigen
+    function renderConnections(rows) {
         rows.forEach(row => {
             let tr = $('<tr class="border-b hover:bg-gray-200">');
+            
             userColumns.forEach(colKey => {
                 let td;
                 if (colKey === 'connection') {
-                    // Verbindung mit Geräten und Ports
                     td = $('<td class="p-2">').html(
                         `${row.connection || '--'} <br> <span class="text-xs text-gray-500">${row.device_name || '--'}</span> <br> <span class="text-xs text-gray-500">${row.device_port || '--'}</span>`
                     );
                 } else if (colKey === 'metadata_status_0') {
-                    // Status-Icon mit Farbe
-                    let statusColor = '';
-                    switch (row.metadata_status_0) {
-                        case 0: statusColor = '#22c55e'; break; // Aktiv
-                        case 2: statusColor = '#eab308'; break; // Reserviert
-                        case 4: statusColor = '#ef4444'; break; // Inaktiv
-                        case 6: statusColor = '#6b7280'; break; // Archiviert
-                        default: statusColor = '#64748b'; // Unbekannt
-                    }
-                    td = $('<td class="p-2">').html(
-                        `<span class="h-10 w-10 rounded-full flex items-center justify-center"><i data-lucide="link" style="color:${statusColor};vertical-align:middle" title="${row.metadata_status_0}"></i></span>`
-                    );
+                    td = $('<td class="p-2">').html(createStatusIcon('link', row.metadata_status_0));
                 } else if (colKey === 'metadata_tags_0') {
-                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
-                    let tags = '';
-                    if (row['metadata_tags_0']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['metadata_tags_0'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            if (!tag) return;
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
-                        });
-                    }
-                    td = $('<td class="p-2">').html(
-                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
-                    );
+                    td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');
                 }
                 tr.append(td);
             });
-            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                .html('<i data-lucide="info"></i>')
-                .click(() => openDetailsPopup(row));
-            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                .html('<i data-lucide="trash"></i>')
-                .click(() => deleteEntry(row.uuid, row));
-            tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
-            $tableBody.append(tr);
-        });    
-
-    } else {
-        // Standardanzeige
-        rows.forEach(row => {
-            let tr = $('<tr class="border-b hover:bg-gray-200">');
-            userColumns.forEach(colKey => {
-                let td;
-                if (colKey === 'metadata_tags_0') {
-                    // Tags als Badges unterhalb des Zelleninhalts anzeigen
-                    let tags = '';
-                    if (row['metadata_tags_0']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['metadata_tags_0'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            if (!tag) return;
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2 text-xs inline-block'>#" + tag + "</span> ";
-                        });
-                    }
-                    td = $('<td class="p-2">').html(
-                        (tags ? `<div class="mt-1">${tags}</div>` : '--')
-                    );
-                } else {
-                    td = $('<td class="p-2">').text(row[colKey] || '--');
-                }
-                tr.append(td);
-            });
-
-            let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
-                .html('<i data-lucide="info"></i>')
-                .click(() => openDetailsPopup(row));
-            let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
-                .html('<i data-lucide="trash"></i>')
-                .click(() => deleteEntry(row.uuid, row));
-            tr.append($('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton));
-
+            
+            tr.append(createActionButtons(row));
             $tableBody.append(tr);
         });
     }
+
+    function renderDefault(rows) {
+        rows.forEach(row => {
+            let tr = $('<tr class="border-b hover:bg-gray-200">');
+            
+            userColumns.forEach(colKey => {
+                let td;
+                if (colKey === 'metadata_tags_0') {
+                    td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
+                } else {
+                    td = $('<td class="p-2">').text(row[colKey] || '--');
+                }
+                tr.append(td);
+            });
+            
+            tr.append(createActionButtons(row));
+            $tableBody.append(tr);
+        });
+    }
+
+    function createActionButtons(row) {
+        let detailsButton = $('<button class="h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center">')
+            .html('<i data-lucide="info"></i>')
+            .click(() => openDetailsPopup(row));
+        let deleteButton = $('<button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center">')
+            .html('<i data-lucide="trash"></i>')
+            .click(() => deleteEntry(row.uuid, row));
+        return $('<td class="p-2 flex flex-row gap-4">').append(detailsButton).append(deleteButton);
+    }
+
+    // Renderer basierend auf currentTable wählen
+    const renderer = renderers[currentTable] || renderDefault;
+    renderer(rows);
 
     lucide.createIcons();
 }
