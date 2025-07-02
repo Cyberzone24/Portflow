@@ -1,0 +1,11 @@
+users.role join role.uuid
+changelog.users join users.uuid
+journal.metadata join metadata.uuid, journal.metadata.users join users.uuid
+access.metadata join metadata.uuid, access.role join role.uuid
+location.metadata join metadata.uuid, location.parent_location.uuid join location.uuid, location.parent_location.metadata join metadata.uuid
+device.metadata join metadata.uuid, device.location join location.uuid, device.location.metadata join metadata.uuid, device.expected_location.uuid join location.uuid, device.expected_location.metadata join metadata.uuid,
+ip_range.metadata join metadata.uuid
+vlan.metadata join metadata.uuid, vlan.ip_range join ip_range.uuid, vlan.ip_range.metadata join metadata.uuid
+device_port.metadata join metadata.uuid, device_port.device join device.uuid, device_port.device.metadata join metadata.uuid, device_port.device_port_vlan.vlan join vlan.uuid, device_port.device_port_vlan.vlan.metadata join metadata.uuid, device_port.device_port_vlan.ip_range join iprange.uuid, device_port.device_port_vlan.expected_vlan join vlan.uuid, device_port.device_port_vlan.expected_vlan.metadata join metadata.uuid, device_port.device_port_.expected_vlan.ip_range join iprange.uuid, device_port.device_port_ip join device_port_ip.uuid
+device_lifecycle.metadata join metadata.uuid, device_lifecycle.device join device.uuid
+connection.metadata join metadata.uuid, connection.device_port_source join device_port.uuid, connection.device_port_source.metadata join metadata.uuid, connection.device_port_source.device join device.uuid, connection.device_port_source.device.metadata join metadata.uuid, connection.device_port_source.device.location join location.uuid, connection.device_port_source.device.location.metadata join metadata.uuid, connection.device_port_destination.join device_port.uuid, connection.device_port_destination.metadata join metadata.uuid, connection.device_port_destination.device join device.uuid, connection.device_port_destination.device.location.join location.uuid, connection.device_port_destination.device.location.metadata join metadata.uuid

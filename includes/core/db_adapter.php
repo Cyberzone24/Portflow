@@ -152,7 +152,7 @@ class DatabaseAdapter {
 
             try {
                 // create folder for each database table
-                $excludedTables = ['role', 'users', 'changelog', 'metadata', 'access', 'device_lifecycle'];
+                $excludedTables = ['role', 'users', 'changelog', 'metadata', 'access', 'device_port_vlan', 'device_port_ip', 'device_lifecycle'];
                 if (!file_exists(__DIR__ . '/../../data/' . $dbTable) && !in_array($dbTable, $excludedTables, true)) {
                     mkdir(__DIR__ . '/../../data/' . $dbTable, 0755, true);
                     $this->logger->log("Created folder for table $dbTable");
@@ -163,70 +163,77 @@ class DatabaseAdapter {
         }
     
         // Create views based on foreign keys
-        foreach ($foreignKeys as $mainTable => $fks) {
-            // Initialize the base SELECT clause and the JOIN clauses
+        $viewsFile = __DIR__ . '/db_views.txt';
+        if (!file_exists($viewsFile)) {
+            $this->logger->log("View definition file not found: $viewsFile");
+            return;
+        }
+
+        $viewLines = file($viewsFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+        foreach ($viewLines as $line) {
+            $joins = array_map('trim', explode(',', $line));
             $selectClause = [];
-            $joinClauses = [];
-            $mainTableAlias = 'm';
-
-            // Get columns of the main table
-            $mainColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$mainTable'");
-            $mainColumns = array_column($mainColumnsQuery, 'column_name');
-
-            // Add main table columns to the select clause
-            foreach ($mainColumns as $column) {
-                $selectClause[] = "$mainTableAlias.$column AS $column";
-            }
-
-            // Process each foreign key and create join clauses
-            foreach ($fks as $index => $fk) {
-                $referencedTable = $fk['referenced_table'];
-                $referencedTableAlias = 'r' . $index;
-
-                // Get columns of the referenced table
-                $referencedColumnsQuery = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$referencedTable'");
-                $referencedColumns = array_column($referencedColumnsQuery, 'column_name');
-
-                // Add referenced table columns to the select clause with aliases
-                foreach ($referencedColumns as $column) {
-                    $selectClause[] = "$referencedTableAlias.$column AS {$referencedTable}_{$column}_$index";
+            $joinClause = '';
+            $aliasMap = []; // [table] => alias
+            $aliasCounter = 0;
+            $fromSet = false;
+        
+            // Aliase für jede Tabelle in der Reihenfolge ihres ersten Auftretens
+            foreach ($joins as $join) {
+                if (!preg_match('/^([\w.]+)\s+join\s+([\w.]+)$/i', $join, $match)) {
+                    $this->logger->log("Invalid join syntax: $join");
+                    continue 2;
                 }
-
-                // Add join clause for the foreign key
-                $joinClauses[] = "LEFT JOIN $referencedTable $referencedTableAlias ON $mainTableAlias.{$fk['column']} = $referencedTableAlias.{$fk['referenced_column']}";
+                [$left, $right] = [$match[1], $match[2]];
+                list($table1, ) = explode('.', $left);
+                list($table2, ) = explode('.', $right);
+        
+                if (!isset($aliasMap[$table1])) $aliasMap[$table1] = 't' . ($aliasCounter++);
+                if (!isset($aliasMap[$table2])) $aliasMap[$table2] = 't' . ($aliasCounter++);
             }
-
-            // Combine all parts to create the view query
-            $selectClause = implode(', ', $selectClause);
-            $joinClauses = implode(' ', $joinClauses);
-
-            // Create the view name by adding '_join_' before each table
-            $viewNameParts = array_column($fks, 'referenced_table');
-            array_unshift($viewNameParts, $mainTable);
-            $viewName = implode('_join_', $viewNameParts);
-
-            $createViewQuery = "
-                CREATE OR REPLACE VIEW $viewName AS
-                SELECT $selectClause
-                FROM $mainTable $mainTableAlias
-                $joinClauses;
-            ";
-
+        
+            foreach ($joins as $i => $join) {
+                preg_match('/^([\w.]+)\s+join\s+([\w.]+)$/i', $join, $match);
+                [$left, $right] = [$match[1], $match[2]];
+                list($table1, $column1) = explode('.', $left);
+                list($table2, $column2) = explode('.', $right);
+        
+                $alias1 = $aliasMap[$table1];
+                $alias2 = $aliasMap[$table2];
+        
+                if (!$fromSet) {
+                    $joinClause .= "FROM $table1 $alias1 ";
+                    $fromSet = true;
+                }
+                $joinClause .= "LEFT JOIN $table2 $alias2 ON $alias1.$column1 = $alias2.$column2 ";
+            }
+        
+            // SELECT für alle Aliase (nur einmal pro Alias)
+            $seen = [];
+            foreach ($aliasMap as $table => $alias) {
+                if (isset($seen[$alias])) continue;
+                $seen[$alias] = true;
+                $columns = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$table'");
+                foreach ($columns as $col) {
+                    $colname = $col['column_name'];
+                    $selectClause[] = "$alias.$colname AS {$table}_$colname";
+                }
+            }
+        
+            // View-Name aus allen Tabellennamen (unique, Reihenfolge wie im Join)
+            $viewName = implode('_join_', array_keys($aliasMap));
+            $selectSQL = implode(", ", $selectClause);
+            $viewSQL = "CREATE OR REPLACE VIEW $viewName AS SELECT $selectSQL $joinClause;";
+        
             try {
-                // start transaction
                 $this->pdo->beginTransaction();
-
-                // execute view creation query
-                $this->db_query($createViewQuery, []);
-
-                // commit transaction
+                $this->db_query($viewSQL, []);
                 $this->pdo->commit();
-
-                $this->logger->log("Created view $viewName");
+                $this->logger->log("Created view: $viewName");
             } catch (\Exception $e) {
-                // roll back transaction if there was an error
                 $this->pdo->rollBack();
-                $this->logger->log('Error during creation of view: ' . $e->getMessage());
+                $this->logger->log("Error creating view $viewName: " . $e->getMessage());
             }
         }
         $this->logger->log("DB initialized");

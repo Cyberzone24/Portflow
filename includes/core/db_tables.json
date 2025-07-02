@@ -50,13 +50,14 @@
     "journal": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
-        "reference": "UUID NOT NULL",
+        "reference_table": "VARCHAR(255) NOT NULL",
+        "reference_uuid": "UUID NOT NULL",
         "PRIMARY KEY": "(uuid)"
     },
     "access": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
-        "role": "UUID NOT NULL REFERENCES role(uuid) NOT NULL ON DELETE CASCADE",
+        "role": "UUID NOT NULL REFERENCES role(uuid) ON DELETE CASCADE NOT NULL",
         "resource": "VARCHAR(255) NOT NULL",
         "access_right": "INT",
         "PRIMARY KEY": "(uuid)"
@@ -110,6 +111,7 @@
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
         "device": "UUID NOT NULL REFERENCES device(uuid) ON DELETE CASCADE",
+        "poe": "BOOLEAN DEFAULT FALSE",
         "mac_address": "VARCHAR(255)",
         "speed": "FLOAT",
         "expected_speed": "FLOAT",
@@ -132,7 +134,6 @@
     "device_port_ip": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "device_port": "UUID NOT NULL REFERENCES device_port(uuid) ON DELETE CASCADE",
-        "ip_range": "UUID REFERENCES ip_range(uuid) ON DELETE SET NULL",
         "ip": "INET",
         "expected_ip": "INET",
         "hostname": "VARCHAR(255)",
@@ -144,7 +145,7 @@
     "device_lifecycle": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
-        "device": "UUID REFERENCES device(uuid) NOT NULL ON DELETE CASCADE",
+        "device": "UUID REFERENCES device(uuid) ON DELETE CASCADE NOT NULL",
         "value_date": "DATE",
         "PRIMARY KEY": "(uuid)"
     },
@@ -155,6 +156,7 @@
         "expected_device_port_source": "UUID NOT NULL REFERENCES device_port(uuid) ON DELETE SET NULL",
         "device_port_destination": "UUID REFERENCES device_port(uuid) ON DELETE SET NULL",
         "expected_device_port_destination": "UUID REFERENCES device_port(uuid) ON DELETE SET NULL",
+        "cable_name": "VARCHAR(255)",
         "type": "VARCHAR(255)",
         "length": "FLOAT",
         "crossover": "BOOLEAN DEFAULT FALSE",
