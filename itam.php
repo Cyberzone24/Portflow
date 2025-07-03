@@ -323,86 +323,64 @@ function generateField(name, config) {
 }
 
 // submit forms
-function submitForms(table) {
+async function submitForms(table) {
     console.log('Submitting forms for table:', table);
-    const forms = document.querySelectorAll('form');
+    const forms = Array.from(document.querySelectorAll('form'));
+    const responseUuids = {}; // Hier werden die erzeugten UUIDs gespeichert
 
-    let metadataUUID = '';
+    // Lade die postOrder-Konfiguration
+    const configResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/forms.json');
+    const configData = await configResponse.json();
+    const postOrder = configData.forms[table].postOrder;
 
-    forms.forEach(form => {
+    // Hilfsfunktion, um die UUIDs in die richtigen Felder einzutragen
+    function injectUuids(postData, postConfig) {
+        if (postConfig.useMetadataUUID && responseUuids.metadata) {
+            postData.metadata = responseUuids.metadata;
+        }
+        if (postConfig.useVlanUUID && responseUuids.device_port_vlan) {
+            postData.device_port_vlan = responseUuids.device_port_vlan;
+        }
+        if (postConfig.useIpUUID && responseUuids.device_port_ip) {
+            postData.device_port_ip = responseUuids.device_port_ip;
+        }
+    }
+
+    // Reihenfolge gemäß postOrder abarbeiten
+    for (const postConfig of postOrder) {
+        const form = forms.find(f => f.id === postConfig.table);
+        if (!form) continue;
+
         const formData = new FormData(form);
         const postData = {};
+        formData.forEach((value, key) => { postData[key] = value; });
 
-        formData.forEach((value, key) => {
-            postData[key] = value;
-        });
+        // UUIDs aus vorherigen POSTs einfügen, falls benötigt
+        injectUuids(postData, postConfig);
 
-        const apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>` + '/api/' + form.id + '/';
-
-        // POST Metadata first
-        if (form.id === 'metadata') {
-            fetch(apiUrl, {
+        const apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/`;
+        try {
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(postData)
-            })
-                .then(response => response.json())
-                .then(data => {
-                    metadataUUID = data[0].uuid;
-                    document.querySelectorAll('[name="metadata"]').forEach(input => {
-                        input.value = metadataUUID;
-                    });
-
-                    // Continue with other forms
-                    forms.forEach(innerForm => {
-                        if (innerForm.id !== 'metadata') {
-                            submitOtherForms(innerForm, metadataUUID, table);
-                        }
-                    });
-                })
-                .catch(error => {
-                    console.error('Fehler beim Senden der Metadata-Daten:', error);
-                });
+            });
+            const data = await response.json();
+            // Speichere die erzeugte UUID für spätere POSTs
+            if (data && data[0] && data[0].uuid) {
+                responseUuids[postConfig.table] = data[0].uuid;
+                if (postConfig.table === 'metadata') responseUuids.metadata = data[0].uuid;
+                if (postConfig.table === 'device_port_vlan') responseUuids.device_port_vlan = data[0].uuid;
+                if (postConfig.table === 'device_port_ip') responseUuids.device_port_ip = data[0].uuid;
+            }
+        } catch (error) {
+            console.error(`Fehler beim Senden der ${postConfig.table}-Daten:`, error);
+            break;
         }
-    });
-}
-
-function submitOtherForms(form, metadataUUID, table) {
-    console.log('Submitting table:', table);
-    const formData = new FormData(form);
-    const postData = {};
-
-    formData.forEach((value, key) => {
-        postData[key] = value;
-
-        if (key.startsWith('expected_')) {
-            // Entferne "expected_" vom Schlüssel, um den Namen des regulären Feldes zu erhalten
-            const normalKey = key.slice('expected_'.length);
-            postData[key] = postData[normalKey];
-        }
-    });
-
-    // Include metadataUUID if required
-    if (form.id !== 'metadata') {
-        postData.metadata = metadataUUID;
     }
 
-    const apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>` + '/api/' + form.id + '/';
-
-    fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(postData)
-    })
-        .then(response => response.json())
-        .then(data => {
-            console.log(`Erfolg bei ${form.id}:`, data);
-            closeNewEntry();
-            loadTable(table);
-        })
-        .catch(error => {
-            console.error(`Fehler beim Senden der ${form.id}-Daten:`, error);
-        });
+    closeNewEntry();
+    loadTable(table);
 }
 
 // General helper functions

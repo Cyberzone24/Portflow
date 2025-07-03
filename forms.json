@@ -405,7 +405,7 @@
                 "vlan": {
                     "label": "VLAN",
                     "type": "searchDropdown",
-                    "resource": "vlan_join_metadata_join_ip_range",
+                    "resource": "vlan_join_metadata",
                     "dependencies": {
                         "vlan": "vlan"
                     },
@@ -413,17 +413,21 @@
                 },
                 "expected_vlan": {
                     "label": "Expected VLAN",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "vlan_join_metadata",
+                    "dependencies": {
+                        "expected_vlan": "expected_vlan"
+                    },
                     "required": false
                 },
-                "vlan_tagged": {
+                "tagged": {
                     "label": "VLAN tagged",
                     "type": "boolean",
                     "required": false
                 },
-                "expected_vlan_tagged": {
+                "expected_tagged": {
                     "label": "Expected VLAN tagged",
-                    "type": "text",
+                    "type": "boolean",
                     "required": false
                 },
                 "ip": {
@@ -436,6 +440,16 @@
                     "type": "text",
                     "required": false
                 },
+                "hostname": {
+                    "label": "Hostname",
+                    "type": "text",
+                    "required": false
+                },
+                "expected_hostname": {
+                    "label": "Expected Hostname",
+                    "type": "text",
+                    "required": false
+                },
                 "dhcp_address": {
                     "label": "DHCP Address",
                     "type": "boolean",
@@ -444,6 +458,16 @@
                 "expected_dhcp_address": {
                     "label": "Expected DHCP Address",
                     "type": "boolean",
+                    "required": false
+                },
+                "poe": {
+                    "label": "PoE",
+                    "type": "boolean",
+                    "required": false
+                },
+                "mac_address": {
+                    "label": "MAC-Address",
+                    "type": "text",
                     "required": false
                 },
                 "speed": {
@@ -489,9 +513,21 @@
                     "fields": ["status", "caption", "description", "specification", "tags"]
                 },
                 {
+                    "table": "device_port_vlan",
+                    "sectionTitle": "Device-Port VLAN",
+                    "fields": ["vlan", "expected_vlan", "tagged", "expected_tagged"]
+                },
+                {
+                    "table": "device_port_ip",
+                    "sectionTitle": "Device-Port IP",
+                    "fields": ["ip", "expected_ip", "hostname", "expected_hostname", "dhcp_address", "expected_dhcp_address"]
+                },
+                {
                     "table": "device_port",
                     "sectionTitle": "Device-Port",
-                    "fields": ["device", "vlan", "expected_vlan", "vlan_tagged", "expected_vlan_tagged", "ip", "expected_ip", "dhcp_address", "expected_dhcp_address", "speed", "expected_speed", "type", "size", "position", "rotation", "coupling"],
+                    "fields": ["device", "device_port_vlan", "device_port_ip", "poe", "mac_address", "speed", "expected_speed", "type", "size", "position", "rotation", "coupling"],
+                    "useVlanUUID": true,
+                    "useIpUUID": true,
                     "useMetadataUUID": true
                 }
             ]

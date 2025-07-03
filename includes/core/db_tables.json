@@ -112,15 +112,15 @@
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
         "ip_range": "UUID REFERENCES ip_range(uuid) ON DELETE SET NULL",
-        "vlan": "INT NOT NULL",
+        "vlan": "VARCHAR(4) NOT NULL",
         "PRIMARY KEY": "(uuid)"
     },
     "device_port_vlan": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "vlan": "UUID REFERENCES vlan(uuid) ON DELETE SET NULL",
-        "expected_vlan": "UUID NOT NULL REFERENCES vlan(uuid) ON DELETE SET NULL",
+        "expected_vlan": "UUID REFERENCES vlan(uuid) ON DELETE SET NULL",
         "tagged": "BOOLEAN DEFAULT FALSE",
-        "expected_vlan_tagged": "BOOLEAN DEFAULT FALSE",
+        "expected_tagged": "BOOLEAN DEFAULT FALSE",
         "PRIMARY KEY": "(uuid)"
     },
     "device_port_ip": {
