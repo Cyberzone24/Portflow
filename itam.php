@@ -777,13 +777,13 @@ function displayTable(columnsConfig, userColumns, rows) {
             
             userColumns.forEach(colKey => {
                 let td;
-                if (colKey === 'type') {
+                if (colKey === 'device_type') {
                     const icon = deviceIcons[row[colKey]] || 'server';
-                    const color = getStatusColor(row.metadata_status_0);
+                    const color = getStatusColor(row.device_metadata_status);
                     td = $('<td class="p-2">').html(
                         `<i data-lucide="${icon}" title="${row[colKey]}" style="color:${color};vertical-align:middle"></i>`
                     );
-                } else if (colKey === 'metadata_tags_0') {
+                } else if (colKey === 'device_metadata_tags') {
                     td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');

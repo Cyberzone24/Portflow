@@ -155,7 +155,7 @@
                 {
                     "table": "ip_range",
                     "sectionTitle": "IP-Range",
-                    "fields": ["ip_range", "subnet", "gateway", "broadcast", "dns_server", "dns_zone", "dhcp_server"],
+                    "fields": ["ip_range", "gateway", "broadcast", "dns_server", "dns_zone", "dhcp_server"],
                     "useMetadataUUID": true
                 }
             ]
@@ -271,21 +271,6 @@
                     "type": "text",
                     "required": false
                 },
-                "mac_address": {
-                    "label": "Mac Address",
-                    "type": "text",
-                    "required": false
-                },
-                "hostname": {
-                    "label": "Hostname",
-                    "type": "text",
-                    "required": false
-                },
-                "expected_hostname": {
-                    "label": "Expected Hostname",
-                    "type": "text",
-                    "required": false
-                },
                 "serial": {
                     "label": "Serial",
                     "type": "text",
@@ -369,7 +354,7 @@
                 {
                     "table": "device",
                     "sectionTitle": "Device",
-                    "fields": ["location", "expected_location", "mac_address", "hostname", "expected_hostname", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template"],
+                    "fields": ["location", "expected_location", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template"],
                     "useMetadataUUID": true
                 }
             ]

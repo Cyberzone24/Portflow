@@ -5,7 +5,7 @@ access.metadata join metadata.uuid, access.role join role.uuid
 location.metadata join metadata.uuid
 location.metadata join metadata.uuid, location.parent_location join location.uuid, location.parent_location.metadata join metadata.uuid
 device.metadata join metadata.uuid
-device.metadata join metadata.uuid, device.location join location.uuid, device.location.metadata join metadata.uuid, device.expected_location.uuid join location.uuid, device.expected_location.metadata join metadata.uuid
+device.metadata join metadata.uuid, device.location join location.uuid, device.location.metadata join metadata.uuid, device.expected_location join location.uuid, device.expected_location.metadata join metadata.uuid
 ip_range.metadata join metadata.uuid
 vlan.metadata join metadata.uuid
 vlan.metadata join metadata.uuid, vlan.ip_range join ip_range.uuid, vlan.ip_range.metadata join metadata.uuid
