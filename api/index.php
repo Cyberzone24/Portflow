@@ -124,33 +124,48 @@ class API {
 
         // Prüfen, ob der Tabellenname vorhanden ist
         if ($resource) {
-            // Optional: Prüfen, ob der Tabellenname einem bestimmten Pattern entspricht
-            $resourcePattern = '/^[a-z]+(_join_[a-z]+)*(_[a-z]+)*$/';
-            if (!preg_match($resourcePattern, $resource)) {
+            // Regex für 'table', 'table_details' und 'table1_join_table2'
+            $resourcePattern = '/^([a-z_]+?)(?:(_details)|(?:_join_([a-z_]+?)))?$/';
+            if (!preg_match($resourcePattern, $resource, $matches)) {
                 http_response_code(400);
-                echo json_encode(['error' => 'Invalid resource name']);
+                echo json_encode(['error' => 'Invalid resource name format']);
                 return;
             }
 
-            function isValidResourceName($resource) {
-                $dbTables = json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true);
-                foreach (explode('_join_', $resource) as $part) {
-                    if (!isset($dbTables[$part])) {
-                        return false;
-                    }
-                }
-                return true;
+            // Lade die Liste der erlaubten Tabellen
+            $dbTables = json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true);
+
+            // --- Gültigkeitsprüfung für den ERSTEN Tabellennamen ---
+            $tableName1 = $matches[1];
+            if (!isset($dbTables[$tableName1])) {
+                http_response_code(404);
+                echo json_encode(['error' => "Resource '$tableName1' not found"]);
+                return;
             }
-            
-            // Überprüfe, ob der Tabellenname in den Schlüsseln des dekodierten Arrays vorhanden ist und nicht 'access' oder 'api' ist
-            if (in_array($resource, ['access', 'api', 'users'])) {
-                http_response_code(403);
-                echo json_encode(['error' => 'Forbidden']);
-                return;
-            } elseif (!isValidResourceName($resource)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Invalid resource name']);
-                return;
+
+            // --- Gültigkeitsprüfung für den ZWEITEN Tabellennamen (nur bei Joins) ---
+            if (isset($matches[3]) && $matches[3]) {
+                $tableName2 = $matches[3];
+                if (!isset($dbTables[$tableName2])) {
+                    http_response_code(404);
+                    echo json_encode(['error' => "Joined resource '$tableName2' not found"]);
+                    return;
+                }
+            }
+
+            // --- Blacklist-Prüfung für ALLE beteiligten Tabellen ---
+            $involvedTables = [$tableName1];
+            if (isset($tableName2)) {
+                $involvedTables[] = $tableName2;
+            }
+            $blacklist = ['access', 'api', 'users'];
+
+            foreach ($involvedTables as $table) {
+                if (in_array($table, $blacklist)) {
+                    http_response_code(403);
+                    echo json_encode(['error' => 'Forbidden']);
+                    return;
+                }
             }
 
             // Prüfen, ob die UUID (falls vorhanden) dem korrekten Format entspricht
@@ -161,16 +176,14 @@ class API {
                 return;
             }
 
-            // Verwenden von tableName für die Rechteprüfung
+            // Rechteprüfung und Request-Handling wie gehabt...
             if ($this->checkAccessRights($resource)) {
+                // Hier könntest du $involvedTables an die handle-Methode übergeben
                 $this->handleTableRequest($resource, $uuid ?? NULL);
             } else {
                 http_response_code(403);
                 echo json_encode(['error' => 'Forbidden']);
             }
-        } else {
-            http_response_code(200);
-            echo file_get_contents(__DIR__ . '/openapi.json');
         }
     }
 
@@ -279,12 +292,16 @@ class API {
                 // Tabellenspalten abfragen
                 $columns = $this->dbAdapter->db_query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'");
                 $textColumns = array_filter($columns, function($column) {
-                    return in_array($column['data_type'], ['character varying']);
+                    return in_array($column['data_type'], ['character varying', 'inet']);
                 });
                 // Bedingung für die Suchabfrage erstellen
                 $searchConditions = [];
                 foreach ($textColumns as $column) {
-                    $searchConditions[] = "{$column['column_name']} iLIKE '%{$data['search']}%'";
+                    if ($column['data_type'] === 'inet') {
+                        $searchConditions[] = "{$column['column_name']}::text ILIKE '%{$data['search']}%'";
+                    } else {
+                        $searchConditions[] = "{$column['column_name']} ILIKE '%{$data['search']}%'";
+                    }
                 }
                 $conditions[] = '(' . implode(' OR ', $searchConditions) . ')';
             }

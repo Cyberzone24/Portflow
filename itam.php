@@ -18,12 +18,12 @@
     <div class="basis-1/6 flex flex-col gap-6 overflow-y-scroll">  
         <p><?php echo $lang['it asset-management']; ?></p>
         <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <li onclick="loadTable('location_join_metadata_join_location')" class="bg-white py-2 px-4 rounded-l-lg pr-0"><?php echo $lang['location']; ?></li>
+            <li onclick="loadTable('location_details')" class="bg-white py-2 px-4 rounded-l-lg pr-0"><?php echo $lang['location']; ?></li>
             <li onclick="loadTable('ip_range_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['ipam']; ?></li>
-            <li onclick="loadTable('vlan_join_metadata_join_ip_range')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['vlan']; ?></li>
-            <li onclick="loadTable('device_join_metadata_join_location_join_location')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['devices']; ?></li>
-            <li onclick="loadTable('device_port_join_metadata_join_device_join_vlan_join_vlan')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['device ports']; ?></li>
-            <li onclick="loadTable('connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['connections']; ?></li>
+            <li onclick="loadTable('vlan_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['vlan']; ?></li>
+            <li onclick="loadTable('device_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['devices']; ?></li>
+            <li onclick="loadTable('device_port_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['device ports']; ?></li>
+            <li onclick="loadTable('connection_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['connections']; ?></li>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative overflow-y-scroll">
@@ -88,7 +88,7 @@ function searchTable(event) {
 }
 
 // Generate form
-async function generateFormFromJSON(table = 'location_join_metadata_join_location') {
+async function generateFormFromJSON(table = 'location_details') {
     try {
         console.log('Loading form configuration for table:', table);
         const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json');
@@ -269,13 +269,25 @@ function generateField(name, config) {
                     dropdownList.classList.remove('hidden');
 
                     results.items.forEach(item => {
+                        // Dynamisch das Feld für die Anzeige suchen
+                        let captionKey = Object.keys(item).find(k => k.endsWith('_metadata_caption')) 
+                            || Object.keys(item).find(k => k.endsWith('_caption')) 
+                            || Object.keys(item).find(k => k.endsWith('_name')) 
+                            || Object.keys(item)[0]; // Fallback: erstes Feld
+                    
+                        // Dynamisch das passende UUID-Feld bestimmen
+                        let resourceBase = config.resource.replace(/_details$/, '');
+                        let uuidKey = Object.keys(item).find(k => k === resourceBase + '_uuid') 
+                            || Object.keys(item).find(k => k.endsWith('_uuid')) 
+                            || 'uuid';
+                    
                         const entry = document.createElement('div');
                         entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
-                        entry.textContent = item.metadata_caption_0;
+                        entry.textContent = item[captionKey] || item[uuidKey] || '[kein Name]';
                         entry.onclick = () => {
-                            textInput.value = item.metadata_caption_0;
-                            hiddenField.value = item.uuid;
-                            lastSelectedText = item.metadata_caption_0;
+                            textInput.value = item[captionKey] || '';
+                            hiddenField.value = item[uuidKey] || '';
+                            lastSelectedText = item[captionKey] || '';
                             dropdownList.classList.add('hidden');
                         };
                         dropdownList.appendChild(entry);
@@ -447,7 +459,7 @@ function generatePagination(totalPages, currentPage, search, limit) {
 }
 
 // Load table data
-function loadTable(table = 'location_join_metadata_join_location', search = '', limit = 100, page = 1) {
+function loadTable(table = 'location_details', search = '', limit = 100, page = 1) {
     currentTable = table;
     const configUrl = `${'<?php echo PORTFLOW_HOSTNAME; ?>'}/includes/lang.php?nav`;
 
@@ -554,28 +566,22 @@ function displayTable(columnsConfig, userColumns, rows) {
         return `<div class="mt-1">${tags}</div>`;
     }
 
-    function calculateUsableIPs(ipRange, subnet) {
-        if (!ipRange || !subnet) return '';
-        
-        function ipToInt(ip) {
-            return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
-        }
-        
-        let [rangeBase] = ipRange.split('/');
+    function calculateUsableIPs(ipRangeCidr) {
+        if (!ipRangeCidr) return '';
+        let [ip, subnet] = ipRangeCidr.split('/');
         let subnetInt = parseInt(subnet);
         let hostBits = 32 - subnetInt;
         let count = Math.pow(2, hostBits);
-        
         if (count > 2) return `Nutzbare Adressen: ${count - 2}`;
         if (count > 0) return `Nutzbare Adressen: ${count}`;
         return '';
     }
-
-    function getSubnetMask(subnet) {
-        if (!subnet) return '';
-        
-        let mask = [];
+    
+    function getSubnetMask(ipRangeCidr) {
+        if (!ipRangeCidr) return '';
+        let [, subnet] = ipRangeCidr.split('/');
         let subnetInt = parseInt(subnet);
+        let mask = [];
         for (let i = 0; i < 4; i++) {
             let n = Math.min(8, subnetInt);
             mask.push(256 - Math.pow(2, 8 - n));
@@ -584,76 +590,81 @@ function displayTable(columnsConfig, userColumns, rows) {
         return `Subnetz-Maske: ${mask.join('.')}`;
     }
 
-    function getNetworkInfo(ipRange, subnet) {
-        if (!ipRange || !subnet) return { type: '', class: '' };
-        
+    function getNetworkInfo(ipRangeCidr) {
+        if (!ipRangeCidr) return { type: '', class: '' };
+    
         function ipToInt(ip) {
             return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct), 0);
         }
-        
-        let [rangeBase] = ipRange.split('/');
+    
+        // Extrahiere IP und Subnet aus dem CIDR-String
+        let [rangeBase, subnet] = ipRangeCidr.split('/');
         let ipInt = ipToInt(rangeBase);
         let subnetInt = parseInt(subnet);
-        
-        // Netzklasse einfach aus Subnet bestimmen
+    
+        // Netzklasse bestimmen
         let netClass = '';
         if (subnetInt <= 8) netClass = 'A';
         else if (subnetInt <= 16) netClass = 'B';
         else if (subnetInt <= 24) netClass = 'C';
         else if (subnetInt <= 30) netClass = 'D';
         else if (subnetInt <= 32) netClass = 'E';
-        else netClass = ''; // Subnet (kleiner als C)
-        
+        else netClass = '';
+    
         // Privat/Öffentlich bestimmen
         let isPrivate = (
             (ipInt >= ipToInt('10.0.0.0') && ipInt <= ipToInt('10.255.255.255')) ||
             (ipInt >= ipToInt('172.16.0.0') && ipInt <= ipToInt('172.31.255.255')) ||
             (ipInt >= ipToInt('192.168.0.0') && ipInt <= ipToInt('192.168.255.255'))
         );
-        
-        let netType = isPrivate ? 
+    
+        let netType = isPrivate ?
             `<i data-lucide="lock-keyhole" style="color:#6366f1;vertical-align:middle" title="Privates Netz"></i>` :
             `<i data-lucide="lock-keyhole-open" style="color:#f59e42;vertical-align:middle" title="Öffentliches Netz"></i>`;
-        
+    
         let netClassHtml = `<span class="h-10 w-10 rounded-full bg-gray-200 text-white flex items-center justify-center font-bold"><p>${netClass}</p></span>`;
-        
+    
         return { type: netType, class: netClassHtml };
     }
 
     // Spezielle Renderer für verschiedene Tabellen
     const renderers = {
-        'location_join_metadata_join_location': renderLocationHierarchy,
+        'location_details': renderLocationHierarchy,
         'ip_range_join_metadata': renderIPRanges,
-        'vlan_join_metadata_join_ip_range': renderVLANs,
-        'device_join_metadata_join_location_join_location': renderDevices,
-        'device_port_join_metadata_join_device_join_vlan_join_vlan': renderDevicePorts,
-        'connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port': renderConnections
+        'vlan_details': renderVLANs,
+        'device_details': renderDevices,
+        'device_port_details': renderDevicePorts,
+        'connection_details': renderConnections
     };
 
     function renderLocationHierarchy(rows) {
-        // Hierarchie aufbauen
+        // Dynamische Feldnamen bestimmen
+        const tableBase = currentTable.replace(/_details$/, '');
+        const uuidField = tableBase + '_uuid';
+        const parentField = tableBase + '_parent_location';
+
         const byParent = {};
         const allParents = new Set();
         const allUuids = new Set();
-    
+
         rows.forEach(row => {
-            const parent = row.parent_location || 'root';
+            const parent = row[parentField] || 'root';
             if (!byParent[parent]) byParent[parent] = [];
             byParent[parent].push(row);
             allParents.add(parent);
-            allUuids.add(row.uuid);
+            allUuids.add(row[uuidField]);
         });
-    
+
         const roots = Array.from(allParents).filter(parent => !allUuids.has(parent));
-    
+
         function renderRows(parent, level = 0) {
             (byParent[parent] || []).forEach(row => {
                 let tr = $('<tr class="border-b hover:bg-gray-200">');
                 let dashes = level > 0 ? Array(level + 1).join('— ') : '';
-                
+
                 userColumns.forEach(colKey => {
                     let td;
-                    if (colKey === 'type') {
+                    if (colKey === 'location_type') {
                         const locationIcons = {
                             '0': { icon: 'scan', title: 'Region' },
                             '2': { icon: 'land-plot', title: 'Komplex' },
@@ -661,26 +672,26 @@ function displayTable(columnsConfig, userColumns, rows) {
                             '6': { icon: 'door-closed', title: 'Raum' },
                             '8': { icon: 'server', title: 'Rack' }
                         };
-                        
+
                         const config = locationIcons[row[colKey]] || { icon: 'help-circle', title: 'Unbekannt' };
-                        const color = getStatusColor(row.metadata_status_0);
-                        
+                        const color = getStatusColor(row[tableBase + '_metadata_status']);
+
                         let iconHtml = `${dashes}<i data-lucide="${config.icon}" style="color:${color};display:inline-block;vertical-align:middle" title="${config.title}"></i>`;
-                        iconHtml += ` <span>${row.metadata_caption_0 || ''}</span>`;
-                        
+                        iconHtml += ` <span>${row[tableBase + '_metadata_caption'] || ''}</span>`;
+
                         td = $('<td class="p-2">').html(iconHtml).attr('title', config.title);
                     } else {
                         td = $('<td class="p-2">').text(row[colKey] || '--');
                     }
                     tr.append(td);
                 });
-                
+
                 tr.append(createActionButtons(row));
                 $tableBody.append(tr);
-                renderRows(row.uuid, level + 1);
+                renderRows(row[uuidField], level + 1);
             });
         }
-        
+
         roots.forEach(root => renderRows(root));
     }
 
@@ -691,21 +702,19 @@ function displayTable(columnsConfig, userColumns, rows) {
             userColumns.forEach(colKey => {
                 let td;
                 if (colKey === 'ip_range') {
-                    let usable = calculateUsableIPs(row.ip_range, row.subnet);
-                    td = $('<td class="p-2">').text(row.ip_range || '--').attr('title', usable);
-                } else if (colKey === 'subnet') {
-                    let mask = getSubnetMask(row[colKey]);
-                    td = $('<td class="p-2">').text(row[colKey] !== undefined ? row[colKey] : '--').attr('title', mask);
-                } else if (colKey === 'metadata_status_0') {
-                    let networkInfo = getNetworkInfo(row.ip_range, row.subnet);
+                    let usable = calculateUsableIPs(row.ip_range_ip_range);
+                    let mask = getSubnetMask(row.ip_range_ip_range);
+                    td = $('<td class="p-2">').text(row.ip_range_ip_range || '--').attr('title', usable + '\n' + mask);
+                } else if (colKey === 'ip_range_metadata_status') {
+                    let networkInfo = getNetworkInfo(row.ip_range_ip_range);
                     td = $('<td class="p-2 flex flex-row gap-4">').html(
-                        createStatusIcon('chevrons-left-right-ellipsis', row.metadata_status_0) +
+                        createStatusIcon('chevrons-left-right-ellipsis', row.ip_range_metadata_status) +
                         `<span class="h-10 w-10 rounded-full flex items-center justify-center">${networkInfo.type}</span> ${networkInfo.class}`
                     );
-                } else if (colKey === 'metadata_tags_0') {
+                } else if (colKey === 'ip_range_metadata_tags') {
                     td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
-                    td = $('<td class="p-2">').text(row[colKey] !== undefined ? row[colKey] : '--');
+                    td = $('<td class="p-2">').text(row[colKey] || '--');
                 }
                 tr.append(td);
             });
@@ -723,14 +732,14 @@ function displayTable(columnsConfig, userColumns, rows) {
                 let td;
                 if (colKey === 'vlan_id') {
                     td = $('<td class="p-2">').html(
-                        createStatusIcon('chevrons-left-right-ellipsis', row.metadata_status_0) + ` ${row[colKey] || '--'}`
+                        createStatusIcon('chevrons-left-right-ellipsis', row.vlan_metadata_status) + ` ${row[colKey] || '--'}`
                     );
-                } else if (colKey === 'metadata_status_0') {
-                    td = $('<td class="p-2">').html(createStatusIcon('workflow', row.metadata_status_0));
-                } else if (colKey === 'ip_range') {
-                    let usable = calculateUsableIPs(row.ip_range, row.subnet);
-                    td = $('<td class="p-2">').text(row.ip_range || '--').attr('title', usable);
-                } else if (colKey === 'metadata_tags_0') {
+                } else if (colKey === 'vlan_metadata_status') {
+                    td = $('<td class="p-2">').html(createStatusIcon('workflow', row.vlan_metadata_status));
+                } else if (colKey === 'vlan_ip_range_ip_range') {
+                    let usable = calculateUsableIPs(row.vlan_ip_range_ip_range);
+                    td = $('<td class="p-2">').text(row.vlan_ip_range_ip_range || '--').attr('title', usable);
+                } else if (colKey === 'vlan_metadata_tags') {
                     td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');

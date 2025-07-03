@@ -108,50 +108,28 @@ class DatabaseAdapter {
     public function db_init() {
         // get content of db_tables.json, convert to array
         $dbTables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
-
-        // Store foreign keys for view creation
-        $foreignKeys = [];
-
+    
         // iterate over array and create tables
         foreach ($dbTables as $dbTable => $columns) {
+            // ... Table creation logic remains the same ...
             $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
             foreach ($columns as $column => $columnType) {
                 $query .= "$column $columnType, ";
                 $this->logger->log("Column $column with type $columnType added to table $dbTable", 0);
-
-                // Check for foreign key definition
-                if (strpos($columnType, 'REFERENCES') !== false) {
-                    preg_match('/([a-zA-Z0-9_]+) REFERENCES ([a-zA-Z0-9_]+)\(([^)]+)\)/i', $columnType, $matches);
-                    if ($matches) {
-                        $foreignKeys[$dbTable][] = [
-                            'column' => $column,
-                            'referenced_table' => $matches[2],
-                            'referenced_column' => $matches[3]
-                        ];
-                    }
-                }
             }
             $query = rtrim($query, ', ') . ');';
-
+    
             try {
-                // start transaction
                 $this->pdo->beginTransaction();
-
-                // execute query
                 $this->db_query($query, []);
-
-                // commit transaction
                 $this->pdo->commit();
-
                 $this->logger->log("Created table $dbTable");
             } catch (\Exception $e) {
-                // roll back transaction if there was an error
                 $this->pdo->rollBack();
                 $this->logger->log('Error during initialization of database: ' . $e->getMessage());
             }
-
+    
             try {
-                // create folder for each database table
                 $excludedTables = ['role', 'users', 'changelog', 'metadata', 'access', 'device_port_vlan', 'device_port_ip', 'device_lifecycle'];
                 if (!file_exists(__DIR__ . '/../../data/' . $dbTable) && !in_array($dbTable, $excludedTables, true)) {
                     mkdir(__DIR__ . '/../../data/' . $dbTable, 0755, true);
@@ -162,80 +140,109 @@ class DatabaseAdapter {
             }
         }
     
-        // Create views based on foreign keys
-        $viewsFile = __DIR__ . '/db_views.txt';
-        if (!file_exists($viewsFile)) {
-            $this->logger->log("View definition file not found: $viewsFile");
-            return;
-        }
-
-        $viewLines = file($viewsFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-
-        foreach ($viewLines as $line) {
-            $joins = array_map('trim', explode(',', $line));
-            $selectClause = [];
-            $joinClause = '';
-            $aliasMap = []; // [table] => alias
-            $aliasCounter = 0;
-            $fromSet = false;
-        
-            // Aliase für jede Tabelle in der Reihenfolge ihres ersten Auftretens
-            foreach ($joins as $join) {
-                if (!preg_match('/^([\w.]+)\s+join\s+([\w.]+)$/i', $join, $match)) {
-                    $this->logger->log("Invalid join syntax: $join");
-                    continue 2;
-                }
-                [$left, $right] = [$match[1], $match[2]];
-                list($table1, ) = explode('.', $left);
-                list($table2, ) = explode('.', $right);
-        
-                if (!isset($aliasMap[$table1])) $aliasMap[$table1] = 't' . ($aliasCounter++);
-                if (!isset($aliasMap[$table2])) $aliasMap[$table2] = 't' . ($aliasCounter++);
-            }
-        
-            foreach ($joins as $i => $join) {
-                preg_match('/^([\w.]+)\s+join\s+([\w.]+)$/i', $join, $match);
-                [$left, $right] = [$match[1], $match[2]];
-                list($table1, $column1) = explode('.', $left);
-                list($table2, $column2) = explode('.', $right);
-        
-                $alias1 = $aliasMap[$table1];
-                $alias2 = $aliasMap[$table2];
-        
-                if (!$fromSet) {
-                    $joinClause .= "FROM $table1 $alias1 ";
-                    $fromSet = true;
-                }
-                $joinClause .= "LEFT JOIN $table2 $alias2 ON $alias1.$column1 = $alias2.$column2 ";
-            }
-        
-            // SELECT für alle Aliase (nur einmal pro Alias)
-            $seen = [];
-            foreach ($aliasMap as $table => $alias) {
-                if (isset($seen[$alias])) continue;
-                $seen[$alias] = true;
-                $columns = $this->db_query("SELECT column_name FROM information_schema.columns WHERE table_name = '$table'");
-                foreach ($columns as $col) {
-                    $colname = $col['column_name'];
-                    $selectClause[] = "$alias.$colname AS {$table}_$colname";
-                }
-            }
-        
-            // View-Name aus allen Tabellennamen (unique, Reihenfolge wie im Join)
-            $viewName = implode('_join_', array_keys($aliasMap));
-            $selectSQL = implode(", ", $selectClause);
-            $viewSQL = "CREATE OR REPLACE VIEW $viewName AS SELECT $selectSQL $joinClause;";
-        
+        // CREATE VIEWS
+        $this->logger->log("Starting view creation...");
+        $viewDefinitions = file(__DIR__ . '/db_views.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    
+        foreach ($viewDefinitions as $definition) {
             try {
                 $this->pdo->beginTransaction();
-                $this->db_query($viewSQL, []);
+                
+                $trimmed_definition = trim($definition);
+                $joins = explode(', ', $trimmed_definition);
+                $firstJoinParts = explode(' ', $joins[0]);
+                $baseTable = explode('.', $firstJoinParts[0])[0];
+    
+                // naming logic for views
+                $viewName = '';
+                if (strpos($trimmed_definition, ',') !== false) {
+                    // Complex view with multiple joins gets '_details' suffix
+                    $viewName = $baseTable . '_details';
+                } else {
+                    // Simple view with a single join gets 'table1_join_table2' name
+                    preg_match('/join\s+([a-zA-Z0-9_]+)\./', $trimmed_definition, $targetMatches);
+                    $targetTable = $targetMatches[1] ?? null;
+                    if ($baseTable && $targetTable) {
+                        $viewName = "{$baseTable}_join_{$targetTable}";
+                    } else {
+                        // Fallback or error if the simple view name cannot be determined
+                        throw new \Exception("Could not determine simple view name from definition: '$trimmed_definition'");
+                    }
+                }
+    
+                $selects = [];
+                $joinClauses = [];
+                $aliases = [$baseTable => 't0'];
+    
+                foreach (array_keys($dbTables[$baseTable]) as $column) {
+                    if ($column === 'PRIMARY KEY') continue;
+                    $selects[] = "t0.\"$column\" AS \"{$baseTable}_{$column}\"";
+                }
+    
+                $aliasCounter = 1;
+                foreach ($joins as $join) {
+                    preg_match('/(.+?)\s+join\s+([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)/', $join, $matches);
+                    if (count($matches) !== 4) continue;
+    
+                    // vars
+                    $sourcePathString = $matches[1];
+                    $targetTable = $matches[2];
+                    $targetColumn = $matches[3];
+                    $sourceTableAlias = null;
+                    $sourceColumn = null;
+                    $pathParts = explode('.', $sourcePathString);
+    
+                    // Find the longest prefix of the source path that we have an alias for.
+                    for ($i = count($pathParts); $i >= 1; $i--) {
+                        $potentialTablePath = implode('.', array_slice($pathParts, 0, $i));
+                        if (isset($aliases[$potentialTablePath])) {
+                            $sourceTableAlias = $aliases[$potentialTablePath];
+                            // The source column is the next part of the path, if it exists.
+                            $sourceColumn = $pathParts[$i] ?? null;
+                            break;
+                        }
+                    }
+    
+                    // If no prefix path was found, assume it's a column on the base table.
+                    if ($sourceTableAlias === null) {
+                        $sourceTableAlias = $aliases[$baseTable];
+                        $sourceColumn = $sourcePathString;
+                    }
+                    
+                    if ($sourceTableAlias === null || $sourceColumn === null) {
+                        throw new \Exception("Could not resolve join path for '$sourcePathString' in view '$viewName'");
+                    }
+    
+                    $newAlias = 't' . $aliasCounter++;
+                    $aliases[$sourcePathString] = $newAlias;
+                    
+                    $joinClauses[] = "LEFT JOIN \"$targetTable\" AS $newAlias ON $sourceTableAlias.\"$sourceColumn\" = $newAlias.\"$targetColumn\"";
+                    
+                    $columnPrefix = str_replace('.', '_', $sourcePathString);
+                    if (!empty($dbTables[$targetTable])) {
+                        foreach (array_keys($dbTables[$targetTable]) as $column) {
+                            if ($column === 'PRIMARY KEY') continue;
+                            $selects[] = "$newAlias.\"$column\" AS \"{$columnPrefix}_{$column}\"";
+                        }
+                    }
+                }
+                
+                $selectClause = "SELECT\n    " . implode(",\n    ", $selects);
+                $fromClause = "\nFROM \"$baseTable\" AS t0";
+                $joinClauseStr = "\n" . implode("\n", $joinClauses);
+                
+                // Note the added quotes around the view name for safety
+                $query = "CREATE OR REPLACE VIEW \"$viewName\" AS $selectClause$fromClause$joinClauseStr;";
+                
+                $this->db_query($query);
+                $this->logger->log("Successfully created or replaced view: \"$viewName\"");
+    
                 $this->pdo->commit();
-                $this->logger->log("Created view: $viewName");
             } catch (\Exception $e) {
                 $this->pdo->rollBack();
-                $this->logger->log("Error creating view $viewName: " . $e->getMessage());
+                $this->logger->log("Error creating view from definition '$definition': " . $e->getMessage());
             }
         }
         $this->logger->log("DB initialized");
-    }    
+    }
 }

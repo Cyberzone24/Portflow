@@ -89,6 +89,13 @@
         "template": "BOOLEAN DEFAULT FALSE",
         "PRIMARY KEY": "(uuid)"
     },
+    "device_lifecycle": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
+        "device": "UUID REFERENCES device(uuid) ON DELETE CASCADE NOT NULL",
+        "value_date": "DATE",
+        "PRIMARY KEY": "(uuid)"
+    },
     "ip_range": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
@@ -107,10 +114,30 @@
         "vlan": "INT NOT NULL",
         "PRIMARY KEY": "(uuid)"
     },
+    "device_port_vlan": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "vlan": "UUID REFERENCES vlan(uuid) ON DELETE SET NULL",
+        "expected_vlan": "UUID NOT NULL REFERENCES vlan(uuid) ON DELETE SET NULL",
+        "tagged": "BOOLEAN DEFAULT FALSE",
+        "expected_vlan_tagged": "BOOLEAN DEFAULT FALSE",
+        "PRIMARY KEY": "(uuid)"
+    },
+    "device_port_ip": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "ip": "INET",
+        "expected_ip": "INET",
+        "hostname": "VARCHAR(255)",
+        "expected_hostname": "VARCHAR(255)",
+        "dhcp_address": "BOOLEAN DEFAULT FALSE",
+        "expected_dhcp_address": "BOOLEAN DEFAULT FALSE",
+        "PRIMARY KEY": "(uuid)"
+    },
     "device_port": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
         "device": "UUID NOT NULL REFERENCES device(uuid) ON DELETE CASCADE",
+        "device_port_vlan": "UUID REFERENCES device_port_vlan(uuid) ON DELETE SET NULL",
+        "device_port_ip": "UUID REFERENCES device_port_ip(uuid) ON DELETE SET NULL",
         "poe": "BOOLEAN DEFAULT FALSE",
         "mac_address": "VARCHAR(255)",
         "speed": "FLOAT",
@@ -120,33 +147,6 @@
         "position": "TEXT",
         "rotation": "TEXT",
         "coupling": "BOOLEAN DEFAULT FALSE",
-        "PRIMARY KEY": "(uuid)"
-    },
-    "device_port_vlan": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "device_port": "UUID NOT NULL REFERENCES device_port(uuid) ON DELETE CASCADE",
-        "vlan": "UUID REFERENCES vlan(uuid) ON DELETE SET NULL",
-        "expected_vlan": "UUID NOT NULL REFERENCES vlan(uuid) ON DELETE SET NULL",
-        "tagged": "BOOLEAN DEFAULT FALSE",
-        "expected_vlan_tagged": "BOOLEAN DEFAULT FALSE",
-        "PRIMARY KEY": "(uuid)"
-    },
-    "device_port_ip": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "device_port": "UUID NOT NULL REFERENCES device_port(uuid) ON DELETE CASCADE",
-        "ip": "INET",
-        "expected_ip": "INET",
-        "hostname": "VARCHAR(255)",
-        "expected_hostname": "VARCHAR(255)",
-        "dhcp_address": "BOOLEAN DEFAULT FALSE",
-        "expected_dhcp_address": "BOOLEAN DEFAULT FALSE",
-        "PRIMARY KEY": "(uuid)"
-    },
-    "device_lifecycle": {
-        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
-        "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
-        "device": "UUID REFERENCES device(uuid) ON DELETE CASCADE NOT NULL",
-        "value_date": "DATE",
         "PRIMARY KEY": "(uuid)"
     },
     "connection": {

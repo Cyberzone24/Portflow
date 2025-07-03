@@ -1,6 +1,6 @@
 {
     "forms": {
-        "location_join_metadata_join_location": {
+        "location_details": {
             "formTitle": "New Location",
             "fields": {
                 "status": {
@@ -54,9 +54,9 @@
                 "parent_location": {
                     "label": "Parent Location",
                     "type": "searchDropdown",
-                    "resource": "location_join_metadata_join_location",
+                    "resource": "location_join_metadata",
                     "dependencies": {
-                        "typeMax": "type",
+                        "typeMax": "location_type",
                         "location": "parent_location"
                     },
                     "required": false
@@ -116,14 +116,9 @@
                     "required": false
                 },
                 "ip_range": {
-                    "label": "IP-Range",
+                    "label": "IP-Range (192.168.1.0/24)",
                     "type": "text",
                     "required": true
-                },
-                "subnet": {
-                    "label": "Subnet",
-                    "type": "text",
-                    "required": false
                 },
                 "gateway": {
                     "label": "Gateway",
@@ -165,7 +160,7 @@
                 }
             ]
         },
-        "vlan_join_metadata_join_ip_range": {
+        "vlan_details": {
             "formTitle": "New VLAN",
             "fields": {
                 "status": {
@@ -228,7 +223,7 @@
                 }
             ]
         },
-        "device_join_metadata_join_location_join_location": {
+        "device_details": {
             "formTitle": "New Device",
             "fields": {
                 "status": {
@@ -265,7 +260,7 @@
                 "location": {
                     "label": "Location",
                     "type": "searchDropdown",
-                    "resource": "location_join_metadata_join_location",
+                    "resource": "location_join_metadata",
                     "dependencies": {
                         "location": "location"
                     },
@@ -379,7 +374,7 @@
                 }
             ]
         },
-        "device_port_join_metadata_join_device_join_vlan_join_vlan": {
+        "device_port_details": {
             "formTitle": "New Device-Port",
             "fields": {
                 "status": {
@@ -416,7 +411,7 @@
                 "device": {
                     "label": "Device",
                     "type": "searchDropdown",
-                    "resource": "device_join_metadata_join_location_join_location",
+                    "resource": "device_details",
                     "dependencies": {
                         "device": "device"
                     },
@@ -516,7 +511,7 @@
                 }
             ]
         },
-        "connection_join_metadata_join_device_port_join_device_port_join_device_port_join_device_port": {
+        "connection_details": {
             "formTitle": "New Connection",
             "fields": {
                 "status": {
@@ -553,7 +548,7 @@
                 "device_port_source": {
                     "label": "Device Port Source",
                     "type": "searchDropdown",
-                    "resource": "device_port_join_metadata_join_device_join_vlan_join_vlan",
+                    "resource": "device_port_details",
                     "dependencies": {
                         "device_port_source": "device_port_source"
                     },
@@ -567,7 +562,7 @@
                 "device_port_destination": {
                     "label": "Device Port Destination",
                     "type": "searchDropdown",
-                    "resource": "device_port_join_metadata_join_device_join_vlan_join_vlan",
+                    "resource": "device_port_details",
                     "dependencies": {
                         "device_port_destination": "device_port_destination"
                     },
