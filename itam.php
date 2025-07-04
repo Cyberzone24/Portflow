@@ -780,13 +780,13 @@ function displayTable(columnsConfig, userColumns, rows) {
             
             userColumns.forEach(colKey => {
                 let td;
-                if (colKey === 'device_port') {
+                if (colKey === 'device_port_metadata_caption') {
                     td = $('<td class="p-2">').html(
-                        `${row.device_port || '--'} <br> <span class="text-xs text-gray-500">${row.device_name || '--'}</span> <br> <span class="text-xs text-gray-500">${row.vlan_id || '--'}</span>`
+                        `${row.device_port_device_metadata_caption || '--'} <br> <span class="text-xs text-gray-500">${row.device_port_metadata_caption || '--'}</span> <br> <span class="text-xs text-gray-500">${row.device_port_device_port_vlan_vlan_vlan || '--'}</span>`
                     );
-                } else if (colKey === 'metadata_status_0') {
-                    td = $('<td class="p-2">').html(createStatusIcon('ethernet-port', row.metadata_status_0));
-                } else if (colKey === 'metadata_tags_0') {
+                } else if (colKey === 'device_port_metadata_status') {
+                    td = $('<td class="p-2">').html(createStatusIcon('ethernet-port', row.device_port_metadata_status));
+                } else if (colKey === 'device_port_metadata_tags') {
                     td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');
