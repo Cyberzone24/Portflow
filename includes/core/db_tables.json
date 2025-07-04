@@ -153,8 +153,8 @@
     "connection": {
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
-        "device_port_source": "UUID NOT NULL REFERENCES device_port(uuid) ON DELETE SET NULL",
-        "expected_device_port_source": "UUID NOT NULL REFERENCES device_port(uuid) ON DELETE SET NULL",
+        "device_port_source": "UUID REFERENCES device_port(uuid) ON DELETE SET NULL",
+        "expected_device_port_source": "UUID REFERENCES device_port(uuid) ON DELETE SET NULL",
         "device_port_destination": "UUID REFERENCES device_port(uuid) ON DELETE SET NULL",
         "expected_device_port_destination": "UUID REFERENCES device_port(uuid) ON DELETE SET NULL",
         "cable_name": "VARCHAR(255)",

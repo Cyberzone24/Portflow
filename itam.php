@@ -184,10 +184,42 @@ async function generateFormFromJSON(table = 'location_details') {
 function generateField(name, config) {
     const wrapper = document.createElement('div');
     wrapper.className = 'pb-6 h-fit w-full max-w-lg relative';
+    let field;
 
-    // Wenn der Feldname mit "expected_" beginnt, füge die Klasse "hidden" hinzu
-    if(name.startsWith('expected_')) {
+    if (name.startsWith('expected_')) {
         wrapper.classList.add('hidden');
+
+        field = document.createElement('input');
+        field.type = 'hidden';
+        field.name = name;
+        wrapper.appendChild(field);
+
+        setTimeout(() => {
+            const sourceFieldName = name.substring('expected_'.length);
+            const form = wrapper.closest('form');
+            if (!form) return;
+
+            const sourceField = form.querySelector(`[name="${sourceFieldName}"]`);
+
+            if (sourceField) {
+                const updateValue = () => {
+                    field.value = sourceField.value;
+                };
+                
+                updateValue();
+
+                sourceField.addEventListener('input', updateValue);
+                sourceField.addEventListener('change', updateValue);
+
+                const observer = new MutationObserver(updateValue);
+                observer.observe(sourceField, {
+                    attributes: true,
+                    attributeFilter: ['value']
+                });
+            }
+        }, 0);
+
+        return wrapper;
     }
 
     // Create label
@@ -239,17 +271,14 @@ function generateField(name, config) {
             let lastSelectedText = '';
 
             textInput.addEventListener('input', async () => {
-                // Falls keine Eingabe:
                 if (!textInput.value) {
                     hiddenField.value = '';
                 }
-                // Falls es wieder eine Abweichung vom zuletzt gewählten Eintrag gibt:
                 else if (textInput.value !== lastSelectedText) {
                     hiddenField.value = '';
                 }
 
                 try {
-                    // Danach das Dropdown neu laden
                     dropdownList.innerHTML = '';
                     let searchUrl = '<?php echo PORTFLOW_HOSTNAME; ?>/api/' + config.resource;
                     const params = new URLSearchParams();
@@ -269,13 +298,11 @@ function generateField(name, config) {
                     dropdownList.classList.remove('hidden');
 
                     results.items.forEach(item => {
-                        // Dynamisch das Feld für die Anzeige suchen
                         let captionKey = Object.keys(item).find(k => k.endsWith('_metadata_caption')) 
                             || Object.keys(item).find(k => k.endsWith('_caption')) 
                             || Object.keys(item).find(k => k.endsWith('_name')) 
-                            || Object.keys(item)[0]; // Fallback: erstes Feld
+                            || Object.keys(item)[0];
                     
-                        // Dynamisch das passende UUID-Feld bestimmen
                         let resourceBase = config.resource.replace(/_details$/, '');
                         let uuidKey = Object.keys(item).find(k => k === resourceBase + '_uuid') 
                             || Object.keys(item).find(k => k.endsWith('_uuid')) 
@@ -894,72 +921,82 @@ function closeDetailsPopup() {
 
 // Delete entry
 function deleteEntry(uuid, rowData) {
-    console.log(rowData);
-    if (confirm('Möchten Sie diesen Eintrag wirklich löschen?')) {
+    if (confirm('Möchten Sie diesen Eintrag und alle zugehörigen Daten wirklich löschen?')) {
         fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json')
         .then(response => response.json())
         .then(data => {
-            var formConfig = data.forms[currentTable];
-            if (!formConfig) {
+            const formConfig = data.forms[currentTable];
+            if (!formConfig || !formConfig.postOrder) {
                 console.error(`No form configuration found for table: ${currentTable}`);
                 return;
             }
 
-            // Umgekehrte Reihenfolge der Tabellen für das Löschen
-            var tablesToDelete = formConfig.postOrder.map(item => item.table).reverse();
+            // Tabellen in umgekehrter Reihenfolge des Erstellens zum Löschen vorbereiten
+            const tablesInCreationOrder = formConfig.postOrder.map(item => item.table);
+            const tablesToDeleteInReverse = [...tablesInCreationOrder].reverse();
 
-            // Extrahieren Sie alle UUIDs aus rowData
-            var uuidsToDelete = {};
-            Object.entries(rowData).forEach(([key, value]) => {
-                if (key.match(/_uuid(_\d+)?$/)) {
-                    var table = key.split('_uuid')[0];
-                    uuidsToDelete[table] = value;
+            const uuidsForDeletion = {};
+
+            // Für jede Tabelle aus der Konfiguration die korrekte UUID aus den Zeilendaten finden
+            tablesInCreationOrder.forEach(table => {
+                // Finde alle möglichen UUID-Schlüssel für diese Tabelle in den Zeilendaten
+                const candidateKeys = Object.keys(rowData).filter(key => {
+                    if (!key.endsWith('_uuid') || !rowData[key]) return false;
+                    const keyWithoutSuffix = key.slice(0, -5); // "_uuid" entfernen
+                    const parts = keyWithoutSuffix.split('_');
+                    return parts[parts.length - 1] === table;
+                });
+
+                if (candidateKeys.length > 0) {
+                    // Wähle den kürzesten Schlüssel -> dies ist die direkteste Beziehung
+                    // z.B. 'device_metadata_uuid' wird vor 'device_location_metadata_uuid' bevorzugt
+                    candidateKeys.sort((a, b) => a.length - b.length);
+                    const bestKey = candidateKeys[0];
+                    uuidsForDeletion[table] = rowData[bestKey];
                 }
             });
+            
+            // Sicherstellen, dass die Haupt-UUID (der übergebene Parameter) auch enthalten ist
+            const baseTable = currentTable.replace(/_details$/, '');
+            if (!uuidsForDeletion[baseTable]) {
+                uuidsForDeletion[baseTable] = uuid;
+            }
 
-            // Fügen Sie die initiale UUID für die erste Tabelle hinzu
-            uuidsToDelete[currentTable] = uuid;
-
-            // Funktion zum rekursiven Löschen der Einträge
-            function deleteNextTable(index) {
-                if (index >= tablesToDelete.length) {
-                    console.log('Alle Einträge wurden gelöscht.');
-                    loadTable(currentTable);
+            // Rekursive Funktion zum Löschen der Einträge
+            function deleteNext(index) {
+                if (index >= tablesToDeleteInReverse.length) {
+                    console.log('Alle verknüpften Einträge wurden erfolgreich gelöscht.');
+                    loadTable(currentTable); // Tabelle neu laden
                     return;
                 }
 
-                var table = tablesToDelete[index];
-                var tableUuid;
+                const table = tablesToDeleteInReverse[index];
+                const uuidToDelete = uuidsForDeletion[table];
 
-                // Verwenden Sie die übergebene UUID für die erste Tabelle
-                if (index === 0) {
-                    tableUuid = uuid;
-                } else {
-                    tableUuid = uuidsToDelete[table];
-                }
-
-                if (!tableUuid) {
-                    console.error(`No UUID found for table: ${table}`);
-                    deleteNextTable(index + 1);
+                if (!uuidToDelete) {
+                    console.warn(`Keine UUID für Tabelle '${table}' gefunden, wird übersprungen.`);
+                    deleteNext(index + 1);
                     return;
                 }
 
-                console.log('deleteEntry: ' + table);
-
-                var url = '<?php echo PORTFLOW_HOSTNAME; ?>' + '/api/' + table + '/' + tableUuid;
-                ajaxPost(url, 'DELETE', {}, function() {
-                    console.log('Eintrag in Tabelle ' + table + ' gelöscht.');
-                    deleteNextTable(index + 1);
-                }, function(error) {
-                    console.error('Fehler beim Löschen des Eintrags in Tabelle ' + table + ':', error);
+                console.log(`Lösche Eintrag aus Tabelle '${table}' mit UUID: ${uuidToDelete}`);
+                const url = `<?php echo PORTFLOW_HOSTNAME; ?>/api/${table}/${uuidToDelete}`;
+                
+                ajaxPost(url, 'DELETE', {}, () => {
+                    console.log(`Eintrag aus '${table}' erfolgreich gelöscht.`);
+                    deleteNext(index + 1);
+                }, error => {
+                    console.error(`Fehler beim Löschen des Eintrags aus '${table}':`, error);
+                    // Optional: Hier den Prozess abbrechen oder trotzdem weitermachen
+                    deleteNext(index + 1);
                 });
             }
 
-            // Starten Sie den Löschvorgang mit der ersten Tabelle
-            deleteNextTable(0);
+            // Starte den Löschvorgang
+            deleteNext(0);
         })
         .catch(error => {
-            console.error('Error fetching forms.json:', error);
+            console.error('Fehler beim Laden von forms.json:', error);
         });
     }
 }

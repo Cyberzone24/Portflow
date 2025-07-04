@@ -566,6 +566,15 @@
                     "type": "textarea",
                     "required": false
                 },
+                "device_source": {
+                    "label": "Device Source",
+                    "type": "searchDropdown",
+                    "resource": "device_details",
+                    "dependencies": {
+                        "device_source": "device_source"
+                    },
+                    "required": false
+                },
                 "device_port_source": {
                     "label": "Device Port Source",
                     "type": "searchDropdown",
@@ -578,6 +587,15 @@
                 "expected_device_port_source": {
                     "label": "Expected Device Port Source",
                     "type": "text",
+                    "required": false
+                },
+                "device_destination": {
+                    "label": "Device Destination",
+                    "type": "searchDropdown",
+                    "resource": "device_details",
+                    "dependencies": {
+                        "device_destination": "device_destination"
+                    },
                     "required": false
                 },
                 "device_port_destination": {
