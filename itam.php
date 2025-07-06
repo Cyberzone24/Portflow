@@ -832,13 +832,9 @@ function displayTable(columnsConfig, userColumns, rows) {
             
             userColumns.forEach(colKey => {
                 let td;
-                if (colKey === 'connection') {
-                    td = $('<td class="p-2">').html(
-                        `${row.connection || '--'} <br> <span class="text-xs text-gray-500">${row.device_name || '--'}</span> <br> <span class="text-xs text-gray-500">${row.device_port || '--'}</span>`
-                    );
-                } else if (colKey === 'metadata_status_0') {
-                    td = $('<td class="p-2">').html(createStatusIcon('link', row.metadata_status_0));
-                } else if (colKey === 'metadata_tags_0') {
+                if (colKey === 'connection_metadata_status') {
+                    td = $('<td class="p-2">').html(createStatusIcon('link', row.connection_metadata_status));
+                } else if (colKey === 'connection_metadata_tags') {
                     td = $('<td class="p-2">').html(createTagsHtml(row[colKey]));
                 } else {
                     td = $('<td class="p-2">').text(row[colKey] || '--');
