@@ -150,6 +150,8 @@ async function generateFormFromJSON(table = 'location_details') {
         }
 
         // Iterate over postOrder to generate fields
+        const generatedForms = [];
+
         formConfig.postOrder.forEach(post => {
             const form = document.createElement('form');
             form.id = post.table;
@@ -174,9 +176,442 @@ async function generateFormFromJSON(table = 'location_details') {
 
             form.appendChild(grid);
             container.appendChild(form);
+            generatedForms.push(form);
         });
+
+        if (table === 'device_details') {
+            setupDevicePortAutomation();
+        }
+
+        if (table === 'connection_details') {
+            setupConnectionSuggestions(container, generatedForms);
+        }
     } catch (error) {
         console.error("Error loading or processing forms.json:", error);
+    }
+}
+
+function getDefaultDevicePortConfig(deviceType) {
+    const normalizedType = (deviceType || '').toLowerCase();
+
+    if (normalizedType === 'patchpanel') {
+        return { count: 24 };
+    }
+
+    if (normalizedType === 'net_outlet') {
+        return { count: 2 };
+    }
+
+    if (normalizedType === 'switch') {
+        return { count: 24 };
+    }
+
+    return { count: 0 };
+}
+
+function buildPortLabel(baseLabel, offset) {
+    const input = (baseLabel || '').trim();
+    if (!input) {
+        return '';
+    }
+
+    const match = input.match(/^(.*?)(\d+)$/);
+    if (!match) {
+        return offset === 0 ? input : `${input}-${String(offset + 1).padStart(2, '0')}`;
+    }
+
+    const prefix = match[1];
+    const digits = match[2];
+    const width = Math.max(digits.length, 2);
+    const startNumber = parseInt(digits, 10);
+    const nextNumber = String(startNumber + offset).padStart(width, '0');
+    return `${prefix}${nextNumber}`;
+}
+
+function formatSearchResultLabel(item, config) {
+    const displayFields = config.displayFields || [];
+
+    if (displayFields.length > 0) {
+        const parts = displayFields
+            .map(fieldName => (item[fieldName] || '').trim())
+            .filter(Boolean);
+
+        if (parts.length > 0) {
+            return parts.join(' · ');
+        }
+    }
+
+    const captionKey = Object.keys(item).find(k => k.endsWith('_metadata_caption'))
+        || Object.keys(item).find(k => k.endsWith('_caption'))
+        || Object.keys(item).find(k => k.endsWith('_name'))
+        || Object.keys(item)[0];
+
+    return item[captionKey] || item.uuid || '[kein Name]';
+}
+
+function toggleConnectionView(container, forms, suggestionsPanel, activeView) {
+    const manualVisible = activeView === 'manual';
+    forms.forEach(form => {
+        form.classList.toggle('hidden', !manualVisible);
+    });
+
+    if (suggestionsPanel) {
+        suggestionsPanel.classList.toggle('hidden', manualVisible);
+    }
+
+    const manualButton = container.querySelector('[data-connection-view="manual"]');
+    const suggestionsButton = container.querySelector('[data-connection-view="suggestions"]');
+    if (manualButton) {
+        manualButton.classList.toggle('bg-blue-500', manualVisible);
+        manualButton.classList.toggle('text-white', manualVisible);
+    }
+    if (suggestionsButton) {
+        suggestionsButton.classList.toggle('bg-blue-500', !manualVisible);
+        suggestionsButton.classList.toggle('text-white', !manualVisible);
+    }
+}
+
+function renderSuggestionRow(suggestion) {
+    const row = document.createElement('div');
+    row.className = 'flex flex-col gap-2 p-4 border rounded-2xl bg-gray-50 shadow-sm';
+
+    const title = document.createElement('div');
+    title.className = 'flex items-center justify-between gap-4';
+
+    const text = document.createElement('div');
+    text.className = 'font-semibold';
+    text.textContent = suggestion.label;
+
+    const badge = document.createElement('div');
+    badge.className = 'text-xs px-3 py-1 rounded-full bg-gray-200';
+    badge.textContent = suggestion.room;
+
+    title.appendChild(text);
+    title.appendChild(badge);
+
+    const details = document.createElement('div');
+    details.className = 'text-sm text-gray-600';
+    details.textContent = `${suggestion.source.deviceCaption} → ${suggestion.destination.deviceCaption}`;
+
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'flex justify-end';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'px-4 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white text-sm font-semibold';
+    button.textContent = 'Verbinden';
+    button.onclick = () => createSuggestedConnection(suggestion, button);
+
+    buttonRow.appendChild(button);
+    row.appendChild(title);
+    row.appendChild(details);
+    row.appendChild(buttonRow);
+
+    return row;
+}
+
+function setupConnectionSuggestions(container, forms) {
+    const header = container.querySelector('.flex.justify-between.items-center.pb-6');
+    if (!header) {
+        return;
+    }
+
+    const tabBar = document.createElement('div');
+    tabBar.className = 'flex gap-2 pb-4';
+
+    const manualButton = document.createElement('button');
+    manualButton.type = 'button';
+    manualButton.dataset.connectionView = 'manual';
+    manualButton.className = 'px-4 py-2 rounded-full bg-blue-500 text-white text-sm font-semibold';
+    manualButton.textContent = 'Manuell';
+
+    const suggestionsButton = document.createElement('button');
+    suggestionsButton.type = 'button';
+    suggestionsButton.dataset.connectionView = 'suggestions';
+    suggestionsButton.className = 'px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold';
+    suggestionsButton.textContent = 'Vorschläge';
+
+    tabBar.appendChild(manualButton);
+    tabBar.appendChild(suggestionsButton);
+    container.insertBefore(tabBar, container.children[1] || null);
+
+    const suggestionsPanel = document.createElement('div');
+    suggestionsPanel.id = 'connectionSuggestionsPanel';
+    suggestionsPanel.className = 'hidden mt-2 space-y-3';
+
+    const suggestionHeader = document.createElement('div');
+    suggestionHeader.className = 'flex items-center justify-between';
+    suggestionHeader.innerHTML = '<div class="text-lg font-bold">Vorschläge</div><div class="text-sm text-gray-500">Gleiche Portnamen im gleichen Raum, unverbundene Paare</div>';
+
+    const suggestionList = document.createElement('div');
+    suggestionList.id = 'connectionSuggestionList';
+    suggestionList.className = 'space-y-3';
+
+    suggestionsPanel.appendChild(suggestionHeader);
+    suggestionsPanel.appendChild(suggestionList);
+    container.appendChild(suggestionsPanel);
+
+    manualButton.onclick = () => toggleConnectionView(container, forms, suggestionsPanel, 'manual');
+    suggestionsButton.onclick = async () => {
+        toggleConnectionView(container, forms, suggestionsPanel, 'suggestions');
+        if (!suggestionsPanel.dataset.loaded) {
+            await loadConnectionSuggestions(suggestionList);
+            suggestionsPanel.dataset.loaded = 'true';
+        }
+    };
+
+    toggleConnectionView(container, forms, suggestionsPanel, 'manual');
+}
+
+function buildConnectionSuggestions(ports, connections) {
+    const connectedPorts = new Set();
+    connections.forEach(connection => {
+        if (connection.connection_device_port_source) {
+            connectedPorts.add(connection.connection_device_port_source);
+        }
+        if (connection.connection_device_port_destination) {
+            connectedPorts.add(connection.connection_device_port_destination);
+        }
+    });
+
+    const grouped = new Map();
+
+    ports.forEach(port => {
+        const room = (
+            port.device_port_device_location_parent_location_metadata_caption ||
+            port.device_port_device_location_metadata_caption ||
+            port.device_port_device_location_caption ||
+            ''
+        ).trim();
+        const label = (port.device_port_metadata_caption || '').trim();
+        const deviceType = (port.device_port_device_type || '').trim().toLowerCase();
+        const uuid = port.device_port_uuid;
+
+        if (!room || !label || !uuid || connectedPorts.has(uuid)) {
+            return;
+        }
+
+        const key = `${room}::${label}`;
+        if (!grouped.has(key)) {
+            grouped.set(key, []);
+        }
+
+        grouped.get(key).push({
+            uuid,
+            room,
+            label,
+            deviceType,
+            deviceCaption: port.device_port_device_metadata_caption || port.device_port_device_type || 'Device'
+        });
+    });
+
+    const suggestions = [];
+
+    grouped.forEach((group) => {
+        const patchPanels = group.filter(item => item.deviceType === 'patchpanel').sort((a, b) => a.deviceCaption.localeCompare(b.deviceCaption));
+        const outlets = group.filter(item => item.deviceType === 'net_outlet').sort((a, b) => a.deviceCaption.localeCompare(b.deviceCaption));
+        const count = Math.min(patchPanels.length, outlets.length);
+
+        for (let index = 0; index < count; index++) {
+            suggestions.push({
+                label: group[index].label,
+                room: group[index].room,
+                source: patchPanels[index],
+                destination: outlets[index]
+            });
+        }
+    });
+
+    return suggestions.sort((a, b) => {
+        const roomCompare = a.room.localeCompare(b.room);
+        if (roomCompare !== 0) {
+            return roomCompare;
+        }
+
+        return a.label.localeCompare(b.label);
+    });
+}
+
+async function loadConnectionSuggestions(container) {
+    container.innerHTML = '<div class="text-sm text-gray-500">Lade Vorschläge ...</div>';
+
+    try {
+        const [portsResponse, connectionsResponse] = await Promise.all([
+            fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port_details?limit=5000'),
+            fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/connection_details?limit=5000')
+        ]);
+
+        const portsData = await portsResponse.json();
+        const connectionsData = await connectionsResponse.json();
+
+        const suggestions = buildConnectionSuggestions(portsData.items || [], connectionsData.items || []);
+
+        container.innerHTML = '';
+
+        if (suggestions.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'p-4 rounded-2xl bg-gray-50 text-gray-500';
+            emptyState.textContent = 'Keine offenen Vorschläge gefunden.';
+            container.appendChild(emptyState);
+            return;
+        }
+
+        suggestions.forEach(suggestion => {
+            container.appendChild(renderSuggestionRow(suggestion));
+        });
+    } catch (error) {
+        console.error('Error loading connection suggestions:', error);
+        container.innerHTML = '<div class="p-4 rounded-2xl bg-red-50 text-red-600">Vorschläge konnten nicht geladen werden.</div>';
+    }
+}
+
+async function createSuggestedConnection(suggestion, buttonElement) {
+    if (buttonElement) {
+        buttonElement.disabled = true;
+        buttonElement.textContent = 'Verbinde ...';
+    }
+
+    try {
+        const metadataPayload = {
+            status: '0',
+            caption: suggestion.label,
+            description: `${suggestion.room} | ${suggestion.source.deviceCaption} → ${suggestion.destination.deviceCaption}`,
+            specification: '',
+            tags: ''
+        };
+
+        const metadataResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/metadata/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(metadataPayload)
+        });
+        const metadataResult = await metadataResponse.json();
+        const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
+
+        if (!metadataUuid) {
+            throw new Error('Metadata konnte nicht angelegt werden.');
+        }
+
+        const connectionPayload = {
+            metadata: metadataUuid,
+            device_port_source: suggestion.source.uuid,
+            device_port_destination: suggestion.destination.uuid,
+            type: suggestion.label,
+            length: '',
+            crossover: false,
+            speed: '',
+            item_group: ''
+        };
+
+        const connectionResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/connection/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(connectionPayload)
+        });
+        const connectionResult = await connectionResponse.json();
+
+        if (!connectionResult || !connectionResult[0] || !connectionResult[0].uuid) {
+            throw new Error('Verbindung konnte nicht angelegt werden.');
+        }
+
+        loadTable('connection_details');
+    } catch (error) {
+        console.error('Fehler beim Erstellen der Vorschlagsverbindung:', error);
+        if (buttonElement) {
+            buttonElement.disabled = false;
+            buttonElement.textContent = 'Verbinden';
+        }
+    }
+}
+
+function setupDevicePortAutomation() {
+    const form = document.getElementById('device');
+    if (!form) {
+        return;
+    }
+
+    const typeField = form.querySelector('[name="type"]');
+    const portCountField = form.querySelector('[name="port_count"]');
+    const portStartLabelField = form.querySelector('[name="port_start_label"]');
+
+    const applyDefaults = () => {
+        const defaults = getDefaultDevicePortConfig(typeField ? typeField.value : '');
+
+        if (portCountField && (!portCountField.value || portCountField.dataset.autoFilled === 'true')) {
+            portCountField.value = defaults.count;
+            portCountField.dataset.autoFilled = 'true';
+        }
+
+    };
+
+    if (typeField) {
+        typeField.addEventListener('change', applyDefaults);
+        typeField.addEventListener('input', applyDefaults);
+    }
+
+    if (portCountField) {
+        portCountField.addEventListener('input', () => {
+            portCountField.dataset.autoFilled = 'false';
+        });
+    }
+
+    if (portStartLabelField) {
+        portStartLabelField.addEventListener('input', () => {
+            portStartLabelField.dataset.autoFilled = 'false';
+        });
+    }
+
+    applyDefaults();
+}
+
+async function createAutoPortsForDevice(deviceUuid, options = {}) {
+    const count = parseInt(options.count || 0, 10);
+    if (!deviceUuid || !count || count <= 0) {
+        return;
+    }
+
+    const startLabel = (options.startLabel || '').trim();
+    if (!startLabel) {
+        return;
+    }
+
+    const metadataStatus = '6';
+
+    for (let index = 1; index <= count; index++) {
+        const label = buildPortLabel(startLabel, index - 1);
+        const metadataPayload = {
+            status: metadataStatus,
+            caption: label,
+            description: '',
+            specification: '',
+            tags: ''
+        };
+
+        const metadataResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/metadata/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(metadataPayload)
+        });
+        const metadataResult = await metadataResponse.json();
+        const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
+
+        if (!metadataUuid) {
+            throw new Error(`Metadata fuer Port ${index} konnte nicht erstellt werden.`);
+        }
+
+        const devicePortResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                metadata: metadataUuid,
+                device: deviceUuid
+            })
+        });
+        const devicePortResult = await devicePortResponse.json();
+
+        if (!devicePortResult || !devicePortResult[0] || !devicePortResult[0].uuid) {
+            throw new Error(`Device-Port fuer Port ${index} konnte nicht erstellt werden.`);
+        }
     }
 }
 
@@ -298,23 +733,19 @@ function generateField(name, config) {
                     dropdownList.classList.remove('hidden');
 
                     results.items.forEach(item => {
-                        let captionKey = Object.keys(item).find(k => k.endsWith('_metadata_caption')) 
-                            || Object.keys(item).find(k => k.endsWith('_caption')) 
-                            || Object.keys(item).find(k => k.endsWith('_name')) 
-                            || Object.keys(item)[0];
-                    
                         let resourceBase = config.resource.replace(/_details$/, '');
                         let uuidKey = Object.keys(item).find(k => k === resourceBase + '_uuid') 
                             || Object.keys(item).find(k => k.endsWith('_uuid')) 
                             || 'uuid';
+                        let displayLabel = formatSearchResultLabel(item, config);
                     
                         const entry = document.createElement('div');
                         entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
-                        entry.textContent = item[captionKey] || item[uuidKey] || '[kein Name]';
+                        entry.textContent = displayLabel || item[uuidKey] || '[kein Name]';
                         entry.onclick = () => {
-                            textInput.value = item[captionKey] || '';
+                            textInput.value = displayLabel || '';
                             hiddenField.value = item[uuidKey] || '';
-                            lastSelectedText = item[captionKey] || '';
+                            lastSelectedText = displayLabel || '';
                             dropdownList.classList.add('hidden');
                         };
                         dropdownList.appendChild(entry);
@@ -354,6 +785,7 @@ async function submitForms(table) {
     console.log('Submitting forms for table:', table);
     const forms = Array.from(document.querySelectorAll('form'));
     const responseUuids = {}; // Hier werden die erzeugten UUIDs gespeichert
+    let autoPortConfig = null;
 
     // Lade die postOrder-Konfiguration
     const configResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/forms.json');
@@ -382,6 +814,20 @@ async function submitForms(table) {
         const postData = {};
         formData.forEach((value, key) => { postData[key] = value; });
 
+        if (postConfig.table === 'device') {
+            autoPortConfig = {
+                count: postData.port_count || 0,
+                startLabel: postData.port_start_label || ''
+            };
+
+            if (autoPortConfig.count > 0 && !autoPortConfig.startLabel) {
+                throw new Error('First Port Label is required for automatic port creation.');
+            }
+
+            delete postData.port_count;
+            delete postData.port_start_label;
+        }
+
         // UUIDs aus vorherigen POSTs einfügen, falls benötigt
         injectUuids(postData, postConfig);
 
@@ -399,6 +845,10 @@ async function submitForms(table) {
                 if (postConfig.table === 'metadata') responseUuids.metadata = data[0].uuid;
                 if (postConfig.table === 'device_port_vlan') responseUuids.device_port_vlan = data[0].uuid;
                 if (postConfig.table === 'device_port_ip') responseUuids.device_port_ip = data[0].uuid;
+
+                if (postConfig.table === 'device' && autoPortConfig && autoPortConfig.count > 0) {
+                    await createAutoPortsForDevice(data[0].uuid, autoPortConfig);
+                }
             }
         } catch (error) {
             console.error(`Fehler beim Senden der ${postConfig.table}-Daten:`, error);

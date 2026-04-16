@@ -89,7 +89,17 @@ class DatabaseAdapter {
             if (is_array($value)) {
                 throw new \Exception("Parameter '$param' is an array, but it should be a string or a number.");
             }
-            $stmt->bindValue(':'.$param, $value);
+
+            $pdoType = PDO::PARAM_STR;
+            if (is_int($value)) {
+                $pdoType = PDO::PARAM_INT;
+            } elseif (is_bool($value)) {
+                $pdoType = PDO::PARAM_BOOL;
+            } elseif (is_null($value)) {
+                $pdoType = PDO::PARAM_NULL;
+            }
+
+            $stmt->bindValue(':' . $param, $value, $pdoType);
         }
     
         try {

@@ -343,6 +343,16 @@
                     "label": "Template",
                     "type": "boolean",
                     "required": false
+                },
+                "port_count": {
+                    "label": "Auto Port Count",
+                    "type": "number",
+                    "required": false
+                },
+                "port_start_label": {
+                    "label": "First Port Label",
+                    "type": "text",
+                    "required": false
                 }
             },
             "postOrder": [
@@ -354,7 +364,7 @@
                 {
                     "table": "device",
                     "sectionTitle": "Device",
-                    "fields": ["location", "expected_location", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template"],
+                    "fields": ["location", "expected_location", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template", "port_count", "port_start_label"],
                     "useMetadataUUID": true
                 }
             ]
@@ -579,6 +589,7 @@
                     "label": "Device Port Source",
                     "type": "searchDropdown",
                     "resource": "device_port_details",
+                    "displayFields": ["device_port_device_location_parent_location_metadata_caption", "device_port_device_location_metadata_caption", "device_port_device_metadata_caption", "device_port_metadata_caption"],
                     "dependencies": {
                         "device_port_source": "device_port_source"
                     },
@@ -602,6 +613,7 @@
                     "label": "Device Port Destination",
                     "type": "searchDropdown",
                     "resource": "device_port_details",
+                    "displayFields": ["device_port_device_location_parent_location_metadata_caption", "device_port_device_location_metadata_caption", "device_port_device_metadata_caption", "device_port_metadata_caption"],
                     "dependencies": {
                         "device_port_destination": "device_port_destination"
                     },
