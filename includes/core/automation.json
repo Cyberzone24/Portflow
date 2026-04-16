@@ -1,0 +1,99 @@
+{
+    "description_convention": {
+        "label": "Portflow Port Description Convention",
+        "template": "PF|{{portflow_id}}|{{connection_ref}}|{{patchfield}}",
+        "notes": [
+        "Use a stable identifier that can be searched from Portflow.",
+        "Keep the prefix fixed so descriptions remain machine-readable.",
+        "Avoid free-text notes before the structured fields."
+        ]
+    },
+    "profiles": {
+        "huawei_core_commit": {
+        "label": "Huawei Core",
+        "description": "Core switches use commit and save after configuration changes.",
+        "supports_commit": true,
+        "enter_config": "system-view",
+        "commit": "commit",
+        "save": "save",
+        "write_config": "Y",
+        "exit_config": "return"
+        },
+        "huawei_access_no_commit": {
+        "label": "Huawei Access",
+        "description": "Access switches apply configuration directly without a commit step.",
+        "supports_commit": false,
+        "enter_config": "system-view",
+        "commit": "",
+        "save": "save",
+        "write_config": "Y",
+        "exit_config": "return"
+        }
+    },
+    "templates": {
+        "set_port_description": {
+        "label": "Set Port Description",
+        "description": "Writes a Portflow reference into the switch port description.",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "uses_description_convention": true,
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" },
+            { "name": "portflow_id", "label": "Portflow ID", "type": "text", "required": true, "placeholder": "PF-000123" },
+            { "name": "connection_ref", "label": "Connection Reference", "type": "text", "required": false, "placeholder": "Patchfield A / Port 12" },
+            { "name": "patchfield", "label": "Patchfield / Room", "type": "text", "required": false, "placeholder": "Room 2.15" },
+            { "name": "description", "label": "Description Override", "type": "text", "required": false, "placeholder": "Optional custom description" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "description {{description}}",
+            "quit"
+        ]
+        },
+        "set_port_vlan": {
+        "label": "Set Port VLAN",
+        "description": "Assigns one VLAN to a switch port.",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" },
+            { "name": "vlan_id", "label": "VLAN ID", "type": "number", "required": true, "placeholder": "120" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "port link-type access",
+            "port default vlan {{vlan_id}}",
+            "quit"
+        ]
+        },
+        "shutdown_port": {
+        "label": "Shutdown Port",
+        "description": "Disables a switch port.",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "shutdown",
+            "quit"
+        ]
+        },
+        "cleanup_port": {
+        "label": "Cleanup Port",
+        "description": "Cleans up a switch port.",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "shutdown",
+            "undo port link-type",
+            "undo port default vlan",
+            "undo dhcp snooping enable",
+            "undo description",
+            "undo loopback-detect enable",
+            "quit"
+        ]
+        }
+    }
+}

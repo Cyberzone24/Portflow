@@ -92,3 +92,5 @@ define('LDAP_BIND', getEnvValue('LDAP_BIND', false) === true || getEnvValue('LDA
 define('LDAP_BIND_USER', getEnvValue('LDAP_BIND_USER', ''));
 define('LDAP_BIND_PASSWORD', getEnvValue('LDAP_BIND_PASSWORD', ''));
 define('LDAP_TRUST', getEnvValue('LDAP_TRUST', true) === true || getEnvValue('LDAP_TRUST') === 'true');
+
+define('AUTOMATION_SECRET', getEnvValue('AUTOMATION_SECRET', ''));

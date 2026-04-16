@@ -12,16 +12,130 @@
 
     // import auth
     include_once __DIR__ . '/includes/core/auth.php';
+    include_once __DIR__ . '/includes/core/logger.php';
+    include_once __DIR__ . '/includes/core/automation_store.php';
     use Portflow\Core\Auth;
+    use Portflow\Core\AutomationStore;
+    use Portflow\Core\Logger;
     $auth = new Auth();
+    $logger = new Logger();
+
+    $automationTestResult = null;
+    $automationFormDataOverride = null;
+
+    function runAutomationSshTest(array $formData, AutomationStore $store, Logger $logger): array {
+        $saved = $store->getSettings();
+
+        $host = trim((string)($formData['ssh_host'] ?? ''));
+        $port = (int)($formData['ssh_port'] ?? 22);
+        $username = trim((string)($formData['ssh_username'] ?? ''));
+        $password = (string)($formData['ssh_password'] ?? '');
+
+        if ($host === '') {
+            $host = trim((string)($saved['ssh_host'] ?? ''));
+        }
+        if ($username === '') {
+            $username = trim((string)($saved['ssh_username'] ?? ''));
+        }
+        if ($port <= 0 || $port > 65535) {
+            $port = (int)($saved['ssh_port'] ?? 22);
+        }
+        if ($password === '') {
+            $password = (string)($saved['ssh_password'] ?? '');
+        }
+
+        if ($host === '' || $username === '') {
+            return [
+                'ok' => false,
+                'output' => "SSH-Test fehlgeschlagen: Host und Username sind erforderlich."
+            ];
+        }
+
+        if (!preg_match('/^[a-zA-Z0-9.:_-]+$/', $host)) {
+            return [
+                'ok' => false,
+                'output' => "SSH-Test fehlgeschlagen: Host enthaelt unzulaessige Zeichen."
+            ];
+        }
+
+        $sshPath = trim((string)shell_exec('command -v ssh 2>/dev/null'));
+        if ($sshPath === '') {
+            return [
+                'ok' => false,
+                'output' => "SSH-Test fehlgeschlagen: ssh Binary wurde nicht gefunden."
+            ];
+        }
+
+        $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
+        $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
+
+        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
+
+        if ($password !== '') {
+            $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
+        } else {
+            $sshOptions .= ' -o BatchMode=yes';
+        }
+
+        $commandFile = tempnam(sys_get_temp_dir(), 'portflow-ssh-test-');
+        if ($commandFile === false) {
+            return [
+                'ok' => false,
+                'output' => 'SSH-Test fehlgeschlagen: Konnte keine temporäre Datei anlegen.'
+            ];
+        }
+
+        file_put_contents($commandFile, "screen-length 0 temporary\ndisplay version\n");
+
+        $target = escapeshellarg($username . '@' . $host);
+        $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
+
+        if ($password !== '') {
+            if ($sshpassPath === '') {
+                return [
+                    'ok' => false,
+                    'output' => "SSH-Test fehlgeschlagen: Passwortauthentifizierung benoetigt sshpass, ist aber nicht installiert."
+                ];
+            }
+
+            $sshCommand = $sshpassPath . ' -p ' . escapeshellarg($password) . ' ' . $sshCommand;
+        }
+
+        $fullCommand = $sshCommand;
+        if ($timeoutPath !== '') {
+            $fullCommand = $timeoutPath . ' 15s ' . $fullCommand;
+        }
+
+        $lines = [];
+        $exitCode = 1;
+        exec($fullCommand . ' 2>&1', $lines, $exitCode);
+        @unlink($commandFile);
+
+        $maxLines = 60;
+        if (count($lines) > $maxLines) {
+            $lines = array_slice($lines, 0, $maxLines);
+            $lines[] = '... output truncated ...';
+        }
+
+        $maskedCommand = ($password !== '')
+            ? 'sshpass -p ******** ssh ...'
+            : trim((string)$fullCommand);
+
+        $outputText = "Command: " . $maskedCommand . "\n";
+        $outputText .= "Exit Code: " . $exitCode . "\n\n";
+        $outputText .= implode("\n", $lines);
+
+        $logger->log('automation ssh test for ' . $host . ' returned exit code ' . $exitCode, $exitCode === 0 ? 1 : 3);
+
+        return [
+            'ok' => ($exitCode === 0),
+            'output' => $outputText
+        ];
+    }
 
     // import db_adapter
     use Portflow\Core\DatabaseAdapter;
     $db_adapter = new DatabaseAdapter();
-
-    // import logger
-    use Portflow\Core\Logger;
-    $logger = new Logger();
 
     // import mail
     use Portflow\Core\Mail;
@@ -319,6 +433,115 @@
                 $logger->log('account deactivated', 1, echoToWeb: true);
                 header('Location: ?site=access');
                 break;
+            case 'update_access_right':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for access right update', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $roleUuid = trim((string)($_POST['role_uuid'] ?? ''));
+                $resource = trim((string)($_POST['resource'] ?? ''));
+                $accessRight = (int)($_POST['access_right'] ?? -1);
+
+                if ($roleUuid === '' || $resource === '') {
+                    $logger->log('access right update missing role or resource', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                if ($accessRight < 0 || $accessRight > 7) {
+                    $logger->log('access right update out of range', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $existing = $db_adapter->db_query(
+                    "SELECT uuid FROM access WHERE role = :role AND resource = :resource LIMIT 1",
+                    ['role' => $roleUuid, 'resource' => $resource]
+                );
+
+                if (!empty($existing)) {
+                    $db_adapter->db_query(
+                        "UPDATE access SET access_right = :access_right WHERE uuid = :uuid",
+                        ['access_right' => $accessRight, 'uuid' => $existing[0]['uuid']]
+                    );
+                } else {
+                    $db_adapter->db_query(
+                        "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)",
+                        ['role' => $roleUuid, 'resource' => $resource, 'access_right' => $accessRight]
+                    );
+                }
+
+                $logger->log('access right updated for role=' . $roleUuid . ' resource=' . $resource . ' value=' . $accessRight, 1, echoToWeb: true);
+                header('Location: ?site=access');
+                break;
+            case 'automation_scripts':
+                // check if user is admin
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation settings', 2, echoToWeb: true);
+                    header('Location: ?site=scripts');
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $_POST['ssh_host'] ?? '',
+                        'ssh_port' => $_POST['ssh_port'] ?? 22,
+                        'ssh_username' => $_POST['ssh_username'] ?? '',
+                        'ssh_password' => $_POST['ssh_password'] ?? '',
+                        'scripts_json' => $_POST['scripts_json'] ?? '{}',
+                        'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
+                    ]);
+                    $logger->log('automation settings updated', 1, echoToWeb: true);
+                } catch (\Exception $e) {
+                    $logger->log('automation settings update failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=scripts');
+                break;
+            case 'automation_test_ssh':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation ssh test', 2, echoToWeb: true);
+                    header('Location: ?site=scripts');
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $automationFormDataOverride = [
+                    'ssh_host' => $_POST['ssh_host'] ?? '',
+                    'ssh_port' => (int)($_POST['ssh_port'] ?? 22),
+                    'ssh_username' => $_POST['ssh_username'] ?? '',
+                    'ssh_password' => '',
+                    'scripts_json' => $_POST['scripts_json'] ?? '{}',
+                    'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
+                ];
+
+                $automationTestResult = runAutomationSshTest($_POST, $automationStore, $logger);
+
+                include_once __DIR__ . '/includes/header.php';
+                $site = 'scripts';
+                break;
             default:
                 $logger->log('no set parameter', 2, echoToWeb: true);
                 header('Location: ?site=appearance');
@@ -586,26 +809,74 @@ switch ($site) {
         }
 
         echo "<br><br>";
-        $query = "SELECT metadata.caption, metadata.description, metadata.created, role.caption AS role, resource, access_right FROM access INNER JOIN role ON access.role = role.uuid LEFT JOIN metadata ON access.metadata = metadata.uuid";
-        $results = $db_adapter->db_query($query);
+        $csrf = $auth->csrf();
+        $query = "SELECT access.uuid, access.role, role.caption AS role_caption, access.resource, access.access_right FROM access INNER JOIN role ON access.role = role.uuid ORDER BY role.caption, access.resource";
+        $results = $db_adapter->db_query($query) ?: [];
 
-        if ($results) {
-            echo "<div class='text-xl font-bold pb-6'>Access Rights</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
-            echo "<tr class='border-b bg-gray-200 text-gray-800'>";
-            foreach (array_keys($results[0]) as $header) {
-                echo "<th class='p-2'>{$header}</th>";
+        $roleRows = $db_adapter->db_query("SELECT uuid, caption FROM role ORDER BY caption") ?: [];
+        foreach ($roleRows as $roleRow) {
+            $automationExists = false;
+            foreach ($results as $existingAccess) {
+                if ((string)$existingAccess['role'] === (string)$roleRow['uuid'] && (string)$existingAccess['resource'] === 'automation') {
+                    $automationExists = true;
+                    break;
+                }
             }
+
+            if (!$automationExists) {
+                $results[] = [
+                    'uuid' => null,
+                    'role' => $roleRow['uuid'],
+                    'role_caption' => $roleRow['caption'],
+                    'resource' => 'automation',
+                    'access_right' => 0
+                ];
+            }
+        }
+
+        usort($results, function ($a, $b) {
+            $roleCompare = strcmp((string)($a['role_caption'] ?? ''), (string)($b['role_caption'] ?? ''));
+            if ($roleCompare !== 0) {
+                return $roleCompare;
+            }
+            return strcmp((string)($a['resource'] ?? ''), (string)($b['resource'] ?? ''));
+        });
+
+        if (!empty($results)) {
+            echo "<div class='text-xl font-bold pb-2'>Access Rights</div>";
+            echo "<p class='text-sm text-gray-600 pb-4'>Rechte im Unix/Linux-Stil: 0-7 (z. B. 0 = kein Zugriff, 7 = voller Zugriff).</p>";
+            echo "<div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
+            echo "<tr class='border-b bg-gray-200 text-gray-800'>";
+            echo "<th class='p-2'>Role</th>";
+            echo "<th class='p-2'>Resource</th>";
+            echo "<th class='p-2'>Access Right (0-7)</th>";
+            echo "<th class='p-2'>Action</th>";
             echo "</tr></thead><tbody>";
             foreach ($results as $row) {
+                $roleUuidEscaped = htmlspecialchars((string)$row['role'], ENT_QUOTES, 'UTF-8');
+                $roleCaptionEscaped = htmlspecialchars((string)$row['role_caption'], ENT_QUOTES, 'UTF-8');
+                $resourceEscaped = htmlspecialchars((string)$row['resource'], ENT_QUOTES, 'UTF-8');
+                $accessRightValue = (int)($row['access_right'] ?? 0);
+
                 echo "<tr class='hover:bg-gray-200'>";
-                foreach ($row as $column) {
-                    echo "<td class='p-2 border-b'>{$column}</td>";
-                }
+                echo "<td class='p-2 border-b'>{$roleCaptionEscaped}</td>";
+                echo "<td class='p-2 border-b font-mono'>{$resourceEscaped}</td>";
+                echo "<td class='p-2 border-b'>";
+                echo "<form action='?set=update_access_right' method='post' class='m-0 flex items-center gap-2'>";
+                echo "<input type='hidden' name='csrf' value='{$csrf}'>";
+                echo "<input type='hidden' name='role_uuid' value='{$roleUuidEscaped}'>";
+                echo "<input type='hidden' name='resource' value='{$resourceEscaped}'>";
+                echo "<input class='appearance-none border rounded-full w-20 py-1 px-3 leading-tight focus:outline-none focus:shadow-outline' type='number' min='0' max='7' step='1' name='access_right' value='{$accessRightValue}' required>";
+                echo "</td>";
+                echo "<td class='p-2 border-b'>";
+                echo "<button class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full focus:outline-none focus:shadow-outline' type='submit'>Save</button>";
+                echo "</form>";
+                echo "</td>";
                 echo "</tr>";
             }
             echo "</tbody></table></div>";
         } else {
-            echo "No results found.";
+            echo "No access rights found.";
         }
 
         echo <<<HTML
@@ -656,7 +927,95 @@ switch ($site) {
         HTML;
         break;
     case 'scripts':
-        echo "Skripte für Automatisierung, Cronjobs";
+        if ($role !== 'admin') {
+            $logger->log('user is not admin', 2, echoToWeb: true);
+            header('Location: ?site=appearance');
+            die();
+        }
+
+        $automationStore = new AutomationStore();
+        $automationSettings = $automationStore->getSettings();
+        $csrf = $auth->csrf();
+
+        if (is_array($automationFormDataOverride)) {
+            $automationSettings = array_merge($automationSettings, $automationFormDataOverride);
+        }
+
+        $sshHost = htmlspecialchars((string)($automationSettings['ssh_host'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $sshPort = (int)($automationSettings['ssh_port'] ?? 22);
+        $sshUsername = htmlspecialchars((string)($automationSettings['ssh_username'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $scriptsJson = trim((string)($automationSettings['scripts_json'] ?? ''));
+        if ($scriptsJson === '') {
+            $scriptsJson = "{}";
+        }
+        $scriptsJsonEscaped = htmlspecialchars($scriptsJson, ENT_QUOTES, 'UTF-8');
+        $switchInventoryJson = trim((string)($automationSettings['switch_inventory_json'] ?? ''));
+        if ($switchInventoryJson === '') {
+            $switchInventoryJson = '{"switches": []}';
+        }
+        $switchInventoryJsonEscaped = htmlspecialchars($switchInventoryJson, ENT_QUOTES, 'UTF-8');
+        $passwordHint = !empty($automationSettings['ssh_password']) ? 'Gespeichert (leer lassen zum Beibehalten)' : 'Noch nicht gesetzt';
+
+        $testOutputHtml = '';
+        if (is_array($automationTestResult) && isset($automationTestResult['output'])) {
+            $testStateClass = !empty($automationTestResult['ok'])
+                ? 'bg-green-50 border-green-200 text-green-900'
+                : 'bg-red-50 border-red-200 text-red-900';
+            $testOutputEscaped = htmlspecialchars((string)$automationTestResult['output'], ENT_QUOTES, 'UTF-8');
+            $testOutputHtml = "<div class=\"rounded-2xl border p-4 {$testStateClass}\"><div class=\"text-sm font-semibold pb-2\">SSH Test Output</div><pre class=\"text-xs whitespace-pre-wrap leading-5\">{$testOutputEscaped}</pre></div>";
+        }
+
+        echo <<<HTML
+        <div class="h-fit w-full p-4">
+            <div class="grid grid-cols-1 gap-6">
+                <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                    <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
+                    <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Skript-Overrides werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert.</p>
+                    {$testOutputHtml}
+                    <form action="?set=automation_scripts" method="post">
+                        <input type="hidden" name="csrf" value="$csrf">
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
+                            </div>
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="ssh_port">SSH Port</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_port" type="number" min="1" max="65535" name="ssh_port" value="$sshPort">
+                            </div>
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="ssh_username">SSH Username</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_username" type="text" name="ssh_username" value="$sshUsername" placeholder="netadmin">
+                            </div>
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="ssh_password">SSH Password</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_password" type="password" name="ssh_password" placeholder="$passwordHint">
+                                <p class="text-xs text-gray-500 mt-2">$passwordHint</p>
+                            </div>
+                        </div>
+
+                        <div class="pb-4">
+                            <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (Management IPs)</label>
+                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
+                            <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. Optional: device_id (UUID des verknuepften ITAM-Geraets). Diese Liste wird im Automatisierungs-Tab als Zielauswahl genutzt.</p>
+                        </div>
+
+                        <div class="pb-4">
+                            <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON)</label>
+                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
+                            <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles, templates. Diese Daten erweitern die Basisdatei aus includes/core/automation.json.</p>
+                        </div>
+
+                        <div class="pb-2 flex justify-between items-center gap-4">
+                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" formaction="?set=automation_test_ssh">SSH testen</button>
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        HTML;
         break; 
     case 'appearance':
     default:

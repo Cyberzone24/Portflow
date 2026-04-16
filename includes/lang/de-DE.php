@@ -432,6 +432,7 @@ if (isset($_GET['nav'])) {
         $lang['lang'] = 'Deutsch';
         $lang['portflow'] = 'Portflow';
         $lang['itam'] = 'ITAM';
+        $lang['automation'] = 'Automatisierung';
         $lang['portview'] = 'Portview';
         $lang['login'] = 'Anmelden';
         $lang['logout'] = 'Abmelden';

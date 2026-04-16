@@ -569,6 +569,12 @@ class Auth {
                 $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '0'];
                 $result = $this->db_adapter->db_query($query, $params);
                 $this->logger->log('disallowing api access for user role', 0);
+                
+                // set automation access right (no access by default for user)
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'automation', 'access_right' => '0'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('disallowing automation access for user role', 0);
 
                 // create ldap role
                 $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
@@ -582,6 +588,12 @@ class Auth {
                 $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '0'];
                 $result = $this->db_adapter->db_query($query, $params);
                 $this->logger->log('disallowing api access for ldap role', 0);
+                
+                // set automation access right (no access by default for ldap)
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'automation', 'access_right' => '0'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('disallowing automation access for ldap role', 0);
 
                 // create admin role
                 $query = "INSERT INTO role (caption, description) VALUES (:caption, :description) RETURNING uuid";
@@ -595,6 +607,12 @@ class Auth {
                 $params = ['role' => $this->role, 'resource' => 'api/*', 'access_right' => '7'];
                 $result = $this->db_adapter->db_query($query, $params);
                 $this->logger->log('allowing api access for admin role', 0);
+                
+                // set automation access right (allow automation for admin)
+                $query = "INSERT INTO access (role, resource, access_right) VALUES (:role, :resource, :access_right)";
+                $params = ['role' => $this->role, 'resource' => 'automation', 'access_right' => '1'];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->logger->log('allowing automation access for admin role', 0);
 
                 // set FIRST_RUN to FALSE
                 $config = file_get_contents(__DIR__ . '/config.php');
@@ -715,6 +733,45 @@ class Auth {
             // - Redirect the user to an error page
             // - Show a specific error message to the user
             // Make sure to not directly output the Exception message if it contains sensitive information
+        }
+    }
+
+    public function checkResourceAccess($userUuid, $resource) {
+        try {
+            // Get user role
+            $query = "SELECT role FROM users WHERE uuid = :uuid";
+            $result = $this->db_adapter->db_query($query, ['uuid' => $userUuid]);
+            
+            if (empty($result)) {
+                $this->logger->log("user uuid '$userUuid' not found", 2);
+                return false;
+            }
+            
+            $roleUuid = $result[0]['role'];
+            
+            // Check if role has access to resource
+            $query = "SELECT access_right FROM access WHERE role = :role AND resource = :resource";
+            $result = $this->db_adapter->db_query($query, ['role' => $roleUuid, 'resource' => $resource]);
+            
+            if (empty($result)) {
+                $this->logger->log("no access right found for resource '$resource' and role '$roleUuid'", 2);
+                return false;
+            }
+            
+            $accessRight = (int)$result[0]['access_right'];
+            
+            // access_right > 0 means some level of access is granted
+            if ($accessRight > 0) {
+                $this->logger->log("access granted for resource '$resource' to user '$userUuid'", 1);
+                return true;
+            }
+            
+            $this->logger->log("access denied for resource '$resource' to user '$userUuid' (access_right=0)", 2);
+            return false;
+            
+        } catch (\Exception $e) {
+            $this->logger->log("checkResourceAccess exception: " . $e->getMessage(), 3);
+            return false;
         }
     }
 }

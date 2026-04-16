@@ -19,6 +19,20 @@
 
     // import lanuage file
     include_once __DIR__ . '/lang.php';
+
+    // import auth for permission checks
+    include_once __DIR__ . '/core/auth.php';
+    use Portflow\Core\Auth;
+    $auth = new Auth();
+
+    $navActiveClass = 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold';
+    $navInactiveClass = 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800';
+    $itamClass = ($active_page == 'itam') ? $navActiveClass : $navInactiveClass;
+    $automationClass = ($active_page == 'automation') ? $navActiveClass : $navInactiveClass;
+    $portviewClass = ($active_page == 'portview') ? $navActiveClass : $navInactiveClass;
+    
+    // Check if user has access to automation
+    $hasAutomationAccess = (isset($_SESSION['uuid']) && $auth->checkResourceAccess($_SESSION['uuid'], 'automation')) ? true : false;
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -45,11 +59,17 @@
     </div>
     <ul class="basis-1/6 flex justify-center gap-8">
         <li class="flex items-end">
-            <a class="<?= ($active_page == 'itam') ? 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800'; ?>"
+            <a class="<?= $itamClass; ?>"
                 href="itam.php" title="<?php echo $lang['it asset-management']; ?>"><?php echo $lang['itam']; ?></a>
         </li>
+        <?php if ($hasAutomationAccess) : ?>
         <li class="flex items-end">
-            <a class="<?= ($active_page == 'portview') ? 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold' : 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800'; ?>"
+            <a class="<?= $automationClass; ?>"
+                href="automation.php" title="<?php echo $lang['automation']; ?>"><?php echo $lang['automation']; ?></a>
+        </li>
+        <?php endif; ?>
+        <li class="flex items-end">
+            <a class="<?= $portviewClass; ?>"
                 href="portview.php" title="<?php echo $lang['portview']; ?>"><?php echo $lang['portview']; ?></a>
         </li>
     </ul>

@@ -146,6 +146,7 @@ if (isset($_GET['nav'])) {
         $lang['lang'] = 'English';
         $lang['portflow'] = 'Portflow';
         $lang['itam'] = 'ITAM';
+        $lang['automation'] = 'Automation';
         $lang['portview'] = 'Portview';
         $lang['login'] = 'Login';
         $lang['logout'] = 'Logout';
