@@ -1,7 +1,7 @@
 <?php
   const APP_NAME = 'Portflow';
 
-  if (!file_exists(__DIR__ . '/includes/core/config.php')) {
+  if (!file_exists(__DIR__ . '/.env')) {
     header('Location: setup.php');
     exit;
   }

@@ -157,7 +157,7 @@ if (isset($_GET['nav'])) {
         ]
     ];
     $nav['device_port_details'] = [
-        'default' => ['device_port_uuid', 'device_port_metadata_status', 'device_port_metadata_caption', 'device_port_metadata_tags', 'device_port_device_serial', 'device_port_device_asset', 'device_port_device_manufacturer', 'device_port_device_model', 'device_port_device_type', 'device_port_device_template'],
+        'default' => ['device_port_metadata_status', 'device_port_metadata_caption', 'device_port_metadata_tags', 'device_port_device_metadata_caption', 'device_port_device_type'],
         'columns' => [
             'device_port_uuid' => 'Device Port UUID',
             'device_port_metadata' => 'Device Port Metadata',

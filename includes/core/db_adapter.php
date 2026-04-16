@@ -7,7 +7,7 @@ if (!defined('APP_NAME')) {
 }
 
 // import config
-if (file_exists(__DIR__ . '/config.php')) {
+if (file_exists(__DIR__ . '/../../.env')) {
     include_once __DIR__ . '/config.php';
 }
 
@@ -26,10 +26,10 @@ class DatabaseAdapter {
     public function __construct() {
         $this->logger = new Logger();
 
-        if (file_exists(__DIR__ . '/config.php')) {
+        if (file_exists(__DIR__ . '/../../.env')) {
             $this->db_conn();
         } else {
-            $this->logger->log('config.php not found', 3);
+            $this->logger->log('.env not found', 3);
         }
     }
 

@@ -6,7 +6,7 @@ function uri() {
     return $protocol . $host . $requestUri;
 }
 
-if (!file_exists(__DIR__ . '/config.php')) {
+if (!file_exists(__DIR__ . '/../../.env')) {
     header('Location: ' . uri());
     exit;
 } else {
