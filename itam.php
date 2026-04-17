@@ -1155,8 +1155,7 @@ function findBestRowUuidForTable(rowData, tableName) {
         }
 
         const keyWithoutSuffix = key.slice(0, -5);
-        const parts = keyWithoutSuffix.split('_');
-        return parts[parts.length - 1] === tableName;
+        return keyWithoutSuffix === tableName || keyWithoutSuffix.endsWith(`_${tableName}`);
     });
 
     if (candidateKeys.length === 0) {
@@ -2302,6 +2301,45 @@ async function submitForms(table) {
         }
     }
 
+    function hasMeaningfulPostData(postData) {
+        return Object.entries(postData || {}).some(([key, value]) => {
+            if (key === 'uuid') {
+                return false;
+            }
+            if (value === null || value === undefined) {
+                return false;
+            }
+            return String(value).trim() !== '';
+        });
+    }
+
+    function extractUuidFromApiPayload(payload, rawBody = '') {
+        if (!payload) {
+            const rawMatch = String(rawBody || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+            return rawMatch ? String(rawMatch[0]) : '';
+        }
+
+        if (Array.isArray(payload) && payload[0] && payload[0].uuid) {
+            return String(payload[0].uuid);
+        }
+
+        if (payload.uuid) {
+            return String(payload.uuid);
+        }
+
+        if (Array.isArray(payload.items) && payload.items[0] && payload.items[0].uuid) {
+            return String(payload.items[0].uuid);
+        }
+
+        // Fallback: some responses might include extra output around JSON or use different shapes.
+        const rawMatch = String(rawBody || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        if (rawMatch) {
+            return String(rawMatch[0]);
+        }
+
+        return '';
+    }
+
     // Reihenfolge gemäß postOrder abarbeiten
     for (const postConfig of postOrder) {
         const form = forms.find(f => f.id === postConfig.table);
@@ -2355,14 +2393,23 @@ async function submitForms(table) {
 
         const editMode = itamFormState.mode === 'edit' && itamFormState.table === table;
         const targetUuid = editMode ? (itamFormState.uuids[postConfig.table] || '') : '';
-        const httpMethod = editMode ? 'PATCH' : 'POST';
-        const apiUrl = editMode
+        let httpMethod = editMode ? 'PATCH' : 'POST';
+        let apiUrl = editMode
             ? `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/${targetUuid}`
             : `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/`;
+        const isOptionalRelationTable = postConfig.table === 'device_port_vlan' || postConfig.table === 'device_port_ip';
+        const hasPayloadValues = hasMeaningfulPostData(postData);
 
+        // In edit mode, related rows (e.g. device_port_vlan/ip) might not exist yet.
+        // Fall back to create for that step instead of aborting the full save.
         if (editMode && !targetUuid) {
-            submitErrorMessage = `Keine UUID fuer Update in Tabelle ${postConfig.table} gefunden.`;
-            break;
+            if (isOptionalRelationTable && !hasPayloadValues) {
+                responseUuids[postConfig.table] = '';
+                continue;
+            }
+            httpMethod = 'POST';
+            apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/`;
+            console.warn(`Keine UUID fuer ${postConfig.table} gefunden, lege Datensatz neu an.`);
         }
 
         try {
@@ -2385,10 +2432,22 @@ async function submitForms(table) {
                 throw new Error(`API ${postConfig.table} failed (${response.status}): ${rawBody || 'no response body'}`);
             }
 
-            const responseUuid = data && data[0] && data[0].uuid ? String(data[0].uuid) : '';
-            const effectiveUuid = editMode ? String(targetUuid) : responseUuid;
+            const responseUuid = extractUuidFromApiPayload(data, rawBody);
+            const usesPatchUpdate = editMode && !!targetUuid && httpMethod === 'PATCH';
+            const effectiveUuid = usesPatchUpdate ? String(targetUuid) : responseUuid;
 
             if (!effectiveUuid) {
+                if (isOptionalRelationTable) {
+                    console.warn(`Kein UUID aus ${postConfig.table}-Response ermittelbar. Schritt wird als optional behandelt.`, {
+                        table: postConfig.table,
+                        method: httpMethod,
+                        apiUrl,
+                        postData,
+                        rawBody
+                    });
+                    responseUuids[postConfig.table] = '';
+                    continue;
+                }
                 throw new Error(`API ${postConfig.table} returned no UUID.`);
             }
 

@@ -73,7 +73,7 @@
     $selectedSaveMode = $_GET['save_mode'] ?? 'immediate';
     $selectedErrorStrategy = $_GET['error_strategy'] ?? 'continue_report';
     $batchInterfacesInput = (string)($_GET['batch_interfaces'] ?? '');
-    $pipelineTemplatesInput = (string)($_GET['pipeline_templates'] ?? '');
+    $pipelineTemplatesInput = '';
 
     if (!isset($profiles[$selectedProfile]) && !empty($profileKeys)) {
         $selectedProfile = $profileKeys[0];
@@ -389,7 +389,7 @@
             $selectedSaveMode = (string)($_POST['save_mode'] ?? $selectedSaveMode);
             $selectedErrorStrategy = (string)($_POST['error_strategy'] ?? $selectedErrorStrategy);
             $batchInterfacesInput = (string)($_POST['batch_interfaces'] ?? $batchInterfacesInput);
-            $pipelineTemplatesInput = (string)($_POST['pipeline_templates'] ?? $pipelineTemplatesInput);
+            $pipelineTemplatesInput = '';
 
             if (!in_array($selectedSaveMode, ['immediate', 'skip_save'], true)) {
                 $selectedSaveMode = 'immediate';
@@ -1628,6 +1628,10 @@
         font-size: 0.9rem;
     }
 
+    .automation-loading-box.hidden {
+        display: none !important;
+    }
+
     .automation-loading-dot {
         width: 1rem;
         height: 1rem;
@@ -1779,12 +1783,6 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="pipeline_templates">Template Pipeline (optional, eine Zeile pro Template-ID)</label>
-                    <textarea id="pipeline_templates" name="pipeline_templates" rows="4" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white font-mono text-sm" placeholder="port_description&#10;poe_enable&#10;vlan_access"><?php echo automation_escape($pipelineTemplatesInput); ?></textarea>
-                    <div class="text-xs text-gray-600 mt-2">Wenn gesetzt, werden mehrere Templates in dieser Reihenfolge in einer Session ausgefuehrt.</div>
-                </div>
-
-                <div>
                     <div class="text-sm font-semibold mb-2">Variables</div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <?php foreach (($templateDefinition['variables'] ?? []) as $variable) : ?>
@@ -1857,7 +1855,6 @@
                 <input type="hidden" name="save_mode" value="<?php echo automation_escape($selectedSaveMode); ?>">
                 <input type="hidden" name="error_strategy" value="<?php echo automation_escape($selectedErrorStrategy); ?>">
                 <input type="hidden" name="batch_interfaces" value="<?php echo automation_escape($batchInterfacesInput); ?>">
-                <input type="hidden" name="pipeline_templates" value="<?php echo automation_escape($pipelineTemplatesInput); ?>">
                 <?php foreach ($variableValues as $variableName => $variableValue) : ?>
                     <input type="hidden" name="<?php echo automation_escape($variableName); ?>" value="<?php echo automation_escape($variableValue); ?>">
                 <?php endforeach; ?>
