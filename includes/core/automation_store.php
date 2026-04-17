@@ -23,7 +23,8 @@ class AutomationStore {
             'ssh_password' => $this->decrypt((string)($stored['ssh_password'] ?? '')),
             'scripts_json' => $this->decrypt((string)($stored['scripts_json'] ?? '')),
             'switch_inventory_json' => $this->decrypt((string)($stored['switch_inventory_json'] ?? '')),
-            'updated_at' => (string)($stored['updated_at'] ?? '')
+            'updated_at' => (string)($stored['updated_at'] ?? ''),
+            'scheduler_status' => is_array($stored['scheduler_status'] ?? null) ? $stored['scheduler_status'] : null
         ];
     }
 
@@ -209,5 +210,24 @@ class AutomationStore {
         }
 
         return hash('sha256', $seed, true);
+    }
+
+    /**
+     * Update scheduler status (called after scheduler.php runs).
+     * 
+     * @param array $status Status array with keys: last_run, last_success, processed, succeeded, failed, message
+     * @return void
+     */
+    public function updateSchedulerStatus(array $status): void {
+        $stored = $this->readStored();
+        $stored['scheduler_status'] = [
+            'last_run' => (string)($status['last_run'] ?? ''),
+            'last_success' => (string)($status['last_success'] ?? ''),
+            'processed' => (int)($status['processed'] ?? 0),
+            'succeeded' => (int)($status['succeeded'] ?? 0),
+            'failed' => (int)($status['failed'] ?? 0),
+            'message' => substr((string)($status['message'] ?? ''), 0, 500)
+        ];
+        $this->writeStored($stored);
     }
 }

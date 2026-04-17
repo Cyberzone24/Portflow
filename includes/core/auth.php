@@ -736,7 +736,7 @@ class Auth {
         }
     }
 
-    public function checkResourceAccess($userUuid, $resource) {
+    public function checkResourceAccess($userUuid, $resource, $requiredAction = 'any') {
         try {
             // Get user role
             $query = "SELECT role FROM users WHERE uuid = :uuid";
@@ -760,13 +760,27 @@ class Auth {
             
             $accessRight = (int)$result[0]['access_right'];
             
-            // access_right > 0 means some level of access is granted
-            if ($accessRight > 0) {
-                $this->logger->log("access granted for resource '$resource' to user '$userUuid'", 1);
+            $requiredAction = strtolower(trim((string)$requiredAction));
+            $maskMap = [
+                'read' => 4,
+                'write' => 2,
+                'execute' => 1,
+                'any' => 0
+            ];
+            $requiredMask = $maskMap[$requiredAction] ?? 0;
+
+            if ($requiredMask === 0) {
+                $granted = $accessRight > 0;
+            } else {
+                $granted = (($accessRight & $requiredMask) === $requiredMask);
+            }
+
+            if ($granted) {
+                $this->logger->log("access granted for resource '$resource' to user '$userUuid' (required=$requiredAction, access_right=$accessRight)", 1);
                 return true;
             }
             
-            $this->logger->log("access denied for resource '$resource' to user '$userUuid' (access_right=0)", 2);
+            $this->logger->log("access denied for resource '$resource' to user '$userUuid' (required=$requiredAction, access_right=$accessRight)", 2);
             return false;
             
         } catch (\Exception $e) {

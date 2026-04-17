@@ -410,6 +410,29 @@ function displayForm($step) {
             HTML;
         break;
 
+        case 7:
+            echo <<<HTML
+            <form class="m-0" method="POST" action="$action">
+                <div class='flex justify-center items-center pb-12'>
+                    <img src='includes/img/portflow.png' alt='Portflow' class='max-h-18'>
+                </div>
+                <div class='flex flex-col gap-12 py-6'>
+                    <h1 class='text-4xl font-bold'>Automation Configuration</h1>
+                </div> 
+                <div class='pb-6'>
+                    <label class='block mb-2' for='automation_secret'>Automation Secret</label>
+                    <p class='text-lg'>Please set a long random value as automation secret. This secret is used to authenticate API requests from the automation module.</p>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='automation_secret' name='automation_secret' placeholder='change-this-to-a-long-random-value' required>
+                </div>
+                <input type='hidden' name='step' value='5'>
+                <div class='pt-6 flex justify-between items-center'>
+                    <a href='?reset' class='bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline'>Reset</a>
+                    <input type='submit' class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline' value='Finish'>
+                </div>
+            </form>
+            HTML;
+        break;
+
         default:
             echo <<<HTML
             <div>
@@ -508,9 +531,12 @@ if (isset($_SESSION['step'])) {
         $config['LDAP_BIND_USER'] = isset($_POST['ldap_bind_user']) ? filter_var($_POST['ldap_bind_user'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
         $config['LDAP_BIND_PASSWORD'] = isset($_POST['ldap_bind_password']) ? filter_var($_POST['ldap_bind_password'], FILTER_SANITIZE_SPECIAL_CHARS) : NULL;
         $config['LDAP_TRUST'] = isset($_POST['ldap_trust']) ? 'TRUE' : 'FALSE';
+    } elseif ($step === 7) {
+        // Automation secret
+        $config['AUTOMATION_SECRET'] = isset($_POST['automation_secret']) ? filter_var($_POST['automation_secret'], FILTER_SANITIZE_SPECIAL_CHARS) : bin2hex(random_bytes(16));
     }
 
-    if ($step < 6) {
+    if ($step < 7) {
         displayForm($step + 1);
     } else {
         // Create config file
@@ -587,6 +613,9 @@ LDAP_BIND={$config['LDAP_BIND']}
 LDAP_BIND_USER={$config['LDAP_BIND_USER']}
 LDAP_BIND_PASSWORD={$config['LDAP_BIND_PASSWORD']}
 LDAP_TRUST={$config['LDAP_TRUST']}
+
+# Automation Configuration
+AUTOMATION_SECRET={$config['AUTOMATION_SECRET']}
 ";
 
     file_put_contents(__DIR__ . '/.env', $envContent);

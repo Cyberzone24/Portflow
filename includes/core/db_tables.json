@@ -164,5 +164,19 @@
         "speed": "FLOAT",
         "item_group": "UUID",
         "PRIMARY KEY": "(uuid)"
+    },
+    "pending_changes": {
+        "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
+        "users": "UUID REFERENCES users(uuid) ON DELETE CASCADE NOT NULL",
+        "switch_name": "VARCHAR(255) NOT NULL",
+        "profile_id": "VARCHAR(255) NOT NULL",
+        "template_id": "VARCHAR(255) NOT NULL",
+        "commands": "TEXT NOT NULL",
+        "variables": "TEXT",
+        "status": "VARCHAR(20) DEFAULT 'pending'",
+        "result": "TEXT",
+        "created": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+        "executed": "TIMESTAMP WITH TIME ZONE",
+        "PRIMARY KEY": "(uuid)"
     }
 }

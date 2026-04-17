@@ -23,6 +23,8 @@ class DatabaseAdapter {
     private $pdo;
     private $logger;
 
+    private array $excludedDataFolders = ['role', 'users', 'changelog', 'metadata', 'access', 'device_port_vlan', 'device_port_ip', 'device_lifecycle'];
+
     public function __construct() {
         $this->logger = new Logger();
 
@@ -114,55 +116,60 @@ class DatabaseAdapter {
 
         // ============================================================= HIER CHANGELOG =============================================================
     }
-    
-    public function db_init() {
-        // get content of db_tables.json, convert to array
-        $dbTables = json_decode(file_get_contents(__DIR__ . '/db_tables.json'), true);
-    
-        // iterate over array and create tables
-        foreach ($dbTables as $dbTable => $columns) {
-            // ... Table creation logic remains the same ...
-            $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
-            foreach ($columns as $column => $columnType) {
-                $query .= "$column $columnType, ";
-                $this->logger->log("Column $column with type $columnType added to table $dbTable", 0);
-            }
-            $query = rtrim($query, ', ') . ');';
-    
-            try {
-                $this->pdo->beginTransaction();
-                $this->db_query($query, []);
-                $this->pdo->commit();
-                $this->logger->log("Created table $dbTable");
-            } catch (\Exception $e) {
-                $this->pdo->rollBack();
-                $this->logger->log('Error during initialization of database: ' . $e->getMessage());
-            }
-    
-            try {
-                $excludedTables = ['role', 'users', 'changelog', 'metadata', 'access', 'device_port_vlan', 'device_port_ip', 'device_lifecycle'];
-                if (!file_exists(__DIR__ . '/../../data/' . $dbTable) && !in_array($dbTable, $excludedTables, true)) {
-                    mkdir(__DIR__ . '/../../data/' . $dbTable, 0755, true);
-                    $this->logger->log("Created folder for table $dbTable");
-                }
-            } catch (\Exception $e) {
-                $this->logger->log('Error during creation of folder for table: ' . $e->getMessage());
-            }
+
+    private function getDbTablesConfiguration(): array {
+        $dbTablesPath = __DIR__ . '/db_tables.json';
+        $dbTables = json_decode(file_get_contents($dbTablesPath), true);
+
+        if (!is_array($dbTables)) {
+            throw new Exception('Invalid db_tables.json configuration');
         }
-    
-        // CREATE VIEWS
+
+        return $dbTables;
+    }
+
+    private function buildCreateTableQuery(string $dbTable, array $columns): string {
+        $query = "CREATE TABLE IF NOT EXISTS $dbTable (";
+
+        foreach ($columns as $column => $columnType) {
+            $query .= "$column $columnType, ";
+            $this->logger->log("Column $column with type $columnType added to table $dbTable", 0);
+        }
+
+        return rtrim($query, ', ') . ');';
+    }
+
+    private function ensureDataFolderForTable(string $dbTable): void {
+        if (!file_exists(__DIR__ . '/../../data/' . $dbTable) && !in_array($dbTable, $this->excludedDataFolders, true)) {
+            mkdir(__DIR__ . '/../../data/' . $dbTable, 0755, true);
+            $this->logger->log("Created folder for table $dbTable");
+        }
+    }
+
+    private function getExistingColumns(string $tableName): array {
+        $query = "
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = :table_name
+        ";
+
+        $results = $this->db_query($query, ['table_name' => $tableName]);
+        return array_column($results, 'column_name');
+    }
+
+    private function createOrReplaceViews(array $dbTables): void {
         $this->logger->log("Starting view creation...");
         $viewDefinitions = file(__DIR__ . '/db_views.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    
+
         foreach ($viewDefinitions as $definition) {
             try {
                 $this->pdo->beginTransaction();
-                
+
                 $trimmed_definition = trim($definition);
                 $joins = explode(', ', $trimmed_definition);
                 $firstJoinParts = explode(' ', $joins[0]);
                 $baseTable = explode('.', $firstJoinParts[0])[0];
-    
+
                 // naming logic for views
                 $viewName = '';
                 if (strpos($trimmed_definition, ',') !== false) {
@@ -179,21 +186,21 @@ class DatabaseAdapter {
                         throw new \Exception("Could not determine simple view name from definition: '$trimmed_definition'");
                     }
                 }
-    
+
                 $selects = [];
                 $joinClauses = [];
                 $aliases = [$baseTable => 't0'];
-    
+
                 foreach (array_keys($dbTables[$baseTable]) as $column) {
                     if ($column === 'PRIMARY KEY') continue;
                     $selects[] = "t0.\"$column\" AS \"{$baseTable}_{$column}\"";
                 }
-    
+
                 $aliasCounter = 1;
                 foreach ($joins as $join) {
                     preg_match('/(.+?)\s+join\s+([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)/', $join, $matches);
                     if (count($matches) !== 4) continue;
-    
+
                     // vars
                     $sourcePathString = $matches[1];
                     $targetTable = $matches[2];
@@ -201,7 +208,7 @@ class DatabaseAdapter {
                     $sourceTableAlias = null;
                     $sourceColumn = null;
                     $pathParts = explode('.', $sourcePathString);
-    
+
                     // Find the longest prefix of the source path that we have an alias for.
                     for ($i = count($pathParts); $i >= 1; $i--) {
                         $potentialTablePath = implode('.', array_slice($pathParts, 0, $i));
@@ -212,22 +219,22 @@ class DatabaseAdapter {
                             break;
                         }
                     }
-    
+
                     // If no prefix path was found, assume it's a column on the base table.
                     if ($sourceTableAlias === null) {
                         $sourceTableAlias = $aliases[$baseTable];
                         $sourceColumn = $sourcePathString;
                     }
-                    
+
                     if ($sourceTableAlias === null || $sourceColumn === null) {
                         throw new \Exception("Could not resolve join path for '$sourcePathString' in view '$viewName'");
                     }
-    
+
                     $newAlias = 't' . $aliasCounter++;
                     $aliases[$sourcePathString] = $newAlias;
-                    
+
                     $joinClauses[] = "LEFT JOIN \"$targetTable\" AS $newAlias ON $sourceTableAlias.\"$sourceColumn\" = $newAlias.\"$targetColumn\"";
-                    
+
                     $columnPrefix = str_replace('.', '_', $sourcePathString);
                     if (!empty($dbTables[$targetTable])) {
                         foreach (array_keys($dbTables[$targetTable]) as $column) {
@@ -236,23 +243,99 @@ class DatabaseAdapter {
                         }
                     }
                 }
-                
+
                 $selectClause = "SELECT\n    " . implode(",\n    ", $selects);
                 $fromClause = "\nFROM \"$baseTable\" AS t0";
                 $joinClauseStr = "\n" . implode("\n", $joinClauses);
-                
+
                 // Note the added quotes around the view name for safety
                 $query = "CREATE OR REPLACE VIEW \"$viewName\" AS $selectClause$fromClause$joinClauseStr;";
-                
+
                 $this->db_query($query);
                 $this->logger->log("Successfully created or replaced view: \"$viewName\"");
-    
+
                 $this->pdo->commit();
             } catch (\Exception $e) {
                 $this->pdo->rollBack();
                 $this->logger->log("Error creating view from definition '$definition': " . $e->getMessage());
             }
         }
+    }
+
+    public function db_update_schema() {
+        $dbTables = $this->getDbTablesConfiguration();
+
+        foreach ($dbTables as $dbTable => $columns) {
+            try {
+                $tableExists = $this->checkDatabaseAndTableExistence($dbTable);
+
+                if (!$tableExists) {
+                    $this->pdo->beginTransaction();
+                    $query = $this->buildCreateTableQuery($dbTable, $columns);
+                    $this->db_query($query, []);
+                    $this->pdo->commit();
+                    $this->logger->log("Created missing table $dbTable during schema update");
+                } else {
+                    $existingColumns = $this->getExistingColumns($dbTable);
+
+                    foreach ($columns as $column => $columnType) {
+                        if ($column === 'PRIMARY KEY') {
+                            continue;
+                        }
+
+                        if (!in_array($column, $existingColumns, true)) {
+                            $this->pdo->beginTransaction();
+                            $alterQuery = "ALTER TABLE \"$dbTable\" ADD COLUMN \"$column\" $columnType";
+                            $this->db_query($alterQuery, []);
+                            $this->pdo->commit();
+                            $this->logger->log("Added missing column $column to table $dbTable");
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                if ($this->pdo->inTransaction()) {
+                    $this->pdo->rollBack();
+                }
+                $this->logger->log("Error while updating schema for table $dbTable: " . $e->getMessage(), 1);
+            }
+
+            try {
+                $this->ensureDataFolderForTable($dbTable);
+            } catch (\Exception $e) {
+                $this->logger->log('Error during creation of folder for table: ' . $e->getMessage());
+            }
+        }
+
+        $this->createOrReplaceViews($dbTables);
+        $this->logger->log('Database schema update finished');
+    }
+    
+    public function db_init() {
+        // get content of db_tables.json, convert to array
+        $dbTables = $this->getDbTablesConfiguration();
+    
+        // iterate over array and create tables
+        foreach ($dbTables as $dbTable => $columns) {
+            $query = $this->buildCreateTableQuery($dbTable, $columns);
+    
+            try {
+                $this->pdo->beginTransaction();
+                $this->db_query($query, []);
+                $this->pdo->commit();
+                $this->logger->log("Created table $dbTable");
+            } catch (\Exception $e) {
+                $this->pdo->rollBack();
+                $this->logger->log('Error during initialization of database: ' . $e->getMessage());
+            }
+    
+            try {
+                $this->ensureDataFolderForTable($dbTable);
+            } catch (\Exception $e) {
+                $this->logger->log('Error during creation of folder for table: ' . $e->getMessage());
+            }
+        }
+
+        $this->createOrReplaceViews($dbTables);
         $this->logger->log("DB initialized");
     }
 }

@@ -383,8 +383,68 @@ class API {
         }
     }
 
+    private function collectImpactedDevicePortUuids(string $resource, string $uuid): array {
+        if ($uuid === '') {
+            return [];
+        }
+
+        if ($resource === 'device_port') {
+            return [$uuid];
+        }
+
+        if ($resource === 'metadata') {
+            $rows = $this->dbAdapter->db_query(
+                'SELECT uuid FROM device_port WHERE metadata = :uuid',
+                ['uuid' => $uuid]
+            );
+            return array_values(array_filter(array_map(static function($row) {
+                return isset($row['uuid']) ? (string)$row['uuid'] : '';
+            }, $rows)));
+        }
+
+        if ($resource === 'device') {
+            $rows = $this->dbAdapter->db_query(
+                'SELECT uuid FROM device_port WHERE device = :uuid',
+                ['uuid' => $uuid]
+            );
+            return array_values(array_filter(array_map(static function($row) {
+                return isset($row['uuid']) ? (string)$row['uuid'] : '';
+            }, $rows)));
+        }
+
+        return [];
+    }
+
+    private function cleanupConnectionsForDevicePorts(array $portUuids): void {
+        $portUuids = array_values(array_filter(array_unique(array_map('strval', $portUuids))));
+        if (empty($portUuids)) {
+            return;
+        }
+
+        $placeholders = [];
+        $params = [];
+        foreach ($portUuids as $index => $portUuid) {
+            $paramKey = 'port_' . $index;
+            $placeholders[] = ':' . $paramKey;
+            $params[$paramKey] = $portUuid;
+        }
+        $inClause = implode(', ', $placeholders);
+
+        $query = "DELETE FROM connection
+                  WHERE device_port_source IN ($inClause)
+                     OR device_port_destination IN ($inClause)
+                     OR expected_device_port_source IN ($inClause)
+                     OR expected_device_port_destination IN ($inClause)";
+
+        $this->dbAdapter->db_query($query, $params);
+    }
+
     private function delete($resource, $uuid) {
         try {
+            $this->cleanupConnectionsForDevicePorts(
+                $this->collectImpactedDevicePortUuids((string)$resource, (string)$uuid)
+            );
+
             $query = "DELETE FROM $resource WHERE uuid = :uuid RETURNING *";
             $params['uuid'] = $uuid;
             $results = $this->dbAdapter->db_query($query, $params);

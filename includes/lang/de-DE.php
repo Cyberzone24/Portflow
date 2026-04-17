@@ -157,7 +157,7 @@ if (isset($_GET['nav'])) {
         ]
     ];
     $nav['device_port_details'] = [
-        'default' => ['device_port_metadata_status', 'device_port_metadata_caption', 'device_port_metadata_tags', 'device_port_device_location_parent_location_metadata_caption', 'device_port_device_metadata_caption', 'device_port_device_type'],
+        'default' => ['device_port_metadata_status', 'device_port_metadata_caption', 'device_port_metadata_tags', 'device_port_device_location_metadata_caption', 'device_port_device_metadata_caption', 'device_port_device_type'],
         'columns' => [
             'device_port_uuid' => 'Device Port UUID',
             'device_port_metadata' => 'Device Port Metadata',
@@ -206,7 +206,7 @@ if (isset($_GET['nav'])) {
             'device_port_device_metadata_tags' => 'Device Metadata Tags',
             'device_port_device_metadata_created' => 'Device Metadata Created',
             'device_port_device_metadata_changed' => 'Device Metadata Changed',
-            'device_port_device_location_parent_location_metadata_caption' => 'Raum',
+            'device_port_device_location_metadata_caption' => 'Raum',
             'device_port_device_port_vlan_uuid' => 'Device Port VLAN UUID',
             'device_port_device_port_vlan_vlan' => 'Device Port VLAN',
             'device_port_device_port_vlan_expected_vlan' => 'Device Port Expected VLAN',

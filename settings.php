@@ -14,7 +14,9 @@
     include_once __DIR__ . '/includes/core/auth.php';
     include_once __DIR__ . '/includes/core/logger.php';
     include_once __DIR__ . '/includes/core/automation_store.php';
+    include_once __DIR__ . '/includes/core/automation.php';
     use Portflow\Core\Auth;
+    use Portflow\Core\Automation;
     use Portflow\Core\AutomationStore;
     use Portflow\Core\Logger;
     $auth = new Auth();
@@ -85,7 +87,7 @@
             ];
         }
 
-        file_put_contents($commandFile, "screen-length 0 temporary\ndisplay version\n");
+        file_put_contents($commandFile, "screen-length 0 temporary\ndisplay version\nquit\n");
 
         $target = escapeshellarg($username . '@' . $host);
         $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
@@ -125,12 +127,94 @@
         $outputText .= "Exit Code: " . $exitCode . "\n\n";
         $outputText .= implode("\n", $lines);
 
+        if ($exitCode === 124) {
+            $outputText .= "\n\nHinweis: Timeout erreicht. Verbindung wurde nicht rechtzeitig beendet.";
+        }
+
         $logger->log('automation ssh test for ' . $host . ' returned exit code ' . $exitCode, $exitCode === 0 ? 1 : 3);
 
         return [
             'ok' => ($exitCode === 0),
             'output' => $outputText
         ];
+    }
+
+    function decodeJsonObject(string $raw, array $fallback = []): array {
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : $fallback;
+    }
+
+    function loadAutomationStructuredSettings(AutomationStore $store): array {
+        $settings = $store->getSettings();
+
+        $scriptsRaw = trim((string)($settings['scripts_json'] ?? ''));
+        if ($scriptsRaw === '') {
+            $scriptsRaw = '{}';
+        }
+        $scripts = decodeJsonObject($scriptsRaw, []);
+
+        $inventoryRaw = trim((string)($settings['switch_inventory_json'] ?? ''));
+        if ($inventoryRaw === '') {
+            $inventoryRaw = '{"switches": []}';
+        }
+        $inventory = decodeJsonObject($inventoryRaw, ['switches' => []]);
+        if (!isset($inventory['switches']) || !is_array($inventory['switches'])) {
+            $inventory['switches'] = [];
+        }
+
+        return [
+            'settings' => $settings,
+            'scripts' => $scripts,
+            'inventory' => $inventory
+        ];
+    }
+
+    function getScriptsTabFromRequest(): string {
+        $rawTab = trim((string)($_POST['scripts_active_tab'] ?? ($_GET['tab'] ?? 'switch')));
+        return in_array($rawTab, ['switch', 'templates', 'history'], true) ? $rawTab : 'switch';
+    }
+
+    function scriptsUrlWithTab(string $tab): string {
+        $safeTab = in_array($tab, ['switch', 'templates', 'history'], true) ? $tab : 'switch';
+        return '?site=scripts&tab=' . rawurlencode($safeTab);
+    }
+
+    function redirectToScriptsTab(string $tab): void {
+        header('Location: ' . scriptsUrlWithTab($tab));
+    }
+
+    function logAutomationChange(\Portflow\Core\DatabaseAdapter $dbAdapter, string $operation, string $action, array $payload = []): void {
+        $userUuid = (string)($_SESSION['uuid'] ?? '');
+        if ($userUuid === '') {
+            return;
+        }
+
+        $safeOperation = strtoupper(substr($operation, 0, 10));
+        if (!in_array($safeOperation, ['INSERT', 'UPDATE', 'DELETE'], true)) {
+            $safeOperation = 'UPDATE';
+        }
+
+        $safePayload = [
+            'action' => $action,
+            'payload' => $payload
+        ];
+        $encoded = json_encode($safePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded)) {
+            $encoded = '{"action":"' . addslashes($action) . '"}';
+        }
+
+        try {
+            $dbAdapter->db_query(
+                "INSERT INTO changelog (users, operation, changed_table, changed_row, changed_data) VALUES (:users, :operation, 'automation_settings', gen_random_uuid(), :changed_data)",
+                [
+                    'users' => $userUuid,
+                    'operation' => $safeOperation,
+                    'changed_data' => $encoded
+                ]
+            );
+        } catch (\Throwable $ignored) {
+            // Best-effort history logging; never block settings operations.
+        }
     }
 
     // import db_adapter
@@ -482,6 +566,379 @@
                 $logger->log('access right updated for role=' . $roleUuid . ' resource=' . $resource . ' value=' . $accessRight, 1, echoToWeb: true);
                 header('Location: ?site=access');
                 break;
+            case 'automation_inventory_add':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation inventory add', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $name = trim((string)($_POST['switch_name'] ?? ''));
+                $mgmtIp = trim((string)($_POST['switch_mgmt_ip'] ?? ''));
+                $profile = trim((string)($_POST['switch_profile'] ?? ''));
+                $deviceId = trim((string)($_POST['switch_device_id'] ?? ''));
+
+                if ($name === '' || $mgmtIp === '' || $profile === '') {
+                    $logger->log('automation inventory add failed: name, mgmt_ip and profile are required', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $mgmtIp)) {
+                    $logger->log('automation inventory add failed: mgmt_ip contains invalid chars', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $structured = loadAutomationStructuredSettings($automationStore);
+                $settings = $structured['settings'];
+                $scripts = $structured['scripts'];
+                $inventory = $structured['inventory'];
+
+                foreach ($inventory['switches'] as $switchItem) {
+                    if (!is_array($switchItem)) {
+                        continue;
+                    }
+                    if (strcasecmp((string)($switchItem['name'] ?? ''), $name) === 0) {
+                        $logger->log('automation inventory add failed: duplicate switch name', 2, echoToWeb: true);
+                        redirectToScriptsTab(getScriptsTabFromRequest());
+                        die();
+                    }
+                }
+
+                $newSwitch = [
+                    'name' => $name,
+                    'mgmt_ip' => $mgmtIp,
+                    'profile' => $profile
+                ];
+                if ($deviceId !== '') {
+                    $newSwitch['device_id'] = $deviceId;
+                }
+
+                $inventory['switches'][] = $newSwitch;
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $settings['ssh_host'] ?? '',
+                        'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_username' => $settings['ssh_username'] ?? '',
+                        'ssh_password' => $settings['ssh_password'] ?? '',
+                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                    ]);
+                    $logger->log('automation inventory entry added: ' . $name, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'INSERT', 'inventory_add', [
+                        'switch_name' => $name,
+                        'mgmt_ip' => $mgmtIp,
+                        'profile' => $profile
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation inventory add failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_inventory_update':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation inventory update', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $originalName = trim((string)($_POST['original_switch_name'] ?? ''));
+                $name = trim((string)($_POST['switch_name'] ?? ''));
+                $mgmtIp = trim((string)($_POST['switch_mgmt_ip'] ?? ''));
+                $profile = trim((string)($_POST['switch_profile'] ?? ''));
+                $deviceId = trim((string)($_POST['switch_device_id'] ?? ''));
+
+                if ($originalName === '' || $name === '' || $mgmtIp === '' || $profile === '') {
+                    $logger->log('automation inventory update failed: required fields missing', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $mgmtIp)) {
+                    $logger->log('automation inventory update failed: mgmt_ip contains invalid chars', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $structured = loadAutomationStructuredSettings($automationStore);
+                $settings = $structured['settings'];
+                $scripts = $structured['scripts'];
+                $inventory = $structured['inventory'];
+
+                $targetIndex = -1;
+                foreach ($inventory['switches'] as $index => $switchItem) {
+                    if (!is_array($switchItem)) {
+                        continue;
+                    }
+                    $switchName = (string)($switchItem['name'] ?? '');
+                    if (strcasecmp($switchName, $originalName) === 0) {
+                        $targetIndex = (int)$index;
+                        continue;
+                    }
+                    if (strcasecmp($switchName, $name) === 0) {
+                        $logger->log('automation inventory update failed: duplicate switch name', 2, echoToWeb: true);
+                        redirectToScriptsTab(getScriptsTabFromRequest());
+                        die();
+                    }
+                }
+
+                if ($targetIndex < 0 || !isset($inventory['switches'][$targetIndex])) {
+                    $logger->log('automation inventory update failed: original switch not found', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $updatedSwitch = [
+                    'name' => $name,
+                    'mgmt_ip' => $mgmtIp,
+                    'profile' => $profile
+                ];
+                if ($deviceId !== '') {
+                    $updatedSwitch['device_id'] = $deviceId;
+                }
+
+                $inventory['switches'][$targetIndex] = $updatedSwitch;
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $settings['ssh_host'] ?? '',
+                        'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_username' => $settings['ssh_username'] ?? '',
+                        'ssh_password' => $settings['ssh_password'] ?? '',
+                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                    ]);
+                    $logger->log('automation inventory entry updated: ' . $originalName . ' => ' . $name, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'inventory_update', [
+                        'from' => $originalName,
+                        'to' => $name,
+                        'mgmt_ip' => $mgmtIp,
+                        'profile' => $profile
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation inventory update failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_inventory_delete':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation inventory delete', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $index = (int)($_POST['inventory_index'] ?? -1);
+                if ($index < 0) {
+                    $logger->log('automation inventory delete failed: invalid index', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $structured = loadAutomationStructuredSettings($automationStore);
+                $settings = $structured['settings'];
+                $scripts = $structured['scripts'];
+                $inventory = $structured['inventory'];
+
+                if (!isset($inventory['switches'][$index])) {
+                    $logger->log('automation inventory delete failed: index not found', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $removedName = (string)($inventory['switches'][$index]['name'] ?? 'unknown');
+                array_splice($inventory['switches'], $index, 1);
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $settings['ssh_host'] ?? '',
+                        'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_username' => $settings['ssh_username'] ?? '',
+                        'ssh_password' => $settings['ssh_password'] ?? '',
+                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                    ]);
+                    $logger->log('automation inventory entry deleted: ' . $removedName, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'DELETE', 'inventory_delete', [
+                        'switch_name' => $removedName
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation inventory delete failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_template_upsert':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation template upsert', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $templateId = trim((string)($_POST['template_id'] ?? ''));
+                $label = trim((string)($_POST['template_label'] ?? ''));
+                $description = trim((string)($_POST['template_description'] ?? ''));
+                $supportedProfilesRaw = trim((string)($_POST['template_supported_profiles'] ?? ''));
+                $commandsRaw = str_replace(["\r\n", "\r"], "\n", (string)($_POST['template_commands'] ?? ''));
+                $usesDescriptionConvention = isset($_POST['template_uses_description_convention']) && (string)$_POST['template_uses_description_convention'] === '1';
+
+                if ($templateId === '' || !preg_match('/^[a-zA-Z0-9_.-]+$/', $templateId)) {
+                    $logger->log('automation template upsert failed: invalid template id', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                if ($label === '') {
+                    $logger->log('automation template upsert failed: label is required', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $supportedProfiles = array_values(array_filter(array_map('trim', preg_split('/[,\n]+/', $supportedProfilesRaw) ?: []), static function ($value) {
+                    return $value !== '';
+                }));
+
+                $commands = array_values(array_filter(array_map('trim', explode("\n", $commandsRaw)), static function ($value) {
+                    return $value !== '';
+                }));
+
+                if (empty($commands)) {
+                    $logger->log('automation template upsert failed: at least one command is required', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $structured = loadAutomationStructuredSettings($automationStore);
+                $settings = $structured['settings'];
+                $scripts = $structured['scripts'];
+                $inventory = $structured['inventory'];
+
+                if (!isset($scripts['templates']) || !is_array($scripts['templates'])) {
+                    $scripts['templates'] = [];
+                }
+
+                $existingTemplate = [];
+                if (isset($scripts['templates'][$templateId]) && is_array($scripts['templates'][$templateId])) {
+                    $existingTemplate = $scripts['templates'][$templateId];
+                }
+
+                $templatePayload = $existingTemplate;
+                $templatePayload['label'] = $label;
+                $templatePayload['description'] = $description;
+                $templatePayload['supported_profiles'] = $supportedProfiles;
+                $templatePayload['commands'] = $commands;
+                if ($usesDescriptionConvention) {
+                    $templatePayload['uses_description_convention'] = true;
+                } else {
+                    unset($templatePayload['uses_description_convention']);
+                }
+
+                $scripts['templates'][$templateId] = $templatePayload;
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $settings['ssh_host'] ?? '',
+                        'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_username' => $settings['ssh_username'] ?? '',
+                        'ssh_password' => $settings['ssh_password'] ?? '',
+                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                    ]);
+                    $logger->log('automation template override upserted: ' . $templateId, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'template_upsert', [
+                        'template_id' => $templateId,
+                        'commands_count' => count($commands)
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation template upsert failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_template_delete':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation template delete', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $templateId = trim((string)($_POST['template_id'] ?? ''));
+                if ($templateId === '') {
+                    $logger->log('automation template delete failed: template id missing', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $structured = loadAutomationStructuredSettings($automationStore);
+                $settings = $structured['settings'];
+                $scripts = $structured['scripts'];
+                $inventory = $structured['inventory'];
+
+                if (!isset($scripts['templates'][$templateId])) {
+                    $logger->log('automation template delete failed: template not found', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                unset($scripts['templates'][$templateId]);
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $settings['ssh_host'] ?? '',
+                        'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_username' => $settings['ssh_username'] ?? '',
+                        'ssh_password' => $settings['ssh_password'] ?? '',
+                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                    ]);
+                    $logger->log('automation template override deleted: ' . $templateId, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'DELETE', 'template_delete', [
+                        'template_id' => $templateId
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation template delete failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
             case 'automation_scripts':
                 // check if user is admin
                 if ($role !== 'admin') {
@@ -490,9 +947,18 @@
                     die();
                 }
 
+                    // Handle scheduler trigger
+                    if (isset($_GET['trigger_scheduler']) && $_GET['trigger_scheduler'] === '1') {
+                        $logger->log('Manual scheduler trigger initiated', 1);
+                        ob_end_clean();
+                        passthru('php ' . escapeshellarg(__DIR__ . '/scheduler.php'));
+                        echo "\nScheduler execution completed.\n";
+                        die();
+                    }
+
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for automation settings', 2, echoToWeb: true);
-                    header('Location: ?site=scripts');
+                    redirectToScriptsTab(getScriptsTabFromRequest());
                     die();
                 }
 
@@ -508,11 +974,14 @@
                         'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
                     ]);
                     $logger->log('automation settings updated', 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'settings_save', [
+                        'tab' => getScriptsTabFromRequest()
+                    ]);
                 } catch (\Exception $e) {
                     $logger->log('automation settings update failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
-                header('Location: ?site=scripts');
+                redirectToScriptsTab(getScriptsTabFromRequest());
                 break;
             case 'automation_test_ssh':
                 if ($role !== 'admin') {
@@ -523,7 +992,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for automation ssh test', 2, echoToWeb: true);
-                    header('Location: ?site=scripts');
+                    redirectToScriptsTab(getScriptsTabFromRequest());
                     die();
                 }
 
@@ -541,6 +1010,7 @@
 
                 include_once __DIR__ . '/includes/header.php';
                 $site = 'scripts';
+                $_GET['tab'] = getScriptsTabFromRequest();
                 break;
             default:
                 $logger->log('no set parameter', 2, echoToWeb: true);
@@ -948,13 +1418,167 @@ switch ($site) {
         if ($scriptsJson === '') {
             $scriptsJson = "{}";
         }
+        $decodedScriptsConfig = decodeJsonObject($scriptsJson, []);
+        if (!isset($decodedScriptsConfig['templates']) || !is_array($decodedScriptsConfig['templates'])) {
+            $decodedScriptsConfig['templates'] = [];
+        }
         $scriptsJsonEscaped = htmlspecialchars($scriptsJson, ENT_QUOTES, 'UTF-8');
         $switchInventoryJson = trim((string)($automationSettings['switch_inventory_json'] ?? ''));
         if ($switchInventoryJson === '') {
             $switchInventoryJson = '{"switches": []}';
         }
+        $decodedInventoryConfig = decodeJsonObject($switchInventoryJson, ['switches' => []]);
+        if (!isset($decodedInventoryConfig['switches']) || !is_array($decodedInventoryConfig['switches'])) {
+            $decodedInventoryConfig['switches'] = [];
+        }
         $switchInventoryJsonEscaped = htmlspecialchars($switchInventoryJson, ENT_QUOTES, 'UTF-8');
         $passwordHint = !empty($automationSettings['ssh_password']) ? 'Gespeichert (leer lassen zum Beibehalten)' : 'Noch nicht gesetzt';
+        $activeScriptsTab = getScriptsTabFromRequest();
+
+        $historyRows = [];
+        try {
+            $historyRows = $db_adapter->db_query(
+                "SELECT c.operation, c.changed_data, TO_CHAR(c.changed, 'DD.MM.YYYY HH24:MI:SS') AS changed_at, u.username
+                 FROM changelog c
+                 LEFT JOIN users u ON u.uuid = c.users
+                 WHERE c.changed_table = 'automation_settings'
+                 ORDER BY c.changed DESC
+                 LIMIT 30"
+            ) ?: [];
+        } catch (\Throwable $ignored) {
+            $historyRows = [];
+        }
+
+        $historyRowsHtml = '';
+        foreach ($historyRows as $historyRow) {
+            $changedAtEscaped = htmlspecialchars((string)($historyRow['changed_at'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $usernameEscaped = htmlspecialchars((string)($historyRow['username'] ?? 'unknown'), ENT_QUOTES, 'UTF-8');
+            $operationEscaped = htmlspecialchars((string)($historyRow['operation'] ?? ''), ENT_QUOTES, 'UTF-8');
+
+            $actionText = '';
+            $payloadText = '';
+            $decodedChange = json_decode((string)($historyRow['changed_data'] ?? ''), true);
+            if (is_array($decodedChange)) {
+                $actionText = (string)($decodedChange['action'] ?? '');
+                $payloadValue = $decodedChange['payload'] ?? null;
+                if (is_array($payloadValue)) {
+                    $payloadText = json_encode($payloadValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                } else {
+                    $payloadText = is_scalar($payloadValue) ? (string)$payloadValue : '';
+                }
+            }
+
+            $actionEscaped = htmlspecialchars($actionText !== '' ? $actionText : '-', ENT_QUOTES, 'UTF-8');
+            $payloadEscaped = htmlspecialchars($payloadText !== '' ? mb_substr($payloadText, 0, 280) : '-', ENT_QUOTES, 'UTF-8');
+            $historySearch = strtolower($changedAtEscaped . ' ' . $usernameEscaped . ' ' . $operationEscaped . ' ' . $actionEscaped . ' ' . $payloadEscaped);
+            $historySearchEscaped = htmlspecialchars($historySearch, ENT_QUOTES, 'UTF-8');
+
+            $historyRowsHtml .= <<<HTML
+                <tr class="border-b border-gray-100 history-row" data-history-search="{$historySearchEscaped}">
+                    <td class="py-2 px-3 text-sm text-gray-800">{$changedAtEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-800">{$usernameEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-800">{$operationEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-800">{$actionEscaped}</td>
+                    <td class="py-2 px-3 text-xs font-mono text-gray-600">{$payloadEscaped}</td>
+                </tr>
+            HTML;
+        }
+        if ($historyRowsHtml === '') {
+            $historyRowsHtml = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-500">Noch keine Historie verfuegbar.</td></tr>';
+        }
+
+        $automationConfig = new Automation();
+        $availableProfiles = array_keys($automationConfig->getProfiles());
+        if (empty($availableProfiles)) {
+            $availableProfiles = ['huawei_core_commit', 'huawei_access_no_commit'];
+        }
+
+        $profileOptionsHtml = '';
+        foreach ($availableProfiles as $profileId) {
+            $profileEscaped = htmlspecialchars((string)$profileId, ENT_QUOTES, 'UTF-8');
+            $profileOptionsHtml .= "<option value=\"{$profileEscaped}\">{$profileEscaped}</option>";
+        }
+
+        $inventoryRowsHtml = '';
+        foreach ($decodedInventoryConfig['switches'] as $index => $switchItem) {
+            if (!is_array($switchItem)) {
+                continue;
+            }
+
+            $nameEscaped = htmlspecialchars((string)($switchItem['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $mgmtIpEscaped = htmlspecialchars((string)($switchItem['mgmt_ip'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $profileEscaped = htmlspecialchars((string)($switchItem['profile'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $deviceEscaped = htmlspecialchars((string)($switchItem['device_id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $nameDataEscaped = htmlspecialchars((string)($switchItem['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $mgmtIpDataEscaped = htmlspecialchars((string)($switchItem['mgmt_ip'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $profileDataEscaped = htmlspecialchars((string)($switchItem['profile'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $deviceDataEscaped = htmlspecialchars((string)($switchItem['device_id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $indexValue = (int)$index;
+
+            $inventoryRowsHtml .= <<<HTML
+                <tr class="border-b border-gray-100">
+                    <td class="py-2 px-3 font-medium text-gray-900">{$nameEscaped}</td>
+                    <td class="py-2 px-3 font-mono text-sm text-gray-700">{$mgmtIpEscaped}</td>
+                    <td class="py-2 px-3"><span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold">{$profileEscaped}</span></td>
+                    <td class="py-2 px-3 text-sm text-gray-700">{$deviceEscaped}</td>
+                    <td class="py-2 px-3 text-right">
+                        <button class="bg-emerald-500 hover:bg-emerald-700 text-white font-bold py-1 px-3 rounded-full text-xs mr-2" type="button" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" onclick="submitInventorySshTest(this)">SSH testen</button>
+                        <button class="bg-amber-500 hover:bg-amber-700 text-white font-bold py-1 px-3 rounded-full text-xs mr-2" type="button" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" onclick="loadInventoryEntry(this)">Edit</button>
+                        <button class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-full text-xs" type="button" onclick="submitInventoryDelete({$indexValue})">Delete</button>
+                    </td>
+                </tr>
+            HTML;
+        }
+        if ($inventoryRowsHtml === '') {
+            $inventoryRowsHtml = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-500">Noch keine Switch-Eintraege vorhanden.</td></tr>';
+        }
+
+        $templateRowsHtml = '';
+        foreach ($decodedScriptsConfig['templates'] as $templateId => $templateOverride) {
+            if (!is_array($templateOverride)) {
+                continue;
+            }
+
+            $templateIdEscaped = htmlspecialchars((string)$templateId, ENT_QUOTES, 'UTF-8');
+            $labelEscaped = htmlspecialchars((string)($templateOverride['label'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $descriptionEscaped = htmlspecialchars((string)($templateOverride['description'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $profilesList = is_array($templateOverride['supported_profiles'] ?? null) ? $templateOverride['supported_profiles'] : [];
+            $profilesText = implode(', ', array_map('strval', $profilesList));
+            $profilesEscaped = htmlspecialchars($profilesText, ENT_QUOTES, 'UTF-8');
+            $commandsList = is_array($templateOverride['commands'] ?? null) ? $templateOverride['commands'] : [];
+            $commandsText = implode("\n", array_map('strval', $commandsList));
+            $commandsEscapedForData = htmlspecialchars($commandsText, ENT_QUOTES, 'UTF-8');
+            $profilesEscapedForData = htmlspecialchars(implode(',', array_map('strval', $profilesList)), ENT_QUOTES, 'UTF-8');
+            $usesConvention = !empty($templateOverride['uses_description_convention']);
+            $commandCount = count($commandsList);
+
+            $templateRowsHtml .= <<<HTML
+                <tr class="border-b border-gray-100">
+                    <td class="py-2 px-3 font-mono text-xs text-gray-900">{$templateIdEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-800">{$labelEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-700">{$profilesEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-700">{$commandCount}</td>
+                    <td class="py-2 px-3 text-right whitespace-nowrap">
+                        <button
+                            type="button"
+                            class="bg-amber-500 hover:bg-amber-700 text-white font-bold py-1 px-3 rounded-full text-xs"
+                            data-template-id="{$templateIdEscaped}"
+                            data-template-label="{$labelEscaped}"
+                            data-template-description="{$descriptionEscaped}"
+                            data-template-profiles="{$profilesEscapedForData}"
+                            data-template-commands="{$commandsEscapedForData}"
+                            data-template-uses-convention="{$usesConvention}"
+                            onclick="loadTemplateOverride(this)">
+                            Edit
+                        </button>
+                        <button class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-full text-xs ml-2" type="button" onclick="submitTemplateDelete('{$templateIdEscaped}')">Delete</button>
+                    </td>
+                </tr>
+            HTML;
+        }
+        if ($templateRowsHtml === '') {
+            $templateRowsHtml = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-500">Noch keine Template-Overrides vorhanden.</td></tr>';
+        }
 
         $testOutputHtml = '';
         if (is_array($automationTestResult) && isset($automationTestResult['output'])) {
@@ -974,8 +1598,15 @@ switch ($site) {
                     {$testOutputHtml}
                     <form action="?set=automation_scripts" method="post">
                         <input type="hidden" name="csrf" value="$csrf">
+                        <input type="hidden" id="scripts_active_tab" name="scripts_active_tab" value="$activeScriptsTab">
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+                        <div class="pb-4 flex flex-wrap items-center gap-2">
+                            <button id="scripts_tab_btn_switch" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm" type="button" onclick="showScriptsTab('switch')">Switch/SSH</button>
+                            <button id="scripts_tab_btn_templates" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm" type="button" onclick="showScriptsTab('templates')">Template Overrides</button>
+                            <button id="scripts_tab_btn_history" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm" type="button" onclick="showScriptsTab('history')">Historie</button>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
                             <div>
                                 <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
                                 <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
@@ -995,23 +1626,354 @@ switch ($site) {
                             </div>
                         </div>
 
-                        <div class="pb-4">
-                            <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (Management IPs)</label>
-                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
-                            <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. Optional: device_id (UUID des verknuepften ITAM-Geraets). Diese Liste wird im Automatisierungs-Tab als Zielauswahl genutzt.</p>
+                        <div class="pb-6 scripts-section-switch">
+                            <div class="flex items-center justify-between pb-2">
+                                <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
+                            </div>
+                            <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 text-gray-700">
+                                        <tr>
+                                            <th class="py-2 px-3">Name</th>
+                                            <th class="py-2 px-3">Mgmt IP</th>
+                                            <th class="py-2 px-3">Profil</th>
+                                            <th class="py-2 px-3">Device ID</th>
+                                            <th class="py-2 px-3 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {$inventoryRowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. Optional: device_id (UUID des verknuepften ITAM-Geraets).</p>
+
+                            <input type="hidden" id="switch_original_name" value="">
+                            <div class="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_name" placeholder="SW-Core-01" required>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_mgmt_ip" placeholder="10.0.0.10" required>
+                                <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_profile" required>
+                                    {$profileOptionsHtml}
+                                </select>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_device_id" placeholder="optional UUID">
+                                <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">Switch hinzufuegen</button>
+                                <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">Formular leeren</button>
+                            </div>
                         </div>
 
-                        <div class="pb-4">
-                            <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON)</label>
-                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
-                            <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles, templates. Diese Daten erweitern die Basisdatei aus includes/core/automation.json.</p>
+                        <div class="pb-6 scripts-section-template">
+                            <div class="flex items-center justify-between pb-2">
+                                <label class="block text-sm font-semibold">Template Overrides (Grafische Verwaltung)</label>
+                            </div>
+                            <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 text-gray-700">
+                                        <tr>
+                                            <th class="py-2 px-3">Template ID</th>
+                                            <th class="py-2 px-3">Label</th>
+                                            <th class="py-2 px-3">Profiles</th>
+                                            <th class="py-2 px-3">Commands</th>
+                                            <th class="py-2 px-3 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {$templateRowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="mt-4 space-y-3" id="template_override_form">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block mb-1 text-xs font-semibold" for="template_id">Template ID</label>
+                                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_id" type="text" placeholder="my_custom_template" required>
+                                    </div>
+                                    <div>
+                                        <label class="block mb-1 text-xs font-semibold" for="template_label">Label</label>
+                                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="Mein Template" required>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block mb-1 text-xs font-semibold" for="template_description">Beschreibung</label>
+                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="Kurze Beschreibung">
+                                </div>
+                                <div>
+                                    <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">Supported Profiles (comma-separated)</label>
+                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_supported_profiles" type="text" placeholder="huawei_core_commit,huawei_access_no_commit">
+                                </div>
+                                <div>
+                                    <label class="block mb-1 text-xs font-semibold" for="template_commands">Commands (eine Zeile = ein Command)</label>
+                                    <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_commands" rows="8" placeholder="interface {{interface}}&#10;shutdown&#10;quit" required></textarea>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input id="template_uses_description_convention" type="checkbox" value="1">
+                                    <label for="template_uses_description_convention" class="text-xs text-gray-700">Description Convention verwenden</label>
+                                </div>
+                                <div class="flex items-center justify-between gap-3">
+                                    <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">Formular leeren</button>
+                                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">Template speichern</button>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="pb-2 flex justify-between items-center gap-4">
-                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" formaction="?set=automation_test_ssh">SSH testen</button>
+                        <div class="pb-6 scripts-section-history">
+                            <div class="flex items-center justify-between pb-2">
+                                <label class="block text-sm font-semibold">Aenderungshistorie (letzte 30)</label>
+                            </div>
+                            <div class="pb-3">
+                                <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="Historie filtern: Benutzer, Action, Operation, Details..." oninput="filterHistoryRows()">
+                            </div>
+                            <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 text-gray-700">
+                                        <tr>
+                                            <th class="py-2 px-3">Zeit</th>
+                                            <th class="py-2 px-3">Benutzer</th>
+                                            <th class="py-2 px-3">Operation</th>
+                                            <th class="py-2 px-3">Action</th>
+                                            <th class="py-2 px-3">Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {$historyRowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <details class="pb-4 scripts-section-switch">
+                            <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
+                            <div class="pt-3 space-y-4">
+                                <div>
+                                    <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
+                                    <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
+                                </div>
+
+                                <div>
+                                    <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
+                                    <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
+                                    <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles, templates. Diese Daten erweitern die Basisdatei aus includes/core/automation.json.</p>
+                                </div>
+                            </div>
+                        </details>
+
+                        <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
                             <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
                         </div>
                     </form>
+
+                    <script>
+                        const automationCsrfToken = '$csrf';
+                        const initialScriptsTab = '$activeScriptsTab';
+                        let currentScriptsTab = initialScriptsTab;
+
+                        function postAutomationAction(action, payload) {
+                            const form = document.createElement('form');
+                            form.method = 'post';
+                            form.action = '?set=' + encodeURIComponent(action);
+
+                            const fields = Object.assign({
+                                csrf: automationCsrfToken,
+                                scripts_active_tab: currentScriptsTab
+                            }, payload || {});
+                            Object.keys(fields).forEach(function(key) {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = key;
+                                input.value = fields[key];
+                                form.appendChild(input);
+                            });
+
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+
+                        function loadInventoryEntry(button) {
+                            document.getElementById('switch_original_name').value = button.dataset.switchName || '';
+                            document.getElementById('switch_name').value = button.dataset.switchName || '';
+                            document.getElementById('switch_mgmt_ip').value = button.dataset.switchMgmtIp || '';
+                            document.getElementById('switch_profile').value = button.dataset.switchProfile || '';
+                            document.getElementById('switch_device_id').value = button.dataset.switchDeviceId || '';
+
+                            var submitButton = document.getElementById('inventory_submit_button');
+                            if (submitButton) {
+                                submitButton.textContent = 'Switch aktualisieren';
+                                submitButton.className = 'bg-amber-500 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
+                            }
+                        }
+
+                        function resetInventoryForm() {
+                            document.getElementById('switch_original_name').value = '';
+                            document.getElementById('switch_name').value = '';
+                            document.getElementById('switch_mgmt_ip').value = '';
+                            document.getElementById('switch_profile').selectedIndex = 0;
+                            document.getElementById('switch_device_id').value = '';
+
+                            var submitButton = document.getElementById('inventory_submit_button');
+                            if (submitButton) {
+                                submitButton.textContent = 'Switch hinzufuegen';
+                                submitButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
+                            }
+                        }
+
+                        function submitInventorySave() {
+                            const name = document.getElementById('switch_name').value.trim();
+                            const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
+                            const profile = document.getElementById('switch_profile').value.trim();
+                            const deviceId = document.getElementById('switch_device_id').value.trim();
+                            const originalName = document.getElementById('switch_original_name').value.trim();
+                            const action = originalName !== '' ? 'automation_inventory_update' : 'automation_inventory_add';
+
+                            if (name === '' || mgmtIp === '' || profile === '') {
+                                alert('Bitte Name, Mgmt IP und Profil ausfuellen.');
+                                return;
+                            }
+
+                            postAutomationAction(action, {
+                                original_switch_name: originalName,
+                                switch_name: name,
+                                switch_mgmt_ip: mgmtIp,
+                                switch_profile: profile,
+                                switch_device_id: deviceId
+                            });
+                        }
+
+                        function submitInventoryDelete(index) {
+                            if (!confirm('Switch-Eintrag wirklich loeschen?')) {
+                                return;
+                            }
+                            postAutomationAction('automation_inventory_delete', {
+                                inventory_index: String(index)
+                            });
+                        }
+
+                        function submitInventorySshTest(button) {
+                            const name = button.dataset.switchName || '';
+                            const mgmtIp = button.dataset.switchMgmtIp || '';
+
+                            if (name === '' || mgmtIp === '') {
+                                alert('Switch-Daten fuer den SSH-Test konnten nicht gelesen werden.');
+                                return;
+                            }
+
+                            if (!confirm('SSH-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
+                                return;
+                            }
+
+                            postAutomationAction('automation_test_ssh', {
+                                ssh_host: mgmtIp,
+                                ssh_username: document.getElementById('ssh_username').value,
+                                ssh_port: document.getElementById('ssh_port').value,
+                                ssh_password: document.getElementById('ssh_password').value,
+                                scripts_json: document.getElementById('scripts_json').value,
+                                switch_inventory_json: document.getElementById('switch_inventory_json').value
+                            });
+                        }
+
+                        function loadTemplateOverride(button) {
+                            document.getElementById('template_id').value = button.dataset.templateId || '';
+                            document.getElementById('template_label').value = button.dataset.templateLabel || '';
+                            document.getElementById('template_description').value = button.dataset.templateDescription || '';
+                            document.getElementById('template_supported_profiles').value = button.dataset.templateProfiles || '';
+                            document.getElementById('template_commands').value = button.dataset.templateCommands || '';
+                            document.getElementById('template_uses_description_convention').checked = (button.dataset.templateUsesConvention === '1' || button.dataset.templateUsesConvention === 'true');
+                            document.getElementById('template_id').focus();
+                        }
+
+                        function resetTemplateOverrideForm() {
+                            document.getElementById('template_id').value = '';
+                            document.getElementById('template_label').value = '';
+                            document.getElementById('template_description').value = '';
+                            document.getElementById('template_supported_profiles').value = '';
+                            document.getElementById('template_commands').value = '';
+                            document.getElementById('template_uses_description_convention').checked = false;
+                        }
+
+                        function submitTemplateUpsert() {
+                            const templateId = document.getElementById('template_id').value.trim();
+                            const templateLabel = document.getElementById('template_label').value.trim();
+                            const templateDescription = document.getElementById('template_description').value.trim();
+                            const templateProfiles = document.getElementById('template_supported_profiles').value.trim();
+                            const templateCommands = document.getElementById('template_commands').value;
+                            const usesDescriptionConvention = document.getElementById('template_uses_description_convention').checked ? '1' : '0';
+
+                            if (templateId === '' || templateLabel === '' || templateCommands.trim() === '') {
+                                alert('Template ID, Label und mindestens ein Command sind erforderlich.');
+                                return;
+                            }
+
+                            postAutomationAction('automation_template_upsert', {
+                                template_id: templateId,
+                                template_label: templateLabel,
+                                template_description: templateDescription,
+                                template_supported_profiles: templateProfiles,
+                                template_commands: templateCommands,
+                                template_uses_description_convention: usesDescriptionConvention
+                            });
+                        }
+
+                        function submitTemplateDelete(templateId) {
+                            if (!confirm('Template Override wirklich loeschen?')) {
+                                return;
+                            }
+                            postAutomationAction('automation_template_delete', {
+                                template_id: templateId
+                            });
+                        }
+
+                        function filterHistoryRows() {
+                            var input = document.getElementById('history_filter');
+                            var query = input ? input.value.trim().toLowerCase() : '';
+
+                            document.querySelectorAll('.history-row').forEach(function(row) {
+                                var searchText = (row.getAttribute('data-history-search') || '').toLowerCase();
+                                var visible = query === '' || searchText.indexOf(query) !== -1;
+                                row.classList.toggle('hidden', !visible);
+                            });
+                        }
+
+                        function showScriptsTab(tabId) {
+                            const resolvedTab = (tabId === 'templates' || tabId === 'history') ? tabId : 'switch';
+                            currentScriptsTab = resolvedTab;
+
+                            const hiddenTabInput = document.getElementById('scripts_active_tab');
+                            if (hiddenTabInput) {
+                                hiddenTabInput.value = resolvedTab;
+                            }
+
+                            const showSwitch = (resolvedTab === 'switch');
+                            const showTemplates = (resolvedTab === 'templates');
+                            const showHistory = (resolvedTab === 'history');
+
+                            document.querySelectorAll('.scripts-section-switch').forEach(function(el) {
+                                el.classList.toggle('hidden', !showSwitch);
+                            });
+                            document.querySelectorAll('.scripts-section-template').forEach(function(el) {
+                                el.classList.toggle('hidden', !showTemplates);
+                            });
+                            document.querySelectorAll('.scripts-section-history').forEach(function(el) {
+                                el.classList.toggle('hidden', !showHistory);
+                            });
+
+                            const switchBtn = document.getElementById('scripts_tab_btn_switch');
+                            const templatesBtn = document.getElementById('scripts_tab_btn_templates');
+                            const historyBtn = document.getElementById('scripts_tab_btn_history');
+
+                            switchBtn.className = showSwitch
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm'
+                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm';
+
+                            templatesBtn.className = showTemplates
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm'
+                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm';
+
+                            historyBtn.className = showHistory
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm'
+                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm';
+                        }
+
+                        showScriptsTab(initialScriptsTab);
+                    </script>
                 </div>
             </div>
         </div>

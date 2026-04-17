@@ -12,12 +12,194 @@
 
     // import database adapter
     include_once __DIR__ . '/includes/core/db_adapter.php';
+    include_once __DIR__ . '/includes/core/auth.php';
+    include_once __DIR__ . '/includes/core/logger.php';
+    include_once __DIR__ . '/includes/core/automation.php';
+    include_once __DIR__ . '/includes/core/automation_store.php';
+    include_once __DIR__ . '/includes/core/pending_changes_queue.php';
     use Portflow\Core\DatabaseAdapter;
+    use Portflow\Core\Auth;
+    use Portflow\Core\Logger;
+    use Portflow\Core\Automation;
+    use Portflow\Core\AutomationStore;
+    use Portflow\Core\PendingChangesQueue;
 
     $db_adapter = new DatabaseAdapter();
+    $auth = new Auth();
+    $logger = new Logger();
+    $automation = new Automation();
+    $automationStore = new AutomationStore();
+    $queueManager = new PendingChangesQueue($db_adapter);
+
+    function getPortShortcutDefinitions(AutomationStore $automationStore): array {
+        $defaults = [
+            [
+                'id' => 'shutdown',
+                'label' => 'Shutdown Port',
+                'template_id' => 'shutdown_port',
+                'icon' => 'fa-solid fa-power-off',
+                'button_class' => 'text-orange-500 hover:text-orange-700',
+                'confirm' => 'Shutdown Port ausfuehren?'
+            ],
+            [
+                'id' => 'cleanup',
+                'label' => 'Cleanup Port',
+                'template_id' => 'cleanup_port',
+                'icon' => 'fa-solid fa-broom',
+                'button_class' => 'text-purple-500 hover:text-purple-700',
+                'confirm' => 'Cleanup Port ausfuehren?'
+            ]
+        ];
+
+        $overrides = $automationStore->getScriptOverrides();
+        $configured = $overrides['shortcuts']['portview'] ?? null;
+
+        if (!is_array($configured) || empty($configured)) {
+            return $defaults;
+        }
+
+        $normalized = [];
+        foreach ($configured as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $id = trim((string)($item['id'] ?? ''));
+            $templateId = trim((string)($item['template_id'] ?? ''));
+            if ($id === '' || $templateId === '') {
+                continue;
+            }
+
+            if (isset($item['enabled']) && $item['enabled'] === false) {
+                continue;
+            }
+
+            $normalized[] = [
+                'id' => $id,
+                'label' => trim((string)($item['label'] ?? $id)),
+                'template_id' => $templateId,
+                'icon' => trim((string)($item['icon'] ?? 'fa-solid fa-bolt')),
+                'button_class' => trim((string)($item['button_class'] ?? 'text-cyan-500 hover:text-cyan-700')),
+                'confirm' => trim((string)($item['confirm'] ?? ('Shortcut ausfuehren: ' . $id . '?')))
+            ];
+        }
+
+        if (empty($normalized)) {
+            return $defaults;
+        }
+
+        return $normalized;
+    }
+
+    $portShortcutDefinitions = getPortShortcutDefinitions($automationStore);
+    $portShortcutIndex = [];
+    foreach ($portShortcutDefinitions as $shortcutDef) {
+        $shortcutId = (string)($shortcutDef['id'] ?? '');
+        if ($shortcutId !== '') {
+            $portShortcutIndex[$shortcutId] = $shortcutDef;
+        }
+    }
+
+    $portDeviceLabels = [
+        '--' => '--',
+        'phone' => 'Telefon',
+        'notebook' => 'Laptop',
+        'switch' => 'Switch',
+        'zeroclient' => 'Zeroclient',
+        'thinclient' => 'Thinclient',
+        'desktop' => 'Desktop',
+        'access_point' => 'Access Point',
+        'printer' => 'Drucker',
+        'other' => 'Sonstige'
+    ];
+
+    function runPortShortcutSshCommands(array $connection, array $commands): array {
+        $host = trim((string)($connection['mgmt_ip'] ?? ''));
+        $port = (int)($connection['ssh_port'] ?? 22);
+        $username = trim((string)($connection['ssh_username'] ?? ''));
+        $password = (string)($connection['ssh_password'] ?? '');
+
+        if ($host === '' || $username === '') {
+            return [
+                'ok' => false,
+                'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: Host und Username fehlen.'
+            ];
+        }
+
+        $sshPath = trim((string)shell_exec('command -v ssh 2>/dev/null'));
+        if ($sshPath === '') {
+            return [
+                'ok' => false,
+                'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: ssh Binary wurde nicht gefunden.'
+            ];
+        }
+
+        $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
+        $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
+
+        $commandFile = tempnam(sys_get_temp_dir(), 'portflow-shortcut-');
+        if ($commandFile === false) {
+            return [
+                'ok' => false,
+                'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: Konnte keine temporaere Datei anlegen.'
+            ];
+        }
+
+        $commandLines = ['screen-length 0 temporary'];
+        foreach ($commands as $command) {
+            $command = trim((string)$command);
+            if ($command !== '') {
+                $commandLines[] = $command;
+            }
+        }
+        $commandLines[] = 'quit';
+
+        file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
+
+        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
+        if ($password !== '') {
+            $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
+        } else {
+            $sshOptions .= ' -o BatchMode=yes';
+        }
+
+        $target = escapeshellarg($username . '@' . $host);
+        $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
+
+        if ($password !== '') {
+            if ($sshpassPath === '') {
+                @unlink($commandFile);
+                return [
+                    'ok' => false,
+                    'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: sshpass wurde nicht gefunden.'
+                ];
+            }
+            $sshCommand = $sshpassPath . ' -p ' . escapeshellarg($password) . ' ' . $sshCommand;
+        }
+
+        $fullCommand = $timeoutPath !== '' ? ($timeoutPath . ' 45s ' . $sshCommand) : $sshCommand;
+
+        $lines = [];
+        $exitCode = 1;
+        $startedAt = microtime(true);
+        exec($fullCommand . ' 2>&1', $lines, $exitCode);
+        $durationSec = microtime(true) - $startedAt;
+        @unlink($commandFile);
+
+        $outputText = "Exit Code: " . $exitCode . "\n";
+        $outputText .= "Duration: " . number_format($durationSec, 2, '.', '') . "s\n\n";
+        $outputText .= implode("\n", $lines);
+
+        return [
+            'ok' => ($exitCode === 0),
+            'output' => $outputText,
+            'exit_code' => $exitCode
+        ];
+    }
 
     if (!isset($_GET['action'])) {
         include_once __DIR__ . '/includes/header.php';
+        $shortcutCsrf = $auth->csrf();
         $limit = isset($_COOKIE['table_limit']) ? $_COOKIE['table_limit'] : 100;
         $page = isset($_GET['page']) ? $_GET['page'] : 1;
         $offset = ($page - 1) * $limit;
@@ -40,7 +222,7 @@
 
         $data = array(
             'results' => $results,
-            'devices' => PORTFLOW_DEVICES,
+            'devices' => $portDeviceLabels,
             'totalResults' => $totalResults[0],
             'limit' => $limit,
             'currentPage' => $page
@@ -98,6 +280,178 @@
             'uuid' => $_GET['uuid']
         ];
         $results = $db_adapter->db_query($query, $params);
+    } elseif ($_GET['action'] === 'shortcut_execute') {
+        header('Content-Type: application/json');
+
+        if (!$auth->csrf_check()) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'CSRF-Token ungueltig.'
+            ]);
+            die();
+        }
+
+        if (!isset($_SESSION['uuid']) || !$auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'execute')) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Keine Berechtigung fuer Automation-Shortcuts.'
+            ]);
+            die();
+        }
+
+        $shortcutId = trim((string)($_POST['shortcut_id'] ?? ''));
+        $templateId = trim((string)($_POST['template_id'] ?? ''));
+        $portUuid = trim((string)($_POST['port_uuid'] ?? ''));
+        $mode = trim((string)($_POST['mode'] ?? 'execute'));
+
+        if (!in_array($mode, ['execute', 'queue'], true)) {
+            $mode = 'execute';
+        }
+
+        if ($shortcutId !== '' && isset($portShortcutIndex[$shortcutId])) {
+            $templateId = trim((string)($portShortcutIndex[$shortcutId]['template_id'] ?? ''));
+        }
+
+        $allowedTemplates = array_values(array_unique(array_filter(array_map(
+            static fn($def): string => trim((string)($def['template_id'] ?? '')),
+            $portShortcutDefinitions
+        ), static fn($value): bool => $value !== '')));
+
+        if ($templateId === '' || $portUuid === '' || !in_array($templateId, $allowedTemplates, true)) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Ungueltige Shortcut-Anfrage.'
+            ]);
+            die();
+        }
+
+        $portRows = $db_adapter->db_query('SELECT * FROM ports WHERE uuid = :uuid', ['uuid' => $portUuid]);
+        if (empty($portRows)) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Port-Eintrag nicht gefunden.'
+            ]);
+            die();
+        }
+
+        $portRow = $portRows[0];
+        $switchName = trim((string)($portRow['switch_name'] ?? ''));
+        $switchPort = trim((string)($portRow['switch_port'] ?? ''));
+        if ($switchName === '' || $switchPort === '') {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Switch-Name oder Switch-Port fehlt im Port-Eintrag.'
+            ]);
+            die();
+        }
+
+        $settings = $automationStore->getSettings();
+        $inventoryRaw = trim((string)($settings['switch_inventory_json'] ?? ''));
+        if ($inventoryRaw === '') {
+            $inventoryRaw = '{"switches": []}';
+        }
+        $inventoryDecoded = json_decode($inventoryRaw, true);
+        $switchEntry = null;
+        foreach ((array)($inventoryDecoded['switches'] ?? []) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            if (trim((string)($entry['name'] ?? '')) === $switchName) {
+                $switchEntry = $entry;
+                break;
+            }
+        }
+
+        if (!is_array($switchEntry)) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Switch nicht im Inventar gefunden: ' . $switchName
+            ]);
+            die();
+        }
+
+        $profiles = $automation->getProfiles();
+        $profileKeys = array_keys($profiles);
+        $profileId = trim((string)($switchEntry['profile'] ?? ($profileKeys[0] ?? '')));
+        if ($profileId === '' || !isset($profiles[$profileId])) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Kein gueltiges Profil fuer den Switch gefunden.'
+            ]);
+            die();
+        }
+
+        $rendered = $automation->renderTemplate($templateId, $profileId, [
+            'interface' => $switchPort
+        ]);
+
+        $commands = (array)($rendered['commands'] ?? []);
+        if (empty($commands)) {
+            echo json_encode([
+                'ok' => false,
+                'message' => 'Template erzeugt keine ausfuehrbaren Befehle.'
+            ]);
+            die();
+        }
+
+        if ($mode === 'queue') {
+            $queueUuid = $queueManager->addPendingChange(
+                (string)$_SESSION['uuid'],
+                $switchName,
+                $profileId,
+                'shortcut:' . $templateId,
+                $commands,
+                [
+                    'interface' => $switchPort,
+                    'shortcut_id' => $shortcutId,
+                    'port_uuid' => $portUuid
+                ]
+            );
+
+            $logger->log(
+                'port shortcut queued user=' . (string)$_SESSION['uuid']
+                . ' template=' . $templateId
+                . ' switch=' . $switchName
+                . ' interface=' . $switchPort
+                . ' queue_uuid=' . $queueUuid,
+                1
+            );
+
+            echo json_encode([
+                'ok' => true,
+                'message' => 'Shortcut in Warteschlange gespeichert: ' . $templateId . ' auf ' . $switchName . ' / ' . $switchPort,
+                'output' => 'Queue-UUID: ' . $queueUuid,
+                'warnings' => (array)($rendered['warnings'] ?? [])
+            ]);
+            die();
+        }
+
+        $connection = [
+            'mgmt_ip' => (string)($switchEntry['mgmt_ip'] ?? ''),
+            'ssh_port' => (int)($settings['ssh_port'] ?? 22),
+            'ssh_username' => (string)($settings['ssh_username'] ?? ''),
+            'ssh_password' => (string)($settings['ssh_password'] ?? '')
+        ];
+
+        $result = runPortShortcutSshCommands($connection, $commands);
+        $logger->log(
+            'port shortcut execute user=' . (string)$_SESSION['uuid']
+            . ' template=' . $templateId
+            . ' switch=' . $switchName
+            . ' interface=' . $switchPort
+            . ' exit=' . (string)($result['exit_code'] ?? 1),
+            !empty($result['ok']) ? 1 : 3
+        );
+
+        echo json_encode([
+            'ok' => !empty($result['ok']),
+            'message' => !empty($result['ok'])
+                ? ('Shortcut erfolgreich: ' . $templateId . ' auf ' . $switchName . ' / ' . $switchPort)
+                : ('Shortcut fehlgeschlagen: ' . $templateId . ' auf ' . $switchName . ' / ' . $switchPort),
+            'output' => (string)($result['output'] ?? ''),
+            'warnings' => (array)($rendered['warnings'] ?? [])
+        ]);
+        die();
     } elseif ($_GET['action'] === 'import') {
         // Define the valid column names
         $validColumnNames = ['speed', 'device', 'status', 'room', 'port', 'hostname', 'vlan_tagged', 'vlan_untagged', 'mac', 'cable_number', 'panel', 'switch_name', 'switch_port', 'comment', 'created', 'last_changed', 'tags'];
@@ -328,6 +682,9 @@
     </div>
 </div>
 <script>
+    const SHORTCUT_CSRF = '<?php echo isset($shortcutCsrf) ? htmlspecialchars($shortcutCsrf, ENT_QUOTES, 'UTF-8') : ''; ?>';
+    const PORT_SHORTCUTS = <?php echo json_encode($portShortcutDefinitions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+
     // sort table
     $(document).ready(function() {
         var currentSort = '';
@@ -532,7 +889,25 @@
                     tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.switch_port + '</td>');
                     tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.comment + '</td>');
                     tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + tags + '</td>');
-                    tr.append("<td class='p-2 border-b text-xl max-w-xl overflow-auto whitespace-nowrap'><button onclick=\"info_entry('i" + formattedCreatedDate + "', '" + formattedLastChangedDate + "', '" + row.status + "', '" + row.device + "', '" + speed + "', '" + row.speed + "')\" class='px-2 mr-2 text-blue-500 hover:text-blue-700'><i class='fa-solid fa-info'></i></button><button onclick='edit_entry(\"u" + row.uuid + "\", this)' class='px-2 mr-2 text-yellow-500 hover:text-yellow-700'><i class='fa-regular fa-pen-to-square'></i></button><button onclick='delete_entry(\"u" + row.uuid + "\", this)' class='px-2 text-red-500 hover:text-red-700'><i class='fa-regular fa-trash-can'></i></button></td>");
+                    var actionsHtml = "<td class='p-2 border-b text-xl max-w-xl overflow-auto whitespace-nowrap'>"
+                        + "<button onclick=\"info_entry('i" + formattedCreatedDate + "', '" + formattedLastChangedDate + "', '" + row.status + "', '" + row.device + "', '" + speed + "', '" + row.speed + "')\" class='px-2 mr-2 text-blue-500 hover:text-blue-700' title='Info'><i class='fa-solid fa-info'></i></button>"
+                        + "<button onclick='edit_entry(\"u" + row.uuid + "\", this)' class='px-2 mr-2 text-yellow-500 hover:text-yellow-700' title='Bearbeiten'><i class='fa-regular fa-pen-to-square'></i></button>";
+
+                    if (Array.isArray(PORT_SHORTCUTS)) {
+                        PORT_SHORTCUTS.forEach(function(shortcut) {
+                            if (!shortcut || !shortcut.id) {
+                                return;
+                            }
+                            var title = shortcut.label ? ('Shortcut: ' + shortcut.label) : ('Shortcut: ' + shortcut.id);
+                            var iconClass = shortcut.icon || 'fa-solid fa-bolt';
+                            var buttonClass = shortcut.button_class || 'text-cyan-500 hover:text-cyan-700';
+                            actionsHtml += "<button onclick='execute_shortcut(\"u" + row.uuid + "\", \"" + shortcut.id + "\", this)' class='px-2 mr-2 " + buttonClass + "' title='" + title + "'><i class='" + iconClass + "'></i></button>";
+                            actionsHtml += "<button onclick='queue_shortcut(\"u" + row.uuid + "\", \"" + shortcut.id + "\", this)' class='px-2 mr-2 text-slate-500 hover:text-slate-700' title='Shortcut in Warteschlange'><i class='fa-regular fa-clock'></i></button>";
+                        });
+                    }
+
+                    actionsHtml += "<button onclick='delete_entry(\"u" + row.uuid + "\", this)' class='px-2 text-red-500 hover:text-red-700' title='Loeschen'><i class='fa-regular fa-trash-can'></i></button></td>";
+                    tr.append(actionsHtml);
                     tableBody.append(tr);
                 });
                 generatePagination(totalPages, currentPage, query, limit);
@@ -1049,6 +1424,68 @@
             }
         });
     }
+
+    function execute_shortcut(uuid, shortcutId, button) {
+        run_shortcut(uuid, shortcutId, button, 'execute');
+    }
+
+    function queue_shortcut(uuid, shortcutId, button) {
+        run_shortcut(uuid, shortcutId, button, 'queue');
+    }
+
+    function run_shortcut(uuid, shortcutId, button, mode) {
+        uuid = (uuid || '').toString().substring(1);
+        if (uuid === '' || shortcutId === '') {
+            alert('Shortcut konnte nicht gestartet werden: Ungueltige Parameter.');
+            return;
+        }
+
+        var shortcut = (Array.isArray(PORT_SHORTCUTS) ? PORT_SHORTCUTS.find(function(item) {
+            return item && item.id === shortcutId;
+        }) : null) || null;
+
+        var row = $(button).closest('tr');
+        var switchName = row.find('td').eq(9).text().trim();
+        var switchPort = row.find('td').eq(10).text().trim();
+        var label = shortcut && shortcut.label ? shortcut.label : shortcutId;
+        var confirmText = shortcut && shortcut.confirm ? shortcut.confirm : ('Shortcut ausfuehren: ' + label + '?');
+        var actionText = mode === 'queue' ? 'In Warteschlange speichern' : 'Sofort ausfuehren';
+
+        if (!confirm(confirmText + '\n\nModus: ' + actionText + '\nAktion: ' + label + '\nSwitch: ' + switchName + '\nPort: ' + switchPort)) {
+            return;
+        }
+
+        $.ajax({
+            type: 'POST',
+            url: '?action=shortcut_execute',
+            dataType: 'json',
+            data: {
+                csrf: SHORTCUT_CSRF,
+                shortcut_id: shortcutId,
+                port_uuid: uuid,
+                mode: mode
+            },
+            success: function(response) {
+                if (!response || !response.ok) {
+                    alert('Shortcut fehlgeschlagen.\n\n' + (response && response.message ? response.message : 'Unbekannter Fehler.'));
+                    return;
+                }
+
+                var message = response.message || (mode === 'queue' ? 'Shortcut in Warteschlange gespeichert.' : 'Shortcut erfolgreich ausgefuehrt.');
+                if (response.warnings && response.warnings.length) {
+                    message += '\n\nWarnungen:\n- ' + response.warnings.join('\n- ');
+                }
+                if (response.output) {
+                    message += '\n\nAusgabe:\n' + response.output;
+                }
+                alert(message);
+            },
+            error: function(jqXHR) {
+                alert('Shortcut fehlgeschlagen.\n\n' + (jqXHR.responseText || 'Keine Details verfuegbar.'));
+            }
+        });
+    }
+
     // delete entry
     function delete_entry(uuid, button) {
         uuid = uuid.substring(1);

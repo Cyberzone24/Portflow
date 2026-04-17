@@ -15,16 +15,20 @@
     include_once __DIR__ . '/includes/core/automation_store.php';
     include_once __DIR__ . '/includes/core/logger.php';
     include_once __DIR__ . '/includes/core/auth.php';
+    include_once __DIR__ . '/includes/core/pending_changes_queue.php';
 
     use Portflow\Core\Automation;
     use Portflow\Core\AutomationStore;
     use Portflow\Core\Logger;
     use Portflow\Core\Auth;
+    use Portflow\Core\PendingChangesQueue;
 
     $automation = new Automation();
     $automationStore = new AutomationStore();
     $logger = new Logger();
     $auth = new Auth();
+    $db = new \Portflow\Core\DatabaseAdapter();
+    $queueManager = new PendingChangesQueue($db);
     $config = $automation->getConfig();
     $profiles = $automation->getProfiles();
     $templates = $automation->getTemplates();
@@ -67,6 +71,9 @@
 
     $selectedTemplate = $_GET['template'] ?? ($templateKeys[0] ?? '');
     $selectedSaveMode = $_GET['save_mode'] ?? 'immediate';
+    $selectedErrorStrategy = $_GET['error_strategy'] ?? 'continue_report';
+    $batchInterfacesInput = (string)($_GET['batch_interfaces'] ?? '');
+    $pipelineTemplatesInput = (string)($_GET['pipeline_templates'] ?? '');
 
     if (!isset($profiles[$selectedProfile]) && !empty($profileKeys)) {
         $selectedProfile = $profileKeys[0];
@@ -80,25 +87,159 @@
         $selectedSaveMode = 'immediate';
     }
 
+    if (!in_array($selectedErrorStrategy, ['continue_report', 'stop_on_error', 'stop_with_rollback'], true)) {
+        $selectedErrorStrategy = 'continue_report';
+    }
+
     $templateDefinition = $templates[$selectedTemplate] ?? [];
     $variableValues = [];
+    $activeTab = 'automation';
+    $canAutomationWrite = $auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'write');
+    $canAutomationExecute = $auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'execute');
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['execute'])) {
-        // Check if user has access to automation resource
-        if (!$auth->checkResourceAccess($_SESSION['uuid'], 'automation')) {
-            $logger->log('user denied access to automation execute', 2, echoToWeb: true);
+    // Handle queue operations
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['queue_action'])) {
+        $activeTab = 'queue';
+        if (!$canAutomationExecute) {
             $executionResult = [
                 'ok' => false,
-                'output' => 'Ausfuehrung fehlgeschlagen: Sie haben keine Berechtigung fuer Automatisierungsfunktionen.'
+                'output' => 'Warteschlangen-Operation fehlgeschlagen: Keine Berechtigung.'
+            ];
+        } else {
+            $queueAction = (string)($_POST['queue_action'] ?? '');
+
+            if ($queueAction === 'execute_all' && isset($_POST['execute_all_switch'])) {
+                $switchToExecute = (string)($_POST['execute_all_switch']);
+                if (isset($switches[$switchToExecute])) {
+                    $switchData = $switches[$switchToExecute];
+                    $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
+                    $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
+                    $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+
+                    $executionResult = $queueManager->executeQueueForSwitch(
+                        $_SESSION['uuid'],
+                        $switchToExecute,
+                        $switchData,
+                        $logger
+                    );
+
+                    // Convert array summary to display format
+                    $executionResult['ok'] = $executionResult['failed'] === 0;
+                    $executionResult['output'] = "Warteschlangen-Ausfuehrung:\n"
+                        . "- Gesamt: " . $executionResult['total'] . "\n"
+                        . "- Erfolgreich: " . $executionResult['completed'] . "\n"
+                        . "- Fehlgeschlagen: " . $executionResult['failed'] . "\n\n";
+
+                    if (!empty($executionResult['details'])) {
+                        $executionResult['output'] .= "Details:\n";
+                        foreach ($executionResult['details'] as $detail) {
+                            $executionResult['output'] .= "- [{$detail['status']}] {$detail['uuid']}\n";
+                        }
+                        if (isset($executionResult['details'][0]['output'])) {
+                            $executionResult['output'] .= "\nAusgabe der SSH-Session:\n" . $executionResult['details'][0]['output'];
+                        }
+                    }
+                } else {
+                    $executionResult = [
+                        'ok' => false,
+                        'output' => 'Warteschlangen-Ausfuehrung fehlgeschlagen: Ungultiger Switch.'
+                    ];
+                }
+            } elseif ($queueAction === 'execute_one' && isset($_POST['pending_uuid'])) {
+                $pendingUuid = (string)($_POST['pending_uuid']);
+                $pendingChange = $queueManager->getPendingChange($pendingUuid, $_SESSION['uuid']);
+
+                if (!is_array($pendingChange)) {
+                    $executionResult = [
+                        'ok' => false,
+                        'output' => 'Eintrag nicht gefunden oder keine Berechtigung.'
+                    ];
+                } else {
+                    $switchToExecute = (string)($pendingChange['switch_name'] ?? '');
+                    if ($switchToExecute === '' || !isset($switches[$switchToExecute])) {
+                        $executionResult = [
+                            'ok' => false,
+                            'output' => 'Ausfuehrung fehlgeschlagen: Switch des Queue-Eintrags ist nicht gueltig.'
+                        ];
+                    } else {
+                        $switchData = $switches[$switchToExecute];
+                        $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
+                        $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
+                        $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+
+                        $commands = array_filter(
+                            array_map('trim', explode("\n", (string)($pendingChange['commands'] ?? ''))),
+                            static fn($c): bool => $c !== ''
+                        );
+
+                        if (empty($commands)) {
+                            $executionResult = [
+                                'ok' => false,
+                                'output' => 'Ausfuehrung fehlgeschlagen: Queue-Eintrag enthaelt keine Befehle.'
+                            ];
+                        } else {
+                            $queueManager->updatePendingChange($pendingUuid, 'executing');
+                            $result = runAutomationSshCommands(
+                                $switchData,
+                                $commands,
+                                $logger,
+                                $switchToExecute,
+                                (string)($pendingChange['profile_id'] ?? ''),
+                                (string)($pendingChange['template_id'] ?? '')
+                            );
+
+                            $queueManager->updatePendingChange(
+                                $pendingUuid,
+                                !empty($result['ok']) ? 'completed' : 'failed',
+                                (string)($result['output'] ?? '')
+                            );
+
+                            $executionResult = [
+                                'ok' => !empty($result['ok']),
+                                'output' => "Einzel-Eintrag ausgefuehrt: " . $pendingUuid . "\n\n" . (string)($result['output'] ?? '')
+                            ];
+                        }
+                    }
+                }
+            } elseif ($queueAction === 'delete' && isset($_POST['pending_uuid'])) {
+                $pendingUuid = (string)($_POST['pending_uuid']);
+                $success = $queueManager->deletePendingChange($pendingUuid, $_SESSION['uuid']);
+                $executionResult = [
+                    'ok' => $success,
+                    'output' => $success ? 'Aenderung aus Warteschlange entfernt.' : 'Fehler beim Loeschen.'
+                ];
+            }
+        }
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['execute'])) {
+        $queueMode = isset($_POST['queue_mode']) && $_POST['queue_mode'] === 'on';
+        $requiredPermission = $queueMode ? 'write' : 'execute';
+        $hasRequiredPermission = $queueMode ? $canAutomationWrite : $canAutomationExecute;
+
+        if (!$hasRequiredPermission) {
+            $logger->log('user denied access to automation ' . $requiredPermission, 2, echoToWeb: true);
+            $executionResult = [
+                'ok' => false,
+                'output' => $queueMode
+                    ? 'Warteschlange fehlgeschlagen: Sie haben keine Schreibberechtigung fuer Automatisierungen.'
+                    : 'Ausfuehrung fehlgeschlagen: Sie haben keine Execute-Berechtigung fuer Automatisierungen.'
             ];
         } else {
             $selectedSwitch = (string)($_POST['switch'] ?? $selectedSwitch);
             $selectedProfile = (string)($_POST['profile'] ?? $selectedProfile);
             $selectedTemplate = (string)($_POST['template'] ?? $selectedTemplate);
             $selectedSaveMode = (string)($_POST['save_mode'] ?? $selectedSaveMode);
+            $selectedErrorStrategy = (string)($_POST['error_strategy'] ?? $selectedErrorStrategy);
+            $batchInterfacesInput = (string)($_POST['batch_interfaces'] ?? $batchInterfacesInput);
+            $pipelineTemplatesInput = (string)($_POST['pipeline_templates'] ?? $pipelineTemplatesInput);
 
             if (!in_array($selectedSaveMode, ['immediate', 'skip_save'], true)) {
                 $selectedSaveMode = 'immediate';
+            }
+
+            if (!in_array($selectedErrorStrategy, ['continue_report', 'stop_on_error', 'stop_with_rollback'], true)) {
+                $selectedErrorStrategy = 'continue_report';
             }
 
             if (isset($switches[$selectedSwitch])) {
@@ -114,21 +255,114 @@
                 $variableValues[$name] = $_POST[$name] ?? '';
             }
 
-            $rendered = $automation->renderTemplate($selectedTemplate, $selectedProfile, $variableValues);
-            $rendered['commands'] = applySaveModeToCommands(
-                $rendered['commands'] ?? [],
+            $batchInterfaces = parseBatchInterfaceList($batchInterfacesInput);
+            $rendered = [
+                'commands' => [],
+                'warnings' => []
+            ];
+            $pipelineGroups = [];
+
+            $rendered['commands'] = buildCommandsWithPipeline(
+                $automation,
+                $templates,
+                $selectedTemplate,
+                $selectedProfile,
+                $variableValues,
+                $batchInterfaces,
+                $pipelineTemplatesInput,
+                $profiles[$selectedProfile] ?? [],
+                $rendered['warnings'],
+                $pipelineGroups
+            );
+
+            $pipelineGroups = applySaveModeToPipelineGroups(
+                $pipelineGroups,
                 $profiles[$selectedProfile] ?? [],
                 $selectedSaveMode
             );
+            $rendered['commands'] = flattenPipelineCommands($pipelineGroups);
+
+            $logger->log(
+                'automation execute prepared user=' . (string)($_SESSION['uuid'] ?? '')
+                . ' switch=' . $selectedSwitch
+                . ' profile=' . $selectedProfile
+                . ' template=' . $selectedTemplate
+                . ' save_mode=' . $selectedSaveMode
+                . ' error_strategy=' . $selectedErrorStrategy
+                . ' pipeline_groups=' . count($pipelineGroups)
+                . ' batch_interfaces=' . count($batchInterfaces)
+                . ' command_count=' . count($rendered['commands'] ?? []),
+                0
+            );
+
             if ($selectedSaveMode === 'skip_save') {
                 $rendered['warnings'][] = 'Save-Befehle wurden fuer diesen Lauf uebersprungen (save/write_config).';
             }
 
-            if (is_array($selectedSwitchData)) {
+            if (in_array($selectedErrorStrategy, ['stop_on_error', 'stop_with_rollback'], true) && count($pipelineGroups) > 1) {
+                $rendered['warnings'][] = 'Error-Strategie aktiv: ' . $selectedErrorStrategy . ' (Template-weise Ausfuehrung mit Abbruch bei erstem Fehler).';
+            }
+
+            if ($queueMode) {
+                if (!is_array($selectedSwitchData)) {
+                    $executionResult = [
+                        'ok' => false,
+                        'output' => 'Warteschlange: Bitte zuerst einen gueltigen Switch auswaehlen.'
+                    ];
+                } elseif (empty($rendered['commands'])) {
+                    $executionResult = [
+                        'ok' => false,
+                        'output' => 'Warteschlange: Keine Befehle zum Speichern vorhanden.'
+                    ];
+                } else {
+                    // Add to queue instead of executing immediately
+                    $queueUuid = $queueManager->addPendingChange(
+                        $_SESSION['uuid'],
+                        $selectedSwitch,
+                        $selectedProfile,
+                        $pipelineTemplatesInput !== '' ? ('pipeline:' . $selectedTemplate) : $selectedTemplate,
+                        $rendered['commands'] ?? [],
+                        $variableValues
+                    );
+
+                    $executionResult = [
+                        'ok' => true,
+                        'output' => 'Aenderung in Warteschlange eingefuegt.\n\nQueue-UUID: ' . $queueUuid . '\n\nDie Aenderung wird ausgefuehrt, wenn Sie auf dem Tab "Warteschlange" alle ausstehenden Aenderungen ausfuehren.'
+                    ];
+                    $activeTab = 'queue';
+                }
+            } elseif (is_array($selectedSwitchData)) {
+                // Execute immediately
                 $selectedSwitchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
                 $selectedSwitchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
                 $selectedSwitchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
-                $executionResult = runAutomationSshCommands($selectedSwitchData, $rendered['commands'] ?? [], $logger, $selectedSwitch, $selectedProfile, $selectedTemplate);
+
+                if ($selectedErrorStrategy === 'stop_on_error' && count($pipelineGroups) > 1) {
+                    $executionResult = executePipelineStopOnError(
+                        $selectedSwitchData,
+                        $pipelineGroups,
+                        $logger,
+                        $selectedSwitch,
+                        $selectedProfile
+                    );
+                } elseif ($selectedErrorStrategy === 'stop_with_rollback' && count($pipelineGroups) > 1) {
+                    $executionResult = executePipelineStopWithRollback(
+                        $selectedSwitchData,
+                        $pipelineGroups,
+                        $logger,
+                        $selectedSwitch,
+                        $selectedProfile
+                    );
+                } else {
+                    $executionResult = runAutomationSshCommands($selectedSwitchData, $rendered['commands'] ?? [], $logger, $selectedSwitch, $selectedProfile, $selectedTemplate);
+                }
+
+                $logger->log(
+                    'automation execute finished switch=' . $selectedSwitch
+                    . ' strategy=' . $selectedErrorStrategy
+                    . ' ok=' . (!empty($executionResult['ok']) ? '1' : '0'),
+                    !empty($executionResult['ok']) ? 1 : 3
+                );
             } else {
                 $executionResult = [
                     'ok' => false,
@@ -150,14 +384,41 @@
 
     $rendered = [];
     if (!empty($selectedProfile) && !empty($selectedTemplate)) {
-        $rendered = $automation->renderTemplate($selectedTemplate, $selectedProfile, $variableValues);
-        $rendered['commands'] = applySaveModeToCommands(
-            $rendered['commands'] ?? [],
+        $rendered = [
+            'commands' => [],
+            'warnings' => []
+        ];
+        $previewPipelineGroups = [];
+
+        $batchInterfaces = parseBatchInterfaceList($batchInterfacesInput);
+        $rendered['commands'] = buildCommandsWithPipeline(
+            $automation,
+            $templates,
+            $selectedTemplate,
+            $selectedProfile,
+            $variableValues,
+            $batchInterfaces,
+            $pipelineTemplatesInput,
+            $profiles[$selectedProfile] ?? [],
+            $rendered['warnings'],
+            $previewPipelineGroups
+        );
+
+        $previewPipelineGroups = applySaveModeToPipelineGroups(
+            $previewPipelineGroups,
             $profiles[$selectedProfile] ?? [],
             $selectedSaveMode
         );
+        $rendered['commands'] = flattenPipelineCommands($previewPipelineGroups);
+
         if ($selectedSaveMode === 'skip_save') {
             $rendered['warnings'][] = 'Preview ohne Save-Befehle (save/write_config).';
+        }
+        if ($selectedErrorStrategy === 'stop_on_error' && count($previewPipelineGroups) > 1) {
+            $rendered['warnings'][] = 'Preview-Hinweis: stop_on_error fuehrt Templates nacheinander aus und bricht bei Fehler ab.';
+        }
+        if ($selectedErrorStrategy === 'stop_with_rollback' && count($previewPipelineGroups) > 1) {
+            $rendered['warnings'][] = 'Preview-Hinweis: stop_with_rollback versucht bei Fehlern bereits ausgefuehrte Templates rueckgaengig zu machen (wenn rollback_commands definiert sind).';
         }
     }
 
@@ -206,6 +467,9 @@
             $commandLines[] = $command;
         }
 
+        // Explicitly logout to prevent long waits on open VTY sessions.
+        $commandLines[] = 'quit';
+
         file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
 
         $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
@@ -236,7 +500,9 @@
 
         $lines = [];
         $exitCode = 1;
+        $startedAt = microtime(true);
         exec($fullCommand . ' 2>&1', $lines, $exitCode);
+        $durationSec = microtime(true) - $startedAt;
         @unlink($commandFile);
 
         $maxLines = 120;
@@ -249,12 +515,27 @@
             ? 'sshpass -p ******** ssh ...'
             : trim((string)$fullCommand);
 
+        $reportedCommands = buildCommandStatusLines($commands, $lines, $exitCode);
+
         $outputText = "Command: " . $maskedCommand . "\n";
-        $outputText .= "Exit Code: " . $exitCode . "\n\n";
+        $outputText .= "Exit Code: " . $exitCode . "\n";
+        $outputText .= "Duration: " . number_format($durationSec, 2, '.', '') . "s\n\n";
+        if (!empty($reportedCommands)) {
+            $outputText .= "Command Status (heuristisch):\n" . implode("\n", $reportedCommands) . "\n\n";
+        }
         $outputText .= implode("\n", $lines);
 
+        if ($exitCode === 124) {
+            $outputText .= "\n\nHinweis: Timeout waehrend oder nach erfolgreicher Konfig-Anwendung. "
+                . "Die Session wurde moeglicherweise nicht sauber beendet oder ein Prompt blieb offen.";
+        }
+
         $logger->log(
-            'automation execute switch=' . $switchName . ' profile=' . $profileId . ' template=' . $templateId . ' exit=' . $exitCode,
+            'automation execute switch=' . $switchName
+                . ' profile=' . $profileId
+                . ' template=' . $templateId
+                . ' exit=' . $exitCode
+                . ' duration=' . number_format($durationSec, 2, '.', '') . 's',
             $exitCode === 0 ? 1 : 3
         );
 
@@ -262,6 +543,66 @@
             'ok' => ($exitCode === 0),
             'output' => $outputText
         ];
+    }
+
+    function buildCommandStatusLines(array $commands, array $outputLines, int $exitCode): array {
+        $errorPatterns = [
+            '/\\berror\\b/i',
+            '/\\bfailed\\b/i',
+            '/\\binvalid\\b/i',
+            '/\\bincomplete\\b/i',
+            '/\\bambiguous\\b/i',
+            '/\\bunrecognized\\b/i',
+            '/\\bdenied\\b/i'
+        ];
+
+        $errorLines = [];
+        foreach ($outputLines as $line) {
+            $lineText = (string)$line;
+            foreach ($errorPatterns as $pattern) {
+                if (preg_match($pattern, $lineText)) {
+                    $errorLines[] = strtolower($lineText);
+                    break;
+                }
+            }
+        }
+
+        $statusLines = [];
+        foreach ($commands as $idx => $command) {
+            $commandText = trim((string)$command);
+            if ($commandText === '') {
+                continue;
+            }
+
+            $status = 'SENT';
+            $normalized = strtolower(preg_replace('/\s+/', ' ', $commandText) ?? '');
+            $needle = substr($normalized, 0, 24);
+            $firstToken = strtok($normalized, ' ') ?: '';
+            $matchedError = false;
+
+            foreach ($errorLines as $errorLine) {
+                if ($needle !== '' && strpos($errorLine, $needle) !== false) {
+                    $matchedError = true;
+                    break;
+                }
+                if ($firstToken !== '' && strlen($firstToken) > 2 && strpos($errorLine, $firstToken) !== false) {
+                    $matchedError = true;
+                    break;
+                }
+            }
+
+            if ($matchedError) {
+                $status = 'ERR?';
+            } elseif ($exitCode === 0 && empty($errorLines)) {
+                $status = 'OK';
+            } elseif ($exitCode === 0) {
+                $status = 'OK?';
+            }
+
+            $statusLines[] = str_pad((string)($idx + 1), 3, ' ', STR_PAD_LEFT) . ': [' . $status . '] ' . $commandText;
+        }
+
+        return $statusLines;
     }
 
     function applySaveModeToCommands(array $commands, array $profile, string $saveMode): array {
@@ -291,6 +632,469 @@
         }
 
         return $filtered;
+    }
+
+    function applySaveModeToPipelineGroups(array $groups, array $profile, string $saveMode): array {
+        if ($saveMode !== 'skip_save') {
+            return $groups;
+        }
+
+        $result = [];
+        foreach ($groups as $group) {
+            $commands = applySaveModeToCommands((array)($group['commands'] ?? []), $profile, $saveMode);
+            $result[] = [
+                'template_id' => (string)($group['template_id'] ?? ''),
+                'commands' => $commands
+            ];
+        }
+
+        return $result;
+    }
+
+    function flattenPipelineCommands(array $groups): array {
+        $commands = [];
+        foreach ($groups as $group) {
+            foreach ((array)($group['commands'] ?? []) as $command) {
+                $trimmed = trim((string)$command);
+                if ($trimmed === '') {
+                    continue;
+                }
+                $commands[] = $trimmed;
+            }
+        }
+
+        return $commands;
+    }
+
+    function renderRollbackCommandList(array $rollbackTemplateCommands, array $variables): array {
+        $rendered = [];
+
+        foreach ($rollbackTemplateCommands as $command) {
+            $template = (string)$command;
+            $line = preg_replace_callback('/\{\{([a-zA-Z0-9_.-]+)\}\}/', function ($matches) use ($variables) {
+                $key = $matches[1];
+                $value = $variables[$key] ?? '';
+                if (is_bool($value)) {
+                    return $value ? 'true' : 'false';
+                }
+                if (is_array($value)) {
+                    return implode(', ', $value);
+                }
+                return (string)$value;
+            }, $template);
+
+            $trimmed = trim((string)$line);
+            if ($trimmed !== '') {
+                $rendered[] = $trimmed;
+            }
+        }
+
+        return $rendered;
+    }
+
+    function buildRollbackCommandsWithProfile(array $rollbackLines, array $profile): array {
+        $commands = [];
+
+        $enterConfig = trim((string)($profile['enter_config'] ?? ''));
+        $commit = trim((string)($profile['commit'] ?? ''));
+        $exitConfig = trim((string)($profile['exit_config'] ?? ''));
+        $save = trim((string)($profile['save'] ?? ''));
+        $writeConfig = normalizeWriteConfigCommand((string)($profile['write_config'] ?? ''));
+
+        if ($enterConfig !== '') {
+            $commands[] = $enterConfig;
+        }
+
+        foreach ($rollbackLines as $line) {
+            $trimmed = trim((string)$line);
+            if ($trimmed !== '') {
+                $commands[] = $trimmed;
+            }
+        }
+
+        if (!empty($profile['supports_commit']) && $commit !== '') {
+            $commands[] = $commit;
+        }
+        if ($exitConfig !== '') {
+            $commands[] = $exitConfig;
+        }
+        if ($save !== '') {
+            $commands[] = $save;
+        }
+        if ($writeConfig !== '') {
+            $commands[] = $writeConfig;
+        }
+
+        return $commands;
+    }
+
+    function executePipelineStopOnError(
+        array $connection,
+        array $pipelineGroups,
+        Logger $logger,
+        string $switchName,
+        string $profileId
+    ): array {
+        $reportLines = [];
+        $overallOk = true;
+
+        foreach ($pipelineGroups as $index => $group) {
+            $templateId = (string)($group['template_id'] ?? ('template_' . ($index + 1)));
+            $commands = array_filter(
+                array_map('trim', (array)($group['commands'] ?? [])),
+                static fn($c): bool => $c !== ''
+            );
+
+            if (empty($commands)) {
+                $reportLines[] = '[' . $templateId . '] SKIPPED (keine Befehle)';
+                continue;
+            }
+
+            $result = runAutomationSshCommands($connection, $commands, $logger, $switchName, $profileId, $templateId);
+            $logger->log('stop_with_rollback step template=' . $templateId . ' ok=' . (!empty($result['ok']) ? '1' : '0'), !empty($result['ok']) ? 0 : 2);
+            $statusText = !empty($result['ok']) ? 'OK' : 'FAILED';
+            $reportLines[] = '[' . $templateId . '] ' . $statusText;
+
+            if (isset($result['output'])) {
+                $reportLines[] = "--- Output " . $templateId . " ---";
+                $reportLines[] = (string)$result['output'];
+            }
+
+            if (empty($result['ok'])) {
+                $overallOk = false;
+                $reportLines[] = 'Abbruch: stop_on_error hat weitere Templates nicht mehr ausgefuehrt.';
+                break;
+            }
+        }
+
+        return [
+            'ok' => $overallOk,
+            'output' => implode("\n", $reportLines)
+        ];
+    }
+
+    function executePipelineStopWithRollback(
+        array $connection,
+        array $pipelineGroups,
+        Logger $logger,
+        string $switchName,
+        string $profileId
+    ): array {
+        $reportLines = [];
+        $executed = [];
+        $overallOk = true;
+
+        foreach ($pipelineGroups as $index => $group) {
+            $templateId = (string)($group['template_id'] ?? ('template_' . ($index + 1)));
+            $commands = array_filter(
+                array_map('trim', (array)($group['commands'] ?? [])),
+                static fn($c): bool => $c !== ''
+            );
+
+            if (empty($commands)) {
+                $reportLines[] = '[' . $templateId . '] SKIPPED (keine Befehle)';
+                continue;
+            }
+
+            $result = runAutomationSshCommands($connection, $commands, $logger, $switchName, $profileId, $templateId);
+            $statusText = !empty($result['ok']) ? 'OK' : 'FAILED';
+            $reportLines[] = '[' . $templateId . '] ' . $statusText;
+
+            if (isset($result['output'])) {
+                $reportLines[] = '--- Output ' . $templateId . ' ---';
+                $reportLines[] = (string)$result['output'];
+            }
+
+            if (!empty($result['ok'])) {
+                $executed[] = [
+                    'template_id' => $templateId,
+                    'rollback_commands' => (array)($group['rollback_commands'] ?? [])
+                ];
+                continue;
+            }
+
+            $overallOk = false;
+            $reportLines[] = 'Abbruch: stop_with_rollback hat weitere Templates nicht mehr ausgefuehrt.';
+
+            if (!empty($executed)) {
+                $reportLines[] = 'Rollback gestartet fuer bereits ausgefuehrte Templates (reverse order).';
+            }
+
+            for ($r = count($executed) - 1; $r >= 0; $r--) {
+                $rollbackTemplateId = (string)($executed[$r]['template_id'] ?? ('template_' . ($r + 1)));
+                $rollbackCommands = array_filter(
+                    array_map('trim', (array)($executed[$r]['rollback_commands'] ?? [])),
+                    static fn($c): bool => $c !== ''
+                );
+
+                if (empty($rollbackCommands)) {
+                    $reportLines[] = '[ROLLBACK ' . $rollbackTemplateId . '] SKIPPED (keine rollback_commands definiert)';
+                    continue;
+                }
+
+                $rollbackResult = runAutomationSshCommands(
+                    $connection,
+                    $rollbackCommands,
+                    $logger,
+                    $switchName,
+                    $profileId,
+                    $rollbackTemplateId . '.rollback'
+                );
+                $logger->log('stop_with_rollback rollback template=' . $rollbackTemplateId . ' ok=' . (!empty($rollbackResult['ok']) ? '1' : '0'), !empty($rollbackResult['ok']) ? 1 : 3);
+
+                $rollbackStatus = !empty($rollbackResult['ok']) ? 'OK' : 'FAILED';
+                $reportLines[] = '[ROLLBACK ' . $rollbackTemplateId . '] ' . $rollbackStatus;
+
+                if (isset($rollbackResult['output'])) {
+                    $reportLines[] = '--- Output ROLLBACK ' . $rollbackTemplateId . ' ---';
+                    $reportLines[] = (string)$rollbackResult['output'];
+                }
+
+                if (empty($rollbackResult['ok'])) {
+                    $reportLines[] = 'Rollback-Fehler bei Template: ' . $rollbackTemplateId;
+                }
+            }
+
+            break;
+        }
+
+        return [
+            'ok' => $overallOk,
+            'output' => implode("\n", $reportLines)
+        ];
+    }
+
+    function parseBatchInterfaceList(string $input): array {
+        $lines = preg_split('/\r\n|\r|\n/', $input) ?: [];
+        $interfaces = [];
+
+        foreach ($lines as $line) {
+            $value = trim((string)$line);
+            if ($value === '') {
+                continue;
+            }
+            $interfaces[$value] = true;
+        }
+
+        return array_keys($interfaces);
+    }
+
+    function parseTemplatePipelineList(string $input): array {
+        $lines = preg_split('/\r\n|\r|\n/', $input) ?: [];
+        $templateIds = [];
+
+        foreach ($lines as $line) {
+            $value = trim((string)$line);
+            if ($value === '') {
+                continue;
+            }
+            $templateIds[$value] = true;
+        }
+
+        return array_keys($templateIds);
+    }
+
+    function normalizeWriteConfigCommand(string $writeConfig): string {
+        $value = trim($writeConfig);
+        if ($value === '') {
+            return '';
+        }
+
+        $normalized = strtolower($value);
+        if (in_array($normalized, ['yes', 'true', '1'], true)) {
+            return 'Y';
+        }
+        if (in_array($normalized, ['no', 'false', '0'], true)) {
+            return 'N';
+        }
+
+        return $value;
+    }
+
+    function buildBatchCommandsForInterfaces(
+        Automation $automation,
+        string $templateId,
+        string $profileId,
+        array $baseVariables,
+        array $interfaces,
+        array $profile
+    ): array {
+        $commands = [];
+
+        $enterConfig = trim((string)($profile['enter_config'] ?? ''));
+        $commit = trim((string)($profile['commit'] ?? ''));
+        $exitConfig = trim((string)($profile['exit_config'] ?? ''));
+        $save = trim((string)($profile['save'] ?? ''));
+        $writeConfig = normalizeWriteConfigCommand((string)($profile['write_config'] ?? ''));
+
+        if ($enterConfig !== '') {
+            $commands[] = $enterConfig;
+        }
+
+        foreach ($interfaces as $interfaceValue) {
+            $variables = $baseVariables;
+            $variables['interface'] = $interfaceValue;
+
+            $rendered = $automation->renderTemplate($templateId, $profileId, $variables);
+            foreach ((array)($rendered['commands'] ?? []) as $command) {
+                $trimmed = trim((string)$command);
+                if ($trimmed === '') {
+                    continue;
+                }
+
+                if ($enterConfig !== '' && $trimmed === $enterConfig) {
+                    continue;
+                }
+                if (!empty($profile['supports_commit']) && $commit !== '' && $trimmed === $commit) {
+                    continue;
+                }
+                if ($exitConfig !== '' && $trimmed === $exitConfig) {
+                    continue;
+                }
+                if ($save !== '' && $trimmed === $save) {
+                    continue;
+                }
+                if ($writeConfig !== '' && $trimmed === $writeConfig) {
+                    continue;
+                }
+
+                $commands[] = $trimmed;
+            }
+        }
+
+        if (!empty($profile['supports_commit']) && $commit !== '') {
+            $commands[] = $commit;
+        }
+        if ($exitConfig !== '') {
+            $commands[] = $exitConfig;
+        }
+        if ($save !== '') {
+            $commands[] = $save;
+        }
+        if ($writeConfig !== '') {
+            $commands[] = $writeConfig;
+        }
+
+        return $commands;
+    }
+
+    function buildCommandsWithPipeline(
+        Automation $automation,
+        array $templates,
+        string $selectedTemplate,
+        string $selectedProfile,
+        array $variableValues,
+        array $batchInterfaces,
+        string $pipelineTemplatesInput,
+        array $profile,
+        array &$warnings,
+        array &$pipelineGroups = []
+    ): array {
+        $commands = [];
+        $pipelineTemplates = parseTemplatePipelineList($pipelineTemplatesInput);
+        $templateSequence = empty($pipelineTemplates) ? [$selectedTemplate] : $pipelineTemplates;
+        $pipelineGroups = [];
+
+        if (!empty($pipelineTemplates)) {
+            $warnings[] = 'Pipeline aktiv: ' . count($templateSequence) . ' Templates werden nacheinander ausgefuehrt.';
+        }
+
+        foreach ($templateSequence as $templateId) {
+            if (!isset($templates[$templateId])) {
+                $warnings[] = 'Template in Pipeline nicht gefunden: ' . $templateId;
+                continue;
+            }
+
+            $currentTemplateDefinition = (array)$templates[$templateId];
+            $currentCommands = [];
+
+            if (!empty($batchInterfaces)) {
+                $templateVarNames = array_map(
+                    static fn($variable): string => (string)($variable['name'] ?? ''),
+                    (array)($currentTemplateDefinition['variables'] ?? [])
+                );
+
+                if (!in_array('interface', $templateVarNames, true)) {
+                    $warnings[] = 'Batch fuer Template "' . $templateId . '" ignoriert: Variable "interface" fehlt, es wird einmalig ausgefuehrt.';
+                    $rendered = $automation->renderTemplate($templateId, $selectedProfile, $variableValues);
+                    foreach ((array)($rendered['warnings'] ?? []) as $warning) {
+                        $warnings[] = '[' . $templateId . '] ' . (string)$warning;
+                    }
+                    $currentCommands = (array)($rendered['commands'] ?? []);
+                } else {
+                    $currentCommands = buildBatchCommandsForInterfaces(
+                        $automation,
+                        $templateId,
+                        $selectedProfile,
+                        $variableValues,
+                        $batchInterfaces,
+                        $profile
+                    );
+                }
+            } else {
+                $rendered = $automation->renderTemplate($templateId, $selectedProfile, $variableValues);
+                foreach ((array)($rendered['warnings'] ?? []) as $warning) {
+                    $warnings[] = '[' . $templateId . '] ' . (string)$warning;
+                }
+                $currentCommands = (array)($rendered['commands'] ?? []);
+            }
+
+            foreach ($currentCommands as $command) {
+                $trimmed = trim((string)$command);
+                if ($trimmed === '') {
+                    continue;
+                }
+                $commands[] = $trimmed;
+            }
+
+            $pipelineGroups[] = [
+                'template_id' => $templateId,
+                'commands' => array_values(array_filter(
+                    array_map(static fn($cmd): string => trim((string)$cmd, " \t\n\r\0\x0B"), $currentCommands),
+                    static fn($cmd): bool => $cmd !== ''
+                )),
+                'rollback_commands' => []
+            ];
+
+            $rollbackTemplateCommands = (array)($currentTemplateDefinition['rollback_commands'] ?? []);
+            if (!empty($rollbackTemplateCommands)) {
+                $groupIndex = count($pipelineGroups) - 1;
+                $rollbackCommands = [];
+
+                if (!empty($batchInterfaces)) {
+                    $templateVarNames = array_map(
+                        static fn($variable): string => (string)($variable['name'] ?? ''),
+                        (array)($currentTemplateDefinition['variables'] ?? [])
+                    );
+
+                    if (in_array('interface', $templateVarNames, true)) {
+                        foreach ($batchInterfaces as $interfaceValue) {
+                            $rollbackVariables = $variableValues;
+                            $rollbackVariables['interface'] = $interfaceValue;
+                            $rollbackLines = renderRollbackCommandList($rollbackTemplateCommands, $rollbackVariables);
+                            $rollbackCommands = array_merge($rollbackCommands, buildRollbackCommandsWithProfile($rollbackLines, $profile));
+                        }
+                    } else {
+                        $rollbackLines = renderRollbackCommandList($rollbackTemplateCommands, $variableValues);
+                        $rollbackCommands = buildRollbackCommandsWithProfile($rollbackLines, $profile);
+                    }
+                } else {
+                    $rollbackLines = renderRollbackCommandList($rollbackTemplateCommands, $variableValues);
+                    $rollbackCommands = buildRollbackCommandsWithProfile($rollbackLines, $profile);
+                }
+
+                $pipelineGroups[$groupIndex]['rollback_commands'] = array_values(array_filter(
+                    array_map(static fn($cmd): string => trim((string)$cmd), $rollbackCommands),
+                    static fn($cmd): bool => $cmd !== ''
+                ));
+            }
+        }
+
+        if (!empty($batchInterfaces)) {
+            $warnings[] = 'Batch-Modus aktiv: ' . count($batchInterfaces) . ' Interfaces werden verarbeitet.';
+        }
+
+        return $commands;
     }
 
     function automation_escape($value): string {
@@ -324,17 +1128,36 @@
     </div>
 
     <div class="basis-4/5 bg-white rounded-2xl shadow-md p-6 overflow-y-scroll">
-        <div class="flex justify-between items-start gap-6 pb-6">
-            <div>
-                <div class="text-2xl font-bold">Automation Preview</div>
-                <div class="text-sm text-gray-600">Konfiguration und Kommandosequenz fuer Huawei Switches.</div>
-            </div>
-            <div class="text-sm text-gray-500 max-w-xl text-right">
-                Die Ausfuehrung per SSH wird im naechsten Schritt angebunden. Aktuell kannst du Profile, Templates und Variablen pruefen.
-            </div>
+        <!-- Tabs -->
+        <div class="flex gap-4 border-b mb-6">
+            <button type="button" class="automation-tab px-4 py-2 font-semibold border-b-2 border-blue-500 text-blue-600" data-tab="automation">
+                Automation
+            </button>
+            <button type="button" class="automation-tab px-4 py-2 font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="queue">
+                Warteschlange
+                <?php 
+                    $pendingSummary = $queueManager->getPendingSummary($_SESSION['uuid'] ?? '');
+                    $totalPending = array_sum($pendingSummary);
+                    if ($totalPending > 0) {
+                        echo '<span class="ml-2 inline-block bg-red-500 text-white text-xs rounded-full px-2 py-1">' . $totalPending . '</span>';
+                    }
+                ?>
+            </button>
         </div>
+        
+        <!-- Automation Tab -->
+        <div id="automation-content" class="tab-content">
+            <div class="flex justify-between items-start gap-6 pb-6">
+                <div>
+                    <div class="text-2xl font-bold">Automation Preview</div>
+                    <div class="text-sm text-gray-600">Konfiguration und Kommandosequenz fuer Huawei Switches.</div>
+                </div>
+                <div class="text-sm text-gray-500 max-w-xl text-right">
+                    Waehle Switch, Profil, Template und Variablen, dann ausfuehren oder zu Warteschlange hinzufuegen.
+                </div>
+            </div>
 
-        <form class="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8" method="GET" action="automation.php">
+        <form id="automation-preview-form" class="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8" method="GET" action="automation.php">
             <div class="space-y-4 bg-gray-50 rounded-2xl p-4">
                 <div>
                     <label class="block text-sm font-semibold mb-2" for="switch">Switch Target</label>
@@ -379,6 +1202,28 @@
                         <option value="skip_save" <?php echo $selectedSaveMode === 'skip_save' ? 'selected' : ''; ?>>Save in diesem Lauf ueberspringen</option>
                     </select>
                     <div class="text-xs text-gray-600 mt-2">"Ueberspringen" spart Laufzeit und eignet sich fuer Session-/Batch-Aenderungen ohne direktes Save.</div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold mb-2" for="error_strategy">Fehlerstrategie</label>
+                    <select id="error_strategy" name="error_strategy" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
+                        <option value="continue_report" <?php echo $selectedErrorStrategy === 'continue_report' ? 'selected' : ''; ?>>continue_with_report (eine Session)</option>
+                        <option value="stop_on_error" <?php echo $selectedErrorStrategy === 'stop_on_error' ? 'selected' : ''; ?>>stop_on_error (Template-weise)</option>
+                        <option value="stop_with_rollback" <?php echo $selectedErrorStrategy === 'stop_with_rollback' ? 'selected' : ''; ?>>stop_with_rollback (Template-weise + Rollback)</option>
+                    </select>
+                    <div class="text-xs text-gray-600 mt-2">stop_on_error bricht bei erstem Fehler ab. stop_with_rollback versucht bereits ausgefuehrte Templates rueckgaengig zu machen (wenn rollback_commands im Template definiert sind).</div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold mb-2" for="batch_interfaces">Batch Interfaces (optional, eine Zeile pro Port)</label>
+                    <textarea id="batch_interfaces" name="batch_interfaces" rows="4" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white font-mono text-sm" placeholder="MultiGE1/0/1&#10;MultiGE1/0/2&#10;MultiGE1/0/3"><?php echo automation_escape($batchInterfacesInput); ?></textarea>
+                    <div class="text-xs text-gray-600 mt-2">Wenn gesetzt, wird das Template fuer alle Interfaces in einer einzigen SSH-Session ausgefuehrt.</div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold mb-2" for="pipeline_templates">Template Pipeline (optional, eine Zeile pro Template-ID)</label>
+                    <textarea id="pipeline_templates" name="pipeline_templates" rows="4" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white font-mono text-sm" placeholder="port_description&#10;poe_enable&#10;vlan_access"><?php echo automation_escape($pipelineTemplatesInput); ?></textarea>
+                    <div class="text-xs text-gray-600 mt-2">Wenn gesetzt, werden mehrere Templates in dieser Reihenfolge in einer Session ausgefuehrt.</div>
                 </div>
 
                 <div>
@@ -450,20 +1295,24 @@
             <div class="flex items-center justify-between gap-4 pb-4">
                 <div>
                     <div class="text-lg font-bold">Execute Automation</div>
-                    <div class="text-sm text-gray-600">Fuehrt die gerenderte Kommandosequenz auf dem gewaelten Switch aus.</div>
+                    <div class="text-sm text-gray-600">Fuehrt die gerenderte Kommandosequenz auf dem gewaelten Switch aus oder fuegt zu Warteschlange hinzu.</div>
                 </div>
             </div>
-            <form method="POST" action="automation.php">
+            <form id="automation-execute-form" method="POST" action="automation.php" onsubmit="return syncExecutionFormValues();">
                 <input type="hidden" name="execute" value="1">
                 <input type="hidden" name="switch" value="<?php echo automation_escape($selectedSwitch); ?>">
                 <input type="hidden" name="profile" value="<?php echo automation_escape($selectedProfile); ?>">
                 <input type="hidden" name="template" value="<?php echo automation_escape($selectedTemplate); ?>">
                 <input type="hidden" name="save_mode" value="<?php echo automation_escape($selectedSaveMode); ?>">
+                <input type="hidden" name="error_strategy" value="<?php echo automation_escape($selectedErrorStrategy); ?>">
+                <input type="hidden" name="batch_interfaces" value="<?php echo automation_escape($batchInterfacesInput); ?>">
+                <input type="hidden" name="pipeline_templates" value="<?php echo automation_escape($pipelineTemplatesInput); ?>">
                 <?php foreach ($variableValues as $variableName => $variableValue) : ?>
                     <input type="hidden" name="<?php echo automation_escape($variableName); ?>" value="<?php echo automation_escape($variableValue); ?>">
                 <?php endforeach; ?>
-                <div class="flex justify-end">
-                    <button type="submit" class="px-5 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Execute</button>
+                <div class="flex justify-end gap-2">
+                    <button type="submit" name="queue_mode" value="off" class="px-5 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Sofort ausfuehren</button>
+                    <button type="submit" name="queue_mode" value="on" class="px-5 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold">Zu Warteschlange hinzufuegen</button>
                 </div>
             </form>
             <?php if (is_array($executionResult) && isset($executionResult['output'])) : ?>
@@ -473,11 +1322,141 @@
                 </div>
             <?php endif; ?>
         </div>
+
+        </div>
+        
+        <!-- Queue Tab -->
+        <div id="queue-content" class="tab-content hidden">
+            <div class="flex justify-between items-start gap-6 pb-6">
+                <div>
+                    <div class="text-2xl font-bold">Warteschlange</div>
+                    <div class="text-sm text-gray-600">Ausstehende Aenderungen verwalten und ausfuehren.</div>
+                </div>
+            </div>
+            
+            <?php
+                $userPendingSummary = $queueManager->getPendingSummary($_SESSION['uuid'] ?? '');
+                if (empty($userPendingSummary)) {
+                    echo '<div class="rounded-xl bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3">Keine ausstehenden Aenderungen in der Warteschlange.</div>';
+                } else {
+                    foreach ($userPendingSummary as $switchName => $count) {
+                        echo '<div class="bg-gray-50 rounded-xl p-4 mb-4">';
+                        echo '<div class="flex justify-between items-center pb-4">';
+                        echo '<div>';
+                        echo '<div class="text-lg font-bold">' . automation_escape($switchName) . '</div>';
+                        echo '<div class="text-sm text-gray-600">' . $count . ' ausstehende Aenderung' . ($count !== 1 ? 'en' : '') . '</div>';
+                        echo '</div>';
+                        echo '<form method="POST" action="automation.php" style="display: inline;">';
+                        echo '<input type="hidden" name="queue_action" value="execute_all">';
+                        echo '<input type="hidden" name="execute_all_switch" value="' . automation_escape($switchName) . '">';
+                        echo '<button type="submit" class="px-4 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Alle ausfuehren</button>';
+                        echo '</form>';
+                        echo '</div>';
+                        
+                        $pendingChanges = $queueManager->getPendingChanges($_SESSION['uuid'] ?? '', $switchName);
+                        echo '<div class="space-y-2">';
+                        foreach ($pendingChanges as $change) {
+                            echo '<div class="bg-white border border-gray-200 rounded-lg p-3 text-sm">';
+                            echo '<div class="flex justify-between items-start gap-3">';
+                            echo '<div>';
+                            echo '<div class="font-semibold">' . automation_escape($change['profile_id']) . ' → ' . automation_escape($change['template_id']) . '</div>';
+                            echo '<div class="text-xs text-gray-500 mt-1">' . (new DateTime($change['created']))->format('Y-m-d H:i:s') . '</div>';
+                            echo '<div class="text-xs text-gray-600 mt-2 font-mono bg-gray-100 p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap">' . automation_escape((string)($change['commands'] ?? '')) . '</div>';
+                            echo '</div>';
+                            echo '<div class="flex gap-2">';
+                            echo '<form method="POST" action="automation.php" style="display: inline;">';
+                            echo '<input type="hidden" name="queue_action" value="execute_one">';
+                            echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
+                            echo '<button type="submit" class="px-2 py-1 rounded bg-green-100 hover:bg-green-200 text-green-700 text-xs font-semibold">Ausfuehren</button>';
+                            echo '</form>';
+                            echo '<form method="POST" action="automation.php" style="display: inline;">';
+                            echo '<input type="hidden" name="queue_action" value="delete">';
+                            echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
+                            echo '<button type="submit" class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold" onclick="return confirm(\'Wirklich loeschen?\')">Loeschen</button>';
+                            echo '</form>';
+                            echo '</div>';
+                            echo '</div>';
+                            echo '</div>';
+                        }
+                        echo '</div>';
+                        echo '</div>';
+                    }
+                }
+            ?>
+        </div>
+
     </div>
 </div>
 
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Tab switching
+    const tabButtons = document.querySelectorAll('.automation-tab');
+    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const tabName = this.getAttribute('data-tab');
+            showTab(tabName);
+        });
+    });
+    
+    function showTab(tabName) {
+        // Hide all tabs
+        document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.classList.add('hidden');
+        });
+        
+        // Show selected tab
+        const selectedTab = document.getElementById(tabName + '-content');
+        if (selectedTab) {
+            selectedTab.classList.remove('hidden');
+        }
+        
+        // Update button styles
+        tabButtons.forEach(button => {
+            if (button.getAttribute('data-tab') === tabName) {
+                button.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700');
+                button.classList.add('border-blue-500', 'text-blue-600');
+            } else {
+                button.classList.remove('border-blue-500', 'text-blue-600');
+                button.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700');
+            }
+        });
+    }
+
+    showTab('<?php echo automation_escape($activeTab); ?>');
+
+    window.syncExecutionFormValues = function() {
+        const previewForm = document.getElementById('automation-preview-form');
+        const executeForm = document.getElementById('automation-execute-form');
+
+        if (!previewForm || !executeForm) {
+            return true;
+        }
+
+        const previewFields = previewForm.querySelectorAll('input[name], select[name], textarea[name]');
+        previewFields.forEach(function(field) {
+            const name = field.getAttribute('name');
+            if (!name) {
+                return;
+            }
+
+            let target = executeForm.elements.namedItem(name);
+            if (!target) {
+                target = document.createElement('input');
+                target.type = 'hidden';
+                target.name = name;
+                executeForm.appendChild(target);
+            }
+
+            target.value = field.value;
+        });
+
+        return true;
+    };
+
+    // Switch select logic
     const switchSelect = document.getElementById('switch');
     const profileSelect = document.getElementById('profile');
     
