@@ -25,8 +25,8 @@
     use Portflow\Core\Auth;
     $auth = new Auth();
 
-    $navActiveClass = 'bg-gray-100 rounded-t-xl py-4 px-8 text-blue-900 font-semibold';
-    $navInactiveClass = 'bg-white rounded-xl inline-block py-2 my-2 px-8 text-gray-500 hover:text-gray-800';
+    $navActiveClass = 'pf-nav-pill pf-nav-pill-active';
+    $navInactiveClass = 'pf-nav-pill';
     $itamClass = ($active_page == 'itam') ? $navActiveClass : $navInactiveClass;
     $automationClass = ($active_page == 'automation') ? $navActiveClass : $navInactiveClass;
     $portviewClass = ($active_page == 'portview') ? $navActiveClass : $navInactiveClass;
@@ -51,34 +51,239 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js" integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="./includes/js/lucide.min.js"></script>
+    <style>
+        .pf-header-shell {
+            margin: 0.75rem;
+            padding: 0.65rem 1rem;
+            border-radius: 1rem;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+        }
+
+        .pf-logo {
+            height: 2.9rem;
+            width: auto;
+        }
+
+        .pf-nav-pill {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 9999px;
+            background: #ffffff;
+            color: #1e293b;
+            font-weight: 600;
+            padding: 0.48rem 1.05rem;
+            white-space: nowrap;
+            transition: 140ms ease;
+        }
+
+        .pf-nav-pill:hover {
+            background: #f1f5f9;
+        }
+
+        .pf-nav-pill-active {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+        }
+
+        .pf-icon-btn {
+            height: 2.5rem;
+            width: 2.5rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.15);
+        }
+
+        .pf-icon-btn-gray {
+            background: #94a3b8;
+        }
+
+        .pf-icon-btn-gray:hover {
+            background: #64748b;
+        }
+
+        .pf-icon-btn-signout:hover {
+            background: #ef4444;
+        }
+
+        .pf-icon-btn-blue {
+            background: #3b82f6;
+        }
+
+        .pf-icon-btn-blue:hover {
+            background: #2563eb;
+        }
+
+        .pf-desktop-header {
+            display: none;
+        }
+
+        .pf-mobile-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .pf-mobile-drawer {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            background: rgba(15, 23, 42, 0.35);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 170ms ease;
+        }
+
+        .pf-mobile-drawer.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .pf-mobile-panel {
+            width: min(94vw, 22rem);
+            height: 100%;
+            background: #f8fafc;
+            border-right: 1px solid #cbd5e1;
+            padding: 1rem;
+            transform: translateX(-100%);
+            transition: transform 170ms ease;
+            overflow-y: auto;
+        }
+
+        .pf-mobile-drawer.open .pf-mobile-panel {
+            transform: translateX(0);
+        }
+
+        .pf-mobile-group {
+            display: grid;
+            gap: 0.7rem;
+        }
+
+        .pf-mobile-section {
+            margin-top: 0.7rem;
+            padding-top: 0.85rem;
+            border-top: 1px solid #cbd5e1;
+            display: grid;
+            gap: 0.7rem;
+        }
+
+        @media (min-width: 1024px) {
+            .pf-header-shell {
+                margin: 0.75rem 1rem;
+                padding: 0.75rem 1.1rem;
+            }
+
+            .pf-mobile-header {
+                display: none;
+            }
+
+            .pf-desktop-header {
+                display: grid;
+                grid-template-columns: 1fr auto 1fr;
+                align-items: center;
+                gap: 0.75rem;
+            }
+        }
+    </style>
 </head>
-<body class="static flex flex-col w-full h-screen item-center bg-gray-300">
-<header class="w-full flex justify-between px-4">
-    <div class="basis-1/6 py-4 flex items-center">
-        <img class="h-full" src="./includes/img/portflow.png" alt="Portflow">
+<body class="static flex flex-col w-full min-h-screen item-center bg-gray-300">
+<header class="pf-header-shell">
+    <div class="pf-mobile-header lg:hidden">
+        <img class="pf-logo" src="./includes/img/portflow.png" alt="Portflow">
+        <button id="pfMobileMenuButton" class="pf-icon-btn pf-icon-btn-gray" title="Menue oeffnen" type="button">
+            <i data-lucide="menu"></i>
+        </button>
     </div>
-    <ul class="basis-1/6 flex justify-center gap-8">
-        <li class="flex items-end">
-            <a class="<?= $itamClass; ?>"
-                href="itam.php" title="<?php echo $lang['it asset-management']; ?>"><?php echo $lang['itam']; ?></a>
-        </li>
-        <?php if ($hasAutomationAccess) : ?>
-        <li class="flex items-end">
-            <a class="<?= $automationClass; ?>"
-                href="automation.php" title="<?php echo $lang['automation']; ?>"><?php echo $lang['automation']; ?></a>
-        </li>
-        <?php endif; ?>
-        <li class="flex items-end">
-            <a class="<?= $portviewClass; ?>"
-                href="portview.php" title="<?php echo $lang['portview']; ?>"><?php echo $lang['portview']; ?></a>
-        </li>
-    </ul>
-    <div class="basis-1/6 py-4 flex flex-row items-center justify-end">
-        <a href="?signout" title="<?php echo $lang['logout']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-red-500 text-white text-2xl flex items-center justify-center shadow-md">
-            <i data-lucide="log-out"></i>
-        </a>
-        <a href="settings.php" title="<?php echo $lang['settings']; ?>" class="h-10 w-10 ml-4 rounded-full bg-gray-500 hover:bg-gray-700 text-white text-2xl flex items-center justify-center shadow-md duration-500 hover:rotate-180">
-            <i data-lucide="settings"></i>
-        </a>
+
+    <div class="pf-desktop-header hidden lg:grid">
+        <div class="flex items-center min-w-0">
+            <img class="pf-logo" src="./includes/img/portflow.png" alt="Portflow">
+        </div>
+
+        <nav class="flex items-center justify-center gap-2">
+            <a class="<?= $itamClass; ?>" href="itam.php" title="<?php echo $lang['it asset-management']; ?>"><?php echo $lang['itam']; ?></a>
+            <?php if ($hasAutomationAccess) : ?>
+            <a class="<?= $automationClass; ?>" href="automation.php" title="<?php echo $lang['automation']; ?>"><?php echo $lang['automation']; ?></a>
+            <?php endif; ?>
+            <a class="<?= $portviewClass; ?>" href="portview.php" title="<?php echo $lang['portview']; ?>"><?php echo $lang['portview']; ?></a>
+        </nav>
+
+        <div class="flex items-center justify-end gap-2">
+            <a href="settings.php" title="<?php echo $lang['settings']; ?>" class="pf-icon-btn pf-icon-btn-blue duration-500 hover:rotate-180">
+                <i data-lucide="settings"></i>
+            </a>
+            <a href="?signout" title="<?php echo $lang['logout']; ?>" class="pf-icon-btn pf-icon-btn-gray pf-icon-btn-signout">
+                <i data-lucide="log-out"></i>
+            </a>
+        </div>
     </div>
 </header>
+
+<div id="pfMobileDrawer" class="pf-mobile-drawer lg:hidden">
+    <aside class="pf-mobile-panel">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <div class="text-xl font-bold text-slate-900"><?php echo $lang['navigation'] ?? 'Navigation'; ?></div>
+                <div class="text-sm text-slate-500"><?php echo $lang['module and subitems'] ?? 'Module und Unterpunkte'; ?></div>
+            </div>
+            <button id="pfMobileMenuClose" class="pf-icon-btn pf-icon-btn-gray" title="Menue schliessen" type="button">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <nav class="pf-mobile-group">
+            <a class="<?= $itamClass; ?>" href="itam.php" title="<?php echo $lang['it asset-management']; ?>">
+                <span><?php echo $lang['itam']; ?></span>
+            </a>
+            <?php if ($hasAutomationAccess) : ?>
+            <a class="<?= $automationClass; ?>" href="automation.php" title="<?php echo $lang['automation']; ?>">
+                <span><?php echo $lang['automation']; ?></span>
+            </a>
+            <?php endif; ?>
+            <a class="<?= $portviewClass; ?>" href="portview.php" title="<?php echo $lang['portview']; ?>">
+                <span><?php echo $lang['portview']; ?></span>
+            </a>
+
+            <div class="pf-mobile-section">
+                <a class="pf-nav-pill" href="settings.php" title="<?php echo $lang['settings']; ?>">
+                    <span><?php echo $lang['settings']; ?></span>
+                </a>
+                <a class="pf-nav-pill" href="?signout" title="<?php echo $lang['logout']; ?>">
+                    <span><?php echo $lang['logout']; ?></span>
+                </a>
+            </div>
+        </nav>
+    </aside>
+</div>
+
+<script>
+    $(function () {
+        var $drawer = $('#pfMobileDrawer');
+
+        function openDrawer(open) {
+            $drawer.toggleClass('open', open);
+            $('body').css('overflow', open ? 'hidden' : '');
+        }
+
+        $('#pfMobileMenuButton').on('click', function () {
+            openDrawer(true);
+        });
+
+        $('#pfMobileMenuClose').on('click', function () {
+            openDrawer(false);
+        });
+
+        $drawer.on('click', function (event) {
+            if (event.target === this) {
+                openDrawer(false);
+            }
+        });
+    });
+</script>

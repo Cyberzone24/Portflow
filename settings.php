@@ -1156,22 +1156,255 @@
 
         // get site
         $site = $_GET['site'] ?? NULL;
+        $activeScriptsTab = getScriptsTabFromRequest();
     }
 ?>
-<div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
-    <div class="basis-1/6 flex flex-col gap-6">  
-        <p><?php echo $lang['settings']; ?></p>
-        <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <a href="?site=appearance"><li class="bg-white py-2 px-4 <?php echo ($site == 'appearance' || $site == NULL) ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['appearance']; ?></li></a>
-            <?php echo ($role !== 'ldap') ? '<a href="?site=account"><li class="bg-white py-2 px-4 ' . ($site == 'account' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['account'] . '</li></a>' : ''; ?>
-            <a href="?site=notifications"><li class="bg-white py-2 px-4 <?php echo ($site == 'notifications') ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4';?>"><?php echo $lang['notifications']; ?></li></a>
-            <?php echo ($role == 'admin') ? '<a href="?site=configuration"><li class="bg-white py-2 px-4 ' . ($site == 'configuration' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
-            <?php echo ($role == 'admin') ? '<a href="?site=scripts"><li class="bg-white py-2 px-4 ' . ($site == 'scripts' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
-            <?php echo ($role == 'admin') ? '<a href="?site=access"><li class="bg-white py-2 px-4 ' . ($site == 'access' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
-            <?php echo ($role == 'admin') ? '<a href="?site=changelog"><li class="bg-white py-2 px-4 ' . ($site == 'changelog' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">Changelog</li></a>' : ''; ?>
+<style>
+    .settings-shell {
+        margin: 0.75rem 1rem 1rem;
+        margin-top: 0;
+        display: grid;
+        gap: 0.95rem;
+        grid-template-columns: 1fr;
+    }
+
+    .settings-sidebar {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        padding: 0.95rem;
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    .settings-content {
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        position: relative;
+        overflow-y: auto;
+        min-height: 0;
+        padding: 0.95rem;
+    }
+
+    .settings-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+    }
+
+    .settings-nav > a {
+        flex: 0 0 auto;
+    }
+
+    .settings-nav-item {
+        display: block;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        border-radius: 9999px;
+        padding: 0.62rem 0.9rem;
+        font-weight: 600;
+        color: #1e293b;
+        transition: 140ms ease;
+        white-space: nowrap;
+    }
+
+    .settings-nav-item:hover {
+        background: #f1f5f9;
+    }
+
+    .settings-nav-item-active {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #ffffff;
+    }
+
+    .settings-subnav {
+        margin-top: -0.15rem;
+        padding-left: 0.45rem;
+        border-left: 2px solid #dbeafe;
+        display: grid;
+        gap: 0.42rem;
+    }
+
+    .settings-nav-subitem {
+        display: block;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        border-radius: 9999px;
+        padding: 0.48rem 0.82rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #334155;
+        transition: 140ms ease;
+        white-space: nowrap;
+    }
+
+    .settings-nav-subitem:hover {
+        background: #f1f5f9;
+    }
+
+    .settings-nav-subitem-active {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+        color: #ffffff;
+    }
+
+    .settings-content input[type="text"],
+    .settings-content input[type="email"],
+    .settings-content input[type="password"],
+    .settings-content input[type="number"],
+    .settings-content select,
+    .settings-content textarea {
+        border: 1px solid #cbd5e1;
+        border-radius: 9999px;
+        background: #ffffff;
+        color: #1e293b;
+    }
+
+    .settings-content textarea {
+        border-radius: 1rem;
+    }
+
+    .settings-content table {
+        border: 1px solid #cbd5e1;
+        border-radius: 0.9rem;
+        overflow: hidden;
+        background: #ffffff;
+        width: 100%;
+    }
+
+    .settings-content th,
+    .settings-content td {
+        padding: 0.62rem 0.78rem;
+        font-size: 0.875rem;
+        line-height: 1.35;
+    }
+
+    .settings-content thead {
+        background: #e2e8f0 !important;
+    }
+
+    .settings-content thead th {
+        color: #1e293b;
+        font-weight: 700;
+    }
+
+    .settings-content button,
+    .settings-content input[type="submit"] {
+        border-radius: 9999px;
+        font-weight: 600;
+    }
+
+    .settings-content button:not(.h-10):not(.w-10),
+    .settings-content input[type="submit"] {
+        padding: 0.48rem 0.95rem;
+        font-size: 0.875rem;
+        line-height: 1.2;
+    }
+
+    .settings-content .text-xl,
+    .settings-content .text-2xl {
+        color: #0f172a;
+        font-weight: 700;
+    }
+
+    .settings-content .text-xs {
+        font-size: 0.8rem;
+    }
+
+    .settings-content input[type="checkbox"] {
+        width: 0.95rem;
+        height: 0.95rem;
+        accent-color: #2563eb;
+        cursor: pointer;
+    }
+
+    .settings-surface {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 1rem;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    }
+
+    .settings-table-wrap {
+        border: 1px solid #cbd5e1;
+        border-radius: 0.9rem;
+        overflow: hidden;
+        background: #ffffff;
+    }
+
+    .settings-table-wrap table {
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        margin-bottom: 0 !important;
+        color: #334155 !important;
+    }
+
+    .settings-data-row:hover {
+        background: #f8fafc;
+    }
+
+    .settings-icon-btn {
+        height: 2.1rem;
+        width: 2.1rem;
+        border-radius: 9999px;
+        color: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+    }
+
+    .settings-icon-btn i[data-lucide] {
+        width: 0.95rem;
+        height: 0.95rem;
+    }
+
+    @media (min-width: 1024px) {
+        .settings-shell {
+            grid-template-columns: minmax(220px, 18rem) minmax(0, 1fr);
+            height: calc(100vh - 7.2rem);
+            align-items: stretch;
+        }
+
+        .settings-nav {
+            display: grid;
+            gap: 0.7rem;
+            overflow: visible;
+            padding-bottom: 0;
+        }
+
+        .settings-nav > a {
+            flex: initial;
+        }
+    }
+</style>
+<div class="settings-shell">
+    <div class="settings-sidebar flex flex-col gap-6">  
+        <p class="text-base font-semibold text-slate-900"><?php echo $lang['settings']; ?></p>
+        <ul class="settings-nav" id="itam_nav">
+            <a href="?site=appearance"><li class="<?php echo ($site == 'appearance' || $site == NULL) ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item';?>"><?php echo $lang['appearance']; ?></li></a>
+            <?php echo ($role !== 'ldap') ? '<a href="?site=account"><li class="' . ($site == 'account' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['account'] . '</li></a>' : ''; ?>
+            <a href="?site=notifications"><li class="<?php echo ($site == 'notifications') ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item';?>"><?php echo $lang['notifications']; ?></li></a>
+            <?php echo ($role == 'admin') ? '<a href="?site=configuration"><li class="' . ($site == 'configuration' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a href="?site=scripts"><li class="' . ($site == 'scripts' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
+            <?php if ($role == 'admin' && $site == 'scripts') : ?>
+                <div class="settings-subnav">
+                    <a href="?site=scripts&tab=switch"><li class="settings-nav-subitem settings-script-tab <?php echo ($activeScriptsTab === 'switch') ? 'settings-nav-subitem-active' : ''; ?>" data-script-tab="switch">Switch/SSH</li></a>
+                    <a href="?site=scripts&tab=templates"><li class="settings-nav-subitem settings-script-tab <?php echo ($activeScriptsTab === 'templates') ? 'settings-nav-subitem-active' : ''; ?>" data-script-tab="templates">Template Overrides</li></a>
+                    <a href="?site=scripts&tab=history"><li class="settings-nav-subitem settings-script-tab <?php echo ($activeScriptsTab === 'history') ? 'settings-nav-subitem-active' : ''; ?>" data-script-tab="history">Historie</li></a>
+                </div>
+            <?php endif; ?>
+            <?php echo ($role == 'admin') ? '<a href="?site=access"><li class="' . ($site == 'access' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a href="?site=changelog"><li class="' . ($site == 'changelog' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">Changelog</li></a>' : ''; ?>
         </ul>
     </div>
-    <div class="h-full basis-5/6 flex bg-white rounded-lg relative overflow-y-scroll">
+    <div class="settings-content">
 <?php 
 switch ($site) {        
     case 'account':
@@ -1301,7 +1534,7 @@ switch ($site) {
             die();
         }
 
-        echo '<div class="h-fit w-full p-4">';
+        echo '<div class="h-fit w-full p-2 space-y-6">';
 
         $csrf = $auth->csrf();
         $allRoleRows = $db_adapter->db_query("SELECT uuid, caption, description FROM role ORDER BY caption") ?: [];
@@ -1310,8 +1543,8 @@ switch ($site) {
         $results = $db_adapter->db_query($query);
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-6'>Accounts</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
-            echo "<tr class='border-b bg-gray-200 text-gray-800'>";
+            echo "<div class='settings-surface'><div class='text-xl font-bold pb-4'>Accounts</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<tr class='border-b border-slate-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
             }
@@ -1334,13 +1567,13 @@ switch ($site) {
                             </button>";
                 }
 
-                echo "<tr class='hover:bg-gray-200'>";
+                echo "<tr class='settings-data-row'>";
                 foreach ($row as $column) {
                     echo "<td class='p-2 border-b'>{$column}</td>";
                 }
 
                 echo <<<HTML
-                    <td class='p-2 border-b flex flex-row gap-4'>
+                    <td class='p-2 border-b flex flex-row gap-2'>
                         <form action='?set=$form_action' method='post' class='m-0'>
                             <input type='hidden' name='csrf' value='$csrf'>
                             <input type='hidden' name='uuid' value='$uuid'>
@@ -1365,34 +1598,32 @@ switch ($site) {
 
                 $uuid = NULL;}
 
-            echo "</tbody></table></div>";
+            echo "</tbody></table></div></div>";
         } else {
             echo "No results found.";
         }
 
-        echo "<br><br>";
         $results = $allRoleRows;
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-6'>Roles</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
-            echo "<tr class='border-b bg-gray-200 text-gray-800'>";
+            echo "<div class='settings-surface'><div class='text-xl font-bold pb-4'>Roles</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<tr class='border-b border-slate-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
             }
             echo "</tr></thead><tbody>";
             foreach ($results as $row) {
-                echo "<tr class='hover:bg-gray-200'>";
+                echo "<tr class='settings-data-row'>";
                 foreach ($row as $column) {
                     echo "<td class='p-2 border-b'>{$column}</td>";
                 }
                 echo "</tr>";
             }
-            echo "</tbody></table></div>";
+            echo "</tbody></table></div></div>";
         } else {
             echo "No results found.";
         }
 
-        echo "<br><br>";
         $query = "SELECT access.uuid, access.role, role.caption AS role_caption, access.resource, access.access_right FROM access INNER JOIN role ON access.role = role.uuid ORDER BY role.caption, access.resource";
         $results = $db_adapter->db_query($query) ?: [];
 
@@ -1426,10 +1657,10 @@ switch ($site) {
         });
 
         if (!empty($results)) {
-            echo "<div class='text-xl font-bold pb-2'>Access Rights</div>";
+            echo "<div class='settings-surface'><div class='text-xl font-bold pb-2'>Access Rights</div>";
             echo "<p class='text-sm text-gray-600 pb-4'>Rechte direkt per Klick setzen: Read (4), Write (2), Execute (1).</p>";
-            echo "<div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
-            echo "<tr class='border-b bg-gray-200 text-gray-800'>";
+            echo "<div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<tr class='border-b border-slate-200 text-gray-800'>";
             echo "<th class='p-2'>Role</th>";
             echo "<th class='p-2'>Resource</th>";
             echo "<th class='p-2'>Read</th>";
@@ -1447,7 +1678,7 @@ switch ($site) {
                 $hasWrite = ($accessRightValue & 2) === 2 ? 'checked' : '';
                 $hasExecute = ($accessRightValue & 1) === 1 ? 'checked' : '';
 
-                echo "<tr class='hover:bg-gray-200'>";
+                echo "<tr class='settings-data-row'>";
                 echo "<td class='p-2 border-b'>{$roleCaptionEscaped}</td>";
                 echo "<td class='p-2 border-b font-mono'>{$resourceEscaped}</td>";
                 echo "<form action='?set=update_access_right' method='post' class='m-0'>";
@@ -1459,24 +1690,17 @@ switch ($site) {
                 echo "<td class='p-2 border-b text-center'><input type='checkbox' name='access_execute' {$hasExecute}></td>";
                 echo "<td class='p-2 border-b font-mono text-gray-700'>{$accessRightValue}</td>";
                 echo "<td class='p-2 border-b'>";
-                echo "<button class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full focus:outline-none focus:shadow-outline' type='submit'>Save</button>";
+                echo "<button class='bg-blue-500 hover:bg-blue-700 text-white' type='submit'>Save</button>";
                 echo "</form>";
                 echo "</td>";
                 echo "</tr>";
             }
-            echo "</tbody></table></div>";
+            echo "</tbody></table></div></div>";
         } else {
             echo "No access rights found.";
         }
 
         echo <<<HTML
-        <pre>
-        username
-        password
-        email
-        role
-        remove tfa
-        </pre>
             </div>
             <!-- Details Popup -->
             <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden">
@@ -1696,9 +1920,9 @@ HTML;
                     <td class="py-2 px-3"><span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold">{$profileEscaped}</span></td>
                     <td class="py-2 px-3 text-sm text-gray-700">{$deviceEscaped}</td>
                     <td class="py-2 px-3 text-right">
-                        <button class="bg-emerald-500 hover:bg-emerald-700 text-white font-bold py-1 px-3 rounded-full text-xs mr-2" type="button" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" onclick="submitInventorySshTest(this)">SSH testen</button>
-                        <button class="bg-amber-500 hover:bg-amber-700 text-white font-bold py-1 px-3 rounded-full text-xs mr-2" type="button" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" onclick="loadInventoryEntry(this)">Edit</button>
-                        <button class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-full text-xs" type="button" onclick="submitInventoryDelete({$indexValue})">Delete</button>
+                        <button class="settings-icon-btn bg-emerald-500 hover:bg-emerald-700 mr-2" type="button" title="SSH testen" aria-label="SSH testen" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" onclick="submitInventorySshTest(this)"><i data-lucide="terminal"></i></button>
+                        <button class="settings-icon-btn bg-amber-500 hover:bg-amber-700 mr-2" type="button" title="Bearbeiten" aria-label="Bearbeiten" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" onclick="loadInventoryEntry(this)"><i data-lucide="pencil"></i></button>
+                        <button class="settings-icon-btn bg-red-500 hover:bg-red-700" type="button" title="Loeschen" aria-label="Loeschen" onclick="submitInventoryDelete({$indexValue})"><i data-lucide="trash-2"></i></button>
                     </td>
                 </tr>
             HTML;
@@ -1735,7 +1959,9 @@ HTML;
                     <td class="py-2 px-3 text-right whitespace-nowrap">
                         <button
                             type="button"
-                            class="bg-amber-500 hover:bg-amber-700 text-white font-bold py-1 px-3 rounded-full text-xs"
+                            class="settings-icon-btn bg-amber-500 hover:bg-amber-700"
+                            title="Bearbeiten"
+                            aria-label="Bearbeiten"
                             data-template-id="{$templateIdEscaped}"
                             data-template-label="{$labelEscaped}"
                             data-template-description="{$descriptionEscaped}"
@@ -1743,9 +1969,9 @@ HTML;
                             data-template-commands="{$commandsEscapedForData}"
                             data-template-uses-convention="{$usesConvention}"
                             onclick="loadTemplateOverride(this)">
-                            Edit
+                            <i data-lucide="pencil"></i>
                         </button>
-                        <button class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-full text-xs ml-2" type="button" onclick="submitTemplateDelete('{$templateIdEscaped}')">Delete</button>
+                        <button class="settings-icon-btn bg-red-500 hover:bg-red-700 ml-2" type="button" title="Loeschen" aria-label="Loeschen" onclick="submitTemplateDelete('{$templateIdEscaped}')"><i data-lucide="trash-2"></i></button>
                     </td>
                 </tr>
             HTML;
@@ -1764,391 +1990,372 @@ HTML;
         }
 
         echo <<<HTML
-        <div class="h-fit w-full p-4">
-            <div class="grid grid-cols-1 gap-6">
-                <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
-                    <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Skript-Overrides werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert.</p>
-                    {$testOutputHtml}
-                    <form action="?set=automation_scripts" method="post">
-                        <input type="hidden" name="csrf" value="$csrf">
-                        <input type="hidden" id="scripts_active_tab" name="scripts_active_tab" value="$activeScriptsTab">
+        <div class="grid grid-cols-1 gap-6">
+            <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
+                <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Skript-Overrides werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert.</p>
+                {$testOutputHtml}
+                <form action="?set=automation_scripts" method="post">
+                    <input type="hidden" name="csrf" value="$csrf">
+                    <input type="hidden" id="scripts_active_tab" name="scripts_active_tab" value="$activeScriptsTab">
 
-                        <div class="pb-4 flex flex-wrap items-center gap-2">
-                            <button id="scripts_tab_btn_switch" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm" type="button" onclick="showScriptsTab('switch')">Switch/SSH</button>
-                            <button id="scripts_tab_btn_templates" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm" type="button" onclick="showScriptsTab('templates')">Template Overrides</button>
-                            <button id="scripts_tab_btn_history" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm" type="button" onclick="showScriptsTab('history')">Historie</button>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
+                        </div>
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="ssh_port">SSH Port</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_port" type="number" min="1" max="65535" name="ssh_port" value="$sshPort">
+                        </div>
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="ssh_username">SSH Username</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_username" type="text" name="ssh_username" value="$sshUsername" placeholder="netadmin">
+                        </div>
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="ssh_password">SSH Password</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_password" type="password" name="ssh_password" placeholder="$passwordHint">
+                            <p class="text-xs text-gray-500 mt-2">$passwordHint</p>
+                        </div>
+                    </div>
+
+                    <div class="pb-6 scripts-section-switch">
+                        <div class="flex items-center justify-between pb-2">
+                            <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
+                        </div>
+                        <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 text-gray-700">
+                                    <tr>
+                                        <th class="py-2 px-3">Name</th>
+                                        <th class="py-2 px-3">Mgmt IP</th>
+                                        <th class="py-2 px-3">Profil</th>
+                                        <th class="py-2 px-3">Device ID</th>
+                                        <th class="py-2 px-3 text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {$inventoryRowsHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. Optional: device_id (UUID des verknuepften ITAM-Geraets).</p>
+
+                        <input type="hidden" id="switch_original_name" value="">
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_name" placeholder="SW-Core-01" required>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_mgmt_ip" placeholder="10.0.0.10" required>
+                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_profile" required>
+                                {$profileOptionsHtml}
+                            </select>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_device_id" placeholder="optional UUID">
+                            <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">Switch hinzufuegen</button>
+                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">Formular leeren</button>
+                        </div>
+                    </div>
+
+                    <div class="pb-6 scripts-section-template">
+                        <div class="flex items-center justify-between pb-2">
+                            <label class="block text-sm font-semibold">Template Overrides (Grafische Verwaltung)</label>
+                        </div>
+                        <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 text-gray-700">
+                                    <tr>
+                                        <th class="py-2 px-3">Template ID</th>
+                                        <th class="py-2 px-3">Label</th>
+                                        <th class="py-2 px-3">Profiles</th>
+                                        <th class="py-2 px-3">Commands</th>
+                                        <th class="py-2 px-3 text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {$templateRowsHtml}
+                                </tbody>
+                            </table>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
+                        <div class="mt-4 space-y-3" id="template_override_form">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block mb-1 text-xs font-semibold" for="template_id">Template ID</label>
+                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_id" type="text" placeholder="my_custom_template" required>
+                                </div>
+                                <div>
+                                    <label class="block mb-1 text-xs font-semibold" for="template_label">Label</label>
+                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="Mein Template" required>
+                                </div>
+                            </div>
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
+                                <label class="block mb-1 text-xs font-semibold" for="template_description">Beschreibung</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="Kurze Beschreibung">
                             </div>
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="ssh_port">SSH Port</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_port" type="number" min="1" max="65535" name="ssh_port" value="$sshPort">
+                                <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">Supported Profiles (comma-separated)</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_supported_profiles" type="text" placeholder="huawei_core_commit,huawei_access_no_commit">
                             </div>
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="ssh_username">SSH Username</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_username" type="text" name="ssh_username" value="$sshUsername" placeholder="netadmin">
+                                <label class="block mb-1 text-xs font-semibold" for="template_commands">Commands (eine Zeile = ein Command)</label>
+                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_commands" rows="8" placeholder="interface {{interface}}&#10;shutdown&#10;quit" required></textarea>
                             </div>
+                            <div class="flex items-center gap-2">
+                                <input id="template_uses_description_convention" type="checkbox" value="1">
+                                <label for="template_uses_description_convention" class="text-xs text-gray-700">Description Convention verwenden</label>
+                            </div>
+                            <div class="flex items-center justify-between gap-3">
+                                <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">Formular leeren</button>
+                                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">Template speichern</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pb-6 scripts-section-history">
+                        <div class="flex items-center justify-between pb-2">
+                            <label class="block text-sm font-semibold">Aenderungshistorie (letzte 30)</label>
+                        </div>
+                        <div class="pb-3">
+                            <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="Historie filtern: Benutzer, Action, Operation, Details..." oninput="filterHistoryRows()">
+                        </div>
+                        <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 text-gray-700">
+                                    <tr>
+                                        <th class="py-2 px-3">Zeit</th>
+                                        <th class="py-2 px-3">Benutzer</th>
+                                        <th class="py-2 px-3">Operation</th>
+                                        <th class="py-2 px-3">Action</th>
+                                        <th class="py-2 px-3">Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {$historyRowsHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <details class="pb-4 scripts-section-switch">
+                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
+                        <div class="pt-3 space-y-4">
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="ssh_password">SSH Password</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_password" type="password" name="ssh_password" placeholder="$passwordHint">
-                                <p class="text-xs text-gray-500 mt-2">$passwordHint</p>
+                                <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
+                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
+                            </div>
+
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
+                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
+                                <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles, templates. Diese Daten erweitern die Basisdatei aus includes/core/automation.json.</p>
                             </div>
                         </div>
+                    </details>
 
-                        <div class="pb-6 scripts-section-switch">
-                            <div class="flex items-center justify-between pb-2">
-                                <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
-                            </div>
-                            <div class="border border-gray-200 rounded-2xl overflow-hidden">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="bg-gray-50 text-gray-700">
-                                        <tr>
-                                            <th class="py-2 px-3">Name</th>
-                                            <th class="py-2 px-3">Mgmt IP</th>
-                                            <th class="py-2 px-3">Profil</th>
-                                            <th class="py-2 px-3">Device ID</th>
-                                            <th class="py-2 px-3 text-right">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {$inventoryRowsHtml}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. Optional: device_id (UUID des verknuepften ITAM-Geraets).</p>
+                    <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
+                    </div>
+                </form>
 
-                            <input type="hidden" id="switch_original_name" value="">
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_name" placeholder="SW-Core-01" required>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_mgmt_ip" placeholder="10.0.0.10" required>
-                                <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_profile" required>
-                                    {$profileOptionsHtml}
-                                </select>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_device_id" placeholder="optional UUID">
-                                <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">Switch hinzufuegen</button>
-                                <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">Formular leeren</button>
-                            </div>
-                        </div>
+                <script>
+                    const automationCsrfToken = '$csrf';
+                    const initialScriptsTab = '$activeScriptsTab';
+                    let currentScriptsTab = initialScriptsTab;
 
-                        <div class="pb-6 scripts-section-template">
-                            <div class="flex items-center justify-between pb-2">
-                                <label class="block text-sm font-semibold">Template Overrides (Grafische Verwaltung)</label>
-                            </div>
-                            <div class="border border-gray-200 rounded-2xl overflow-hidden">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="bg-gray-50 text-gray-700">
-                                        <tr>
-                                            <th class="py-2 px-3">Template ID</th>
-                                            <th class="py-2 px-3">Label</th>
-                                            <th class="py-2 px-3">Profiles</th>
-                                            <th class="py-2 px-3">Commands</th>
-                                            <th class="py-2 px-3 text-right">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {$templateRowsHtml}
-                                    </tbody>
-                                </table>
-                            </div>
+                    function postAutomationAction(action, payload) {
+                        const form = document.createElement('form');
+                        form.method = 'post';
+                        form.action = '?set=' + encodeURIComponent(action);
 
-                            <div class="mt-4 space-y-3" id="template_override_form">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="block mb-1 text-xs font-semibold" for="template_id">Template ID</label>
-                                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_id" type="text" placeholder="my_custom_template" required>
-                                    </div>
-                                    <div>
-                                        <label class="block mb-1 text-xs font-semibold" for="template_label">Label</label>
-                                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="Mein Template" required>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block mb-1 text-xs font-semibold" for="template_description">Beschreibung</label>
-                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="Kurze Beschreibung">
-                                </div>
-                                <div>
-                                    <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">Supported Profiles (comma-separated)</label>
-                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_supported_profiles" type="text" placeholder="huawei_core_commit,huawei_access_no_commit">
-                                </div>
-                                <div>
-                                    <label class="block mb-1 text-xs font-semibold" for="template_commands">Commands (eine Zeile = ein Command)</label>
-                                    <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_commands" rows="8" placeholder="interface {{interface}}&#10;shutdown&#10;quit" required></textarea>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <input id="template_uses_description_convention" type="checkbox" value="1">
-                                    <label for="template_uses_description_convention" class="text-xs text-gray-700">Description Convention verwenden</label>
-                                </div>
-                                <div class="flex items-center justify-between gap-3">
-                                    <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">Formular leeren</button>
-                                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">Template speichern</button>
-                                </div>
-                            </div>
-                        </div>
+                        const fields = Object.assign({
+                            csrf: automationCsrfToken,
+                            scripts_active_tab: currentScriptsTab
+                        }, payload || {});
+                        Object.keys(fields).forEach(function(key) {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = key;
+                            input.value = fields[key];
+                            form.appendChild(input);
+                        });
 
-                        <div class="pb-6 scripts-section-history">
-                            <div class="flex items-center justify-between pb-2">
-                                <label class="block text-sm font-semibold">Aenderungshistorie (letzte 30)</label>
-                            </div>
-                            <div class="pb-3">
-                                <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="Historie filtern: Benutzer, Action, Operation, Details..." oninput="filterHistoryRows()">
-                            </div>
-                            <div class="border border-gray-200 rounded-2xl overflow-hidden">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="bg-gray-50 text-gray-700">
-                                        <tr>
-                                            <th class="py-2 px-3">Zeit</th>
-                                            <th class="py-2 px-3">Benutzer</th>
-                                            <th class="py-2 px-3">Operation</th>
-                                            <th class="py-2 px-3">Action</th>
-                                            <th class="py-2 px-3">Details</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {$historyRowsHtml}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                        document.body.appendChild(form);
+                        form.submit();
+                    }
 
-                        <details class="pb-4 scripts-section-switch">
-                            <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
-                            <div class="pt-3 space-y-4">
-                                <div>
-                                    <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
-                                    <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
-                                </div>
+                    function loadInventoryEntry(button) {
+                        document.getElementById('switch_original_name').value = button.dataset.switchName || '';
+                        document.getElementById('switch_name').value = button.dataset.switchName || '';
+                        document.getElementById('switch_mgmt_ip').value = button.dataset.switchMgmtIp || '';
+                        document.getElementById('switch_profile').value = button.dataset.switchProfile || '';
+                        document.getElementById('switch_device_id').value = button.dataset.switchDeviceId || '';
 
-                                <div>
-                                    <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
-                                    <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
-                                    <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles, templates. Diese Daten erweitern die Basisdatei aus includes/core/automation.json.</p>
-                                </div>
-                            </div>
-                        </details>
+                        var submitButton = document.getElementById('inventory_submit_button');
+                        if (submitButton) {
+                            submitButton.textContent = 'Switch aktualisieren';
+                            submitButton.className = 'bg-amber-500 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
+                        }
+                    }
 
-                        <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
-                        </div>
-                    </form>
+                    function resetInventoryForm() {
+                        document.getElementById('switch_original_name').value = '';
+                        document.getElementById('switch_name').value = '';
+                        document.getElementById('switch_mgmt_ip').value = '';
+                        document.getElementById('switch_profile').selectedIndex = 0;
+                        document.getElementById('switch_device_id').value = '';
 
-                    <script>
-                        const automationCsrfToken = '$csrf';
-                        const initialScriptsTab = '$activeScriptsTab';
-                        let currentScriptsTab = initialScriptsTab;
+                        var submitButton = document.getElementById('inventory_submit_button');
+                        if (submitButton) {
+                            submitButton.textContent = 'Switch hinzufuegen';
+                            submitButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
+                        }
+                    }
 
-                        function postAutomationAction(action, payload) {
-                            const form = document.createElement('form');
-                            form.method = 'post';
-                            form.action = '?set=' + encodeURIComponent(action);
+                    function submitInventorySave() {
+                        const name = document.getElementById('switch_name').value.trim();
+                        const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
+                        const profile = document.getElementById('switch_profile').value.trim();
+                        const deviceId = document.getElementById('switch_device_id').value.trim();
+                        const originalName = document.getElementById('switch_original_name').value.trim();
+                        const action = originalName !== '' ? 'automation_inventory_update' : 'automation_inventory_add';
 
-                            const fields = Object.assign({
-                                csrf: automationCsrfToken,
-                                scripts_active_tab: currentScriptsTab
-                            }, payload || {});
-                            Object.keys(fields).forEach(function(key) {
-                                const input = document.createElement('input');
-                                input.type = 'hidden';
-                                input.name = key;
-                                input.value = fields[key];
-                                form.appendChild(input);
-                            });
-
-                            document.body.appendChild(form);
-                            form.submit();
+                        if (name === '' || mgmtIp === '' || profile === '') {
+                            alert('Bitte Name, Mgmt IP und Profil ausfuellen.');
+                            return;
                         }
 
-                        function loadInventoryEntry(button) {
-                            document.getElementById('switch_original_name').value = button.dataset.switchName || '';
-                            document.getElementById('switch_name').value = button.dataset.switchName || '';
-                            document.getElementById('switch_mgmt_ip').value = button.dataset.switchMgmtIp || '';
-                            document.getElementById('switch_profile').value = button.dataset.switchProfile || '';
-                            document.getElementById('switch_device_id').value = button.dataset.switchDeviceId || '';
+                        postAutomationAction(action, {
+                            original_switch_name: originalName,
+                            switch_name: name,
+                            switch_mgmt_ip: mgmtIp,
+                            switch_profile: profile,
+                            switch_device_id: deviceId
+                        });
+                    }
 
-                            var submitButton = document.getElementById('inventory_submit_button');
-                            if (submitButton) {
-                                submitButton.textContent = 'Switch aktualisieren';
-                                submitButton.className = 'bg-amber-500 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
-                            }
+                    function submitInventoryDelete(index) {
+                        if (!confirm('Switch-Eintrag wirklich loeschen?')) {
+                            return;
+                        }
+                        postAutomationAction('automation_inventory_delete', {
+                            inventory_index: String(index)
+                        });
+                    }
+
+                    function submitInventorySshTest(button) {
+                        const name = button.dataset.switchName || '';
+                        const mgmtIp = button.dataset.switchMgmtIp || '';
+
+                        if (name === '' || mgmtIp === '') {
+                            alert('Switch-Daten fuer den SSH-Test konnten nicht gelesen werden.');
+                            return;
                         }
 
-                        function resetInventoryForm() {
-                            document.getElementById('switch_original_name').value = '';
-                            document.getElementById('switch_name').value = '';
-                            document.getElementById('switch_mgmt_ip').value = '';
-                            document.getElementById('switch_profile').selectedIndex = 0;
-                            document.getElementById('switch_device_id').value = '';
-
-                            var submitButton = document.getElementById('inventory_submit_button');
-                            if (submitButton) {
-                                submitButton.textContent = 'Switch hinzufuegen';
-                                submitButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
-                            }
+                        if (!confirm('SSH-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
+                            return;
                         }
 
-                        function submitInventorySave() {
-                            const name = document.getElementById('switch_name').value.trim();
-                            const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
-                            const profile = document.getElementById('switch_profile').value.trim();
-                            const deviceId = document.getElementById('switch_device_id').value.trim();
-                            const originalName = document.getElementById('switch_original_name').value.trim();
-                            const action = originalName !== '' ? 'automation_inventory_update' : 'automation_inventory_add';
+                        postAutomationAction('automation_test_ssh', {
+                            ssh_host: mgmtIp,
+                            ssh_username: document.getElementById('ssh_username').value,
+                            ssh_port: document.getElementById('ssh_port').value,
+                            ssh_password: document.getElementById('ssh_password').value,
+                            scripts_json: document.getElementById('scripts_json').value,
+                            switch_inventory_json: document.getElementById('switch_inventory_json').value
+                        });
+                    }
 
-                            if (name === '' || mgmtIp === '' || profile === '') {
-                                alert('Bitte Name, Mgmt IP und Profil ausfuellen.');
-                                return;
-                            }
+                    function loadTemplateOverride(button) {
+                        document.getElementById('template_id').value = button.dataset.templateId || '';
+                        document.getElementById('template_label').value = button.dataset.templateLabel || '';
+                        document.getElementById('template_description').value = button.dataset.templateDescription || '';
+                        document.getElementById('template_supported_profiles').value = button.dataset.templateProfiles || '';
+                        document.getElementById('template_commands').value = button.dataset.templateCommands || '';
+                        document.getElementById('template_uses_description_convention').checked = (button.dataset.templateUsesConvention === '1' || button.dataset.templateUsesConvention === 'true');
+                        document.getElementById('template_id').focus();
+                    }
 
-                            postAutomationAction(action, {
-                                original_switch_name: originalName,
-                                switch_name: name,
-                                switch_mgmt_ip: mgmtIp,
-                                switch_profile: profile,
-                                switch_device_id: deviceId
-                            });
+                    function resetTemplateOverrideForm() {
+                        document.getElementById('template_id').value = '';
+                        document.getElementById('template_label').value = '';
+                        document.getElementById('template_description').value = '';
+                        document.getElementById('template_supported_profiles').value = '';
+                        document.getElementById('template_commands').value = '';
+                        document.getElementById('template_uses_description_convention').checked = false;
+                    }
+
+                    function submitTemplateUpsert() {
+                        const templateId = document.getElementById('template_id').value.trim();
+                        const templateLabel = document.getElementById('template_label').value.trim();
+                        const templateDescription = document.getElementById('template_description').value.trim();
+                        const templateProfiles = document.getElementById('template_supported_profiles').value.trim();
+                        const templateCommands = document.getElementById('template_commands').value;
+                        const usesDescriptionConvention = document.getElementById('template_uses_description_convention').checked ? '1' : '0';
+
+                        if (templateId === '' || templateLabel === '' || templateCommands.trim() === '') {
+                            alert('Template ID, Label und mindestens ein Command sind erforderlich.');
+                            return;
                         }
 
-                        function submitInventoryDelete(index) {
-                            if (!confirm('Switch-Eintrag wirklich loeschen?')) {
-                                return;
-                            }
-                            postAutomationAction('automation_inventory_delete', {
-                                inventory_index: String(index)
-                            });
+                        postAutomationAction('automation_template_upsert', {
+                            template_id: templateId,
+                            template_label: templateLabel,
+                            template_description: templateDescription,
+                            template_supported_profiles: templateProfiles,
+                            template_commands: templateCommands,
+                            template_uses_description_convention: usesDescriptionConvention
+                        });
+                    }
+
+                    function submitTemplateDelete(templateId) {
+                        if (!confirm('Template Override wirklich loeschen?')) {
+                            return;
+                        }
+                        postAutomationAction('automation_template_delete', {
+                            template_id: templateId
+                        });
+                    }
+
+                    function filterHistoryRows() {
+                        var input = document.getElementById('history_filter');
+                        var query = input ? input.value.trim().toLowerCase() : '';
+
+                        document.querySelectorAll('.history-row').forEach(function(row) {
+                            var searchText = (row.getAttribute('data-history-search') || '').toLowerCase();
+                            var visible = query === '' || searchText.indexOf(query) !== -1;
+                            row.classList.toggle('hidden', !visible);
+                        });
+                    }
+
+                    function showScriptsTab(tabId) {
+                        const resolvedTab = (tabId === 'templates' || tabId === 'history') ? tabId : 'switch';
+                        currentScriptsTab = resolvedTab;
+
+                        const hiddenTabInput = document.getElementById('scripts_active_tab');
+                        if (hiddenTabInput) {
+                            hiddenTabInput.value = resolvedTab;
                         }
 
-                        function submitInventorySshTest(button) {
-                            const name = button.dataset.switchName || '';
-                            const mgmtIp = button.dataset.switchMgmtIp || '';
+                        const showSwitch = (resolvedTab === 'switch');
+                        const showTemplates = (resolvedTab === 'templates');
+                        const showHistory = (resolvedTab === 'history');
 
-                            if (name === '' || mgmtIp === '') {
-                                alert('Switch-Daten fuer den SSH-Test konnten nicht gelesen werden.');
-                                return;
-                            }
+                        document.querySelectorAll('.scripts-section-switch').forEach(function(el) {
+                            el.classList.toggle('hidden', !showSwitch);
+                        });
+                        document.querySelectorAll('.scripts-section-template').forEach(function(el) {
+                            el.classList.toggle('hidden', !showTemplates);
+                        });
+                        document.querySelectorAll('.scripts-section-history').forEach(function(el) {
+                            el.classList.toggle('hidden', !showHistory);
+                        });
 
-                            if (!confirm('SSH-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
-                                return;
-                            }
+                        document.querySelectorAll('.settings-script-tab').forEach(function(item) {
+                            const itemTab = item.getAttribute('data-script-tab');
+                            item.classList.toggle('settings-nav-subitem-active', itemTab === resolvedTab);
+                        });
+                    }
 
-                            postAutomationAction('automation_test_ssh', {
-                                ssh_host: mgmtIp,
-                                ssh_username: document.getElementById('ssh_username').value,
-                                ssh_port: document.getElementById('ssh_port').value,
-                                ssh_password: document.getElementById('ssh_password').value,
-                                scripts_json: document.getElementById('scripts_json').value,
-                                switch_inventory_json: document.getElementById('switch_inventory_json').value
-                            });
-                        }
-
-                        function loadTemplateOverride(button) {
-                            document.getElementById('template_id').value = button.dataset.templateId || '';
-                            document.getElementById('template_label').value = button.dataset.templateLabel || '';
-                            document.getElementById('template_description').value = button.dataset.templateDescription || '';
-                            document.getElementById('template_supported_profiles').value = button.dataset.templateProfiles || '';
-                            document.getElementById('template_commands').value = button.dataset.templateCommands || '';
-                            document.getElementById('template_uses_description_convention').checked = (button.dataset.templateUsesConvention === '1' || button.dataset.templateUsesConvention === 'true');
-                            document.getElementById('template_id').focus();
-                        }
-
-                        function resetTemplateOverrideForm() {
-                            document.getElementById('template_id').value = '';
-                            document.getElementById('template_label').value = '';
-                            document.getElementById('template_description').value = '';
-                            document.getElementById('template_supported_profiles').value = '';
-                            document.getElementById('template_commands').value = '';
-                            document.getElementById('template_uses_description_convention').checked = false;
-                        }
-
-                        function submitTemplateUpsert() {
-                            const templateId = document.getElementById('template_id').value.trim();
-                            const templateLabel = document.getElementById('template_label').value.trim();
-                            const templateDescription = document.getElementById('template_description').value.trim();
-                            const templateProfiles = document.getElementById('template_supported_profiles').value.trim();
-                            const templateCommands = document.getElementById('template_commands').value;
-                            const usesDescriptionConvention = document.getElementById('template_uses_description_convention').checked ? '1' : '0';
-
-                            if (templateId === '' || templateLabel === '' || templateCommands.trim() === '') {
-                                alert('Template ID, Label und mindestens ein Command sind erforderlich.');
-                                return;
-                            }
-
-                            postAutomationAction('automation_template_upsert', {
-                                template_id: templateId,
-                                template_label: templateLabel,
-                                template_description: templateDescription,
-                                template_supported_profiles: templateProfiles,
-                                template_commands: templateCommands,
-                                template_uses_description_convention: usesDescriptionConvention
-                            });
-                        }
-
-                        function submitTemplateDelete(templateId) {
-                            if (!confirm('Template Override wirklich loeschen?')) {
-                                return;
-                            }
-                            postAutomationAction('automation_template_delete', {
-                                template_id: templateId
-                            });
-                        }
-
-                        function filterHistoryRows() {
-                            var input = document.getElementById('history_filter');
-                            var query = input ? input.value.trim().toLowerCase() : '';
-
-                            document.querySelectorAll('.history-row').forEach(function(row) {
-                                var searchText = (row.getAttribute('data-history-search') || '').toLowerCase();
-                                var visible = query === '' || searchText.indexOf(query) !== -1;
-                                row.classList.toggle('hidden', !visible);
-                            });
-                        }
-
-                        function showScriptsTab(tabId) {
-                            const resolvedTab = (tabId === 'templates' || tabId === 'history') ? tabId : 'switch';
-                            currentScriptsTab = resolvedTab;
-
-                            const hiddenTabInput = document.getElementById('scripts_active_tab');
-                            if (hiddenTabInput) {
-                                hiddenTabInput.value = resolvedTab;
-                            }
-
-                            const showSwitch = (resolvedTab === 'switch');
-                            const showTemplates = (resolvedTab === 'templates');
-                            const showHistory = (resolvedTab === 'history');
-
-                            document.querySelectorAll('.scripts-section-switch').forEach(function(el) {
-                                el.classList.toggle('hidden', !showSwitch);
-                            });
-                            document.querySelectorAll('.scripts-section-template').forEach(function(el) {
-                                el.classList.toggle('hidden', !showTemplates);
-                            });
-                            document.querySelectorAll('.scripts-section-history').forEach(function(el) {
-                                el.classList.toggle('hidden', !showHistory);
-                            });
-
-                            const switchBtn = document.getElementById('scripts_tab_btn_switch');
-                            const templatesBtn = document.getElementById('scripts_tab_btn_templates');
-                            const historyBtn = document.getElementById('scripts_tab_btn_history');
-
-                            switchBtn.className = showSwitch
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm'
-                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm';
-
-                            templatesBtn.className = showTemplates
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm'
-                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm';
-
-                            historyBtn.className = showHistory
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 px-4 rounded-full text-sm'
-                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1.5 px-4 rounded-full text-sm';
-                        }
-
-                        showScriptsTab(initialScriptsTab);
-                    </script>
-                </div>
+                    showScriptsTab(initialScriptsTab);
+                </script>
             </div>
         </div>
         HTML;

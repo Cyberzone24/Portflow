@@ -576,9 +576,18 @@
         }
     }
 
-    $executionStateClass = !empty($executionResult['ok'])
-        ? 'bg-green-50 border-green-200 text-green-900'
-        : 'bg-red-50 border-red-200 text-red-900';
+    $executionHasWarnings = false;
+    if (is_array($executionResult) && isset($executionResult['output'])) {
+        $executionHasWarnings = stripos((string)$executionResult['output'], 'warn') !== false;
+    }
+
+    if (!empty($executionResult['ok'])) {
+        $executionStateClass = 'bg-green-50 border-green-200 text-green-900';
+    } elseif ($executionHasWarnings) {
+        $executionStateClass = 'bg-amber-50 border-amber-200 text-amber-900';
+    } else {
+        $executionStateClass = 'bg-red-50 border-red-200 text-red-900';
+    }
 
     function runAutomationSshCommands(array $connection, array $commands, Logger $logger, string $switchName, string $profileId, string $templateId): array {
         $host = trim((string)($connection['mgmt_ip'] ?? ''));
@@ -1297,49 +1306,245 @@
         }
     }
 ?>
-<div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
-    <div class="basis-1/5 flex flex-col gap-4 overflow-y-scroll pr-4">
-        <div class="bg-white rounded-2xl shadow-md p-4">
-            <div class="text-xl font-bold pb-2"><?php echo automation_escape($config['description_convention']['label'] ?? 'Portflow Description Convention'); ?></div>
-            <p class="text-sm text-gray-600">Verwende einen festen, maschinenlesbaren Aufbau fuer Switch-Port-Beschreibungen.</p>
-            <ul class="mt-3 space-y-2 text-sm text-gray-700 list-disc list-inside">
-                <?php foreach (($config['description_convention']['notes'] ?? []) as $note) : ?>
-                    <li><?php echo automation_escape($note); ?></li>
-                <?php endforeach; ?>
-            </ul>
+<style>
+    .automation-shell {
+        margin: 0.75rem 1rem 1rem;
+        margin-top: 0;
+        display: grid;
+        gap: 0.95rem;
+        grid-template-columns: 1fr;
+    }
+
+    .automation-sidebar {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    .automation-sidebar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .automation-side-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+    }
+
+    .automation-side-nav {
+        display: grid;
+        gap: 0.55rem;
+    }
+
+    .automation-side-item {
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #1e293b;
+        border-radius: 9999px;
+        padding: 0.62rem 0.85rem;
+        cursor: pointer;
+        transition: 140ms ease;
+        font-weight: 600;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+    }
+
+    .automation-side-item-main {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        min-width: 0;
+    }
+
+    .automation-side-item-main i[data-lucide],
+    .automation-side-chevron i[data-lucide] {
+        width: 1rem;
+        height: 1rem;
+        flex-shrink: 0;
+    }
+
+    .automation-side-item:hover {
+        background: #f1f5f9;
+    }
+
+    .automation-side-item-active {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #ffffff;
+    }
+
+    .automation-mobile-subnav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .automation-mobile-subnav .automation-side-item {
+        flex: 0 0 auto;
+    }
+
+    .automation-mobile-subnav .automation-side-chevron {
+        display: none;
+    }
+
+    .automation-content {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        padding: 1.1rem;
+        overflow-y: auto;
+        min-height: 0;
+        font-size: 1rem;
+    }
+
+    .automation-top-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.8rem;
+    }
+
+    .automation-top-btn {
+        border-radius: 9999px;
+        font-weight: 600;
+        padding: 0.5rem 1rem;
+        color: #ffffff;
+    }
+
+    .automation-top-btn-run {
+        background: #22c55e;
+    }
+
+    .automation-top-btn-run:hover {
+        background: #15803d;
+    }
+
+    .automation-top-btn-queue {
+        background: #3b82f6;
+    }
+
+    .automation-top-btn-queue:hover {
+        background: #2563eb;
+    }
+
+    .automation-main-card {
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        background: #f8fafc;
+        padding: 0.95rem;
+    }
+
+    .automation-main-card-dark {
+        border: 1px solid #0f172a;
+        border-radius: 1rem;
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 0.95rem;
+    }
+
+    .automation-main-card-result {
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        background: #f8fafc;
+        padding: 0.95rem;
+    }
+
+    .automation-loading-box {
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        background: #f8fafc;
+        color: #334155;
+        padding: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-size: 0.9rem;
+    }
+
+    .automation-loading-dot {
+        width: 1rem;
+        height: 1rem;
+        border-radius: 9999px;
+        border: 2px solid #93c5fd;
+        border-top-color: #2563eb;
+        animation: automation-spin 0.8s linear infinite;
+    }
+
+    @keyframes automation-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .queue-action-btn {
+        border-radius: 9999px;
+        font-weight: 600;
+        font-size: 0.875rem;
+        padding: 0.45rem 0.9rem;
+    }
+
+    .queue-item-btn {
+        border-radius: 9999px;
+        font-weight: 600;
+        font-size: 0.8125rem;
+        padding: 0.35rem 0.75rem;
+    }
+
+    @media (min-width: 1024px) {
+        .automation-shell {
+            grid-template-columns: minmax(250px, 22rem) minmax(0, 1fr);
+            height: calc(100vh - 7.2rem);
+            align-items: stretch;
+        }
+
+        .automation-mobile-subnav {
+            display: none;
+        }
+    }
+
+    @media (max-width: 1023px) {
+        .automation-sidebar {
+            display: none;
+        }
+    }
+</style>
+<div class="automation-shell">
+    <div class="automation-sidebar flex flex-col gap-4">
+        <div class="automation-sidebar-head">
+            <p class="automation-side-title">Automatisierung</p>
+        </div>
+        <ul class="automation-side-nav">
+            <li class="automation-side-item automation-side-item-active automation-tab" data-tab="automation">
+                <span class="automation-side-item-main"><i data-lucide="bot"></i><span>Automation</span></span>
+                <span class="automation-side-chevron"><i data-lucide="chevron-right"></i></span>
+            </li>
+            <li class="automation-side-item automation-tab" data-tab="queue">
+                <span class="automation-side-item-main"><i data-lucide="inbox"></i><span>Warteschlange</span></span>
+                <span class="automation-side-chevron"><i data-lucide="chevron-right"></i></span>
+            </li>
+        </ul>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-md p-4">
-            <div class="text-lg font-bold pb-2">Profiles</div>
-            <div class="space-y-3">
-                <?php foreach ($profiles as $profileKey => $profile) : ?>
-                    <div class="border rounded-xl p-3 <?php echo $profileKey === $selectedProfile ? 'border-blue-500 bg-blue-50' : 'border-gray-200'; ?>">
-                        <div class="font-semibold"><?php echo automation_escape($profile['label'] ?? $profileKey); ?></div>
-                        <div class="text-xs text-gray-600 mt-1"><?php echo automation_escape($profile['description'] ?? ''); ?></div>
-                        <div class="text-xs mt-2 text-gray-500"><?php echo !empty($profile['supports_commit']) ? 'Commit required' : 'No commit step'; ?></div>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    </div>
-
-    <div class="basis-4/5 bg-white rounded-2xl shadow-md p-6 overflow-y-scroll">
-        <!-- Tabs -->
-        <div class="flex gap-4 border-b mb-6">
-            <button type="button" class="automation-tab px-4 py-2 font-semibold border-b-2 border-blue-500 text-blue-600" data-tab="automation">
-                Automation
-            </button>
-            <button type="button" class="automation-tab px-4 py-2 font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="queue">
-                Warteschlange
-                <?php 
-                    $pendingSummary = $queueManager->getPendingSummary($_SESSION['uuid'] ?? '');
-                    $totalPending = array_sum($pendingSummary);
-                    if ($totalPending > 0) {
-                        echo '<span class="ml-2 inline-block bg-red-500 text-white text-xs rounded-full px-2 py-1">' . $totalPending . '</span>';
-                    }
-                ?>
-            </button>
-        </div>
+    <div class="automation-content">
+        <ul class="automation-mobile-subnav">
+            <li class="automation-side-item automation-side-item-active automation-tab" data-tab="automation"><span class="automation-side-item-main"><i data-lucide="bot"></i><span>Automation</span></span></li>
+            <li class="automation-side-item automation-tab" data-tab="queue"><span class="automation-side-item-main"><i data-lucide="inbox"></i><span>Warteschlange</span></span></li>
+        </ul>
         
         <!-- Automation Tab -->
         <div id="automation-content" class="tab-content">
@@ -1353,8 +1558,13 @@
                 </div>
             </div>
 
+        <div class="automation-top-actions">
+            <button type="button" class="automation-top-btn automation-top-btn-run" onclick="triggerAutomationExecution('off')">Sofort ausfuehren</button>
+            <button type="button" class="automation-top-btn automation-top-btn-queue" onclick="triggerAutomationExecution('on')">Zu Warteschlange</button>
+        </div>
+
         <form id="automation-preview-form" class="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8" method="GET" action="automation.php">
-            <div class="space-y-4 bg-gray-50 rounded-2xl p-4">
+            <div class="space-y-4 automation-main-card">
                 <div>
                     <label class="block text-sm font-semibold mb-2" for="switch">Switch Target</label>
                     <select id="switch" name="switch" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
@@ -1449,7 +1659,7 @@
             </div>
 
             <div class="space-y-4">
-                <div class="bg-gray-50 rounded-2xl p-4">
+                <div class="automation-main-card">
                     <div class="text-sm font-semibold pb-2">Template Description</div>
                     <div class="text-sm text-gray-700"><?php echo automation_escape($templateDefinition['description'] ?? ''); ?></div>
                     <?php if (!empty($rendered['warnings'])) : ?>
@@ -1461,33 +1671,26 @@
                     <?php endif; ?>
                 </div>
 
-                <div class="bg-gray-900 text-gray-100 rounded-2xl p-4 shadow-inner">
+                <div class="automation-main-card-dark shadow-inner">
                     <div class="text-sm font-semibold pb-3">Rendered Command Sequence</div>
                     <pre class="text-sm whitespace-pre-wrap overflow-x-auto leading-6"><?php echo automation_escape(implode("\n", $rendered['commands'] ?? [])); ?></pre>
                 </div>
+
+                <div id="automationExecutionLoading" class="automation-loading-box hidden">
+                    <span class="automation-loading-dot"></span>
+                    <span>Automation wird ausgefuehrt ...</span>
+                </div>
+
+                <?php if (is_array($executionResult) && isset($executionResult['output'])) : ?>
+                    <div class="automation-main-card-result <?php echo $executionStateClass; ?>">
+                        <div class="text-sm font-semibold pb-2">Execution Output</div>
+                        <pre class="text-sm whitespace-pre-wrap leading-6"><?php echo automation_escape($executionResult['output']); ?></pre>
+                    </div>
+                <?php endif; ?>
             </div>
         </form>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-                <div class="text-lg font-bold pb-3">Current Preview Rules</div>
-                <ul class="list-disc list-inside space-y-2 text-sm text-gray-700">
-                    <li>Core switches use <span class="font-semibold">commit</span> plus <span class="font-semibold">save</span>.</li>
-                    <li>Access switches skip commit and only use <span class="font-semibold">save</span>.</li>
-                    <li>Port descriptions should start with the fixed Portflow pattern.</li>
-                    <li>Variable placeholders are resolved from the selected template and can be reused in every command.</li>
-                </ul>
-            </div>
-
-            <div class="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-                <div class="text-lg font-bold pb-3">Next Step</div>
-                <p class="text-sm text-gray-700 leading-6">
-                    Als naechstes wird diese Vorschau mit einem SSH-Runner verbunden, damit die gleiche Template-Struktur auf Huawei Core- und Access-Switches ausgefuehrt werden kann.
-                </p>
-            </div>
-        </div>
-
-        <div class="mt-6 bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+        <div class="mt-4 bg-white rounded-2xl border border-gray-200 p-4 shadow-sm hidden">
             <div class="flex items-center justify-between gap-4 pb-4">
                 <div>
                     <div class="text-lg font-bold">Execute Automation</div>
@@ -1506,17 +1709,11 @@
                 <?php foreach ($variableValues as $variableName => $variableValue) : ?>
                     <input type="hidden" name="<?php echo automation_escape($variableName); ?>" value="<?php echo automation_escape($variableValue); ?>">
                 <?php endforeach; ?>
-                <div class="flex justify-end gap-2">
+                <div class="hidden justify-end gap-2">
                     <button type="submit" name="queue_mode" value="off" class="px-5 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Sofort ausfuehren</button>
                     <button type="submit" name="queue_mode" value="on" class="px-5 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold">Zu Warteschlange hinzufuegen</button>
                 </div>
             </form>
-            <?php if (is_array($executionResult) && isset($executionResult['output'])) : ?>
-                <div class="mt-4 rounded-2xl border p-4 <?php echo $executionStateClass; ?>">
-                    <div class="text-sm font-semibold pb-2">Execution Output</div>
-                    <pre class="text-xs whitespace-pre-wrap leading-5"><?php echo automation_escape($executionResult['output']); ?></pre>
-                </div>
-            <?php endif; ?>
         </div>
 
         </div>
@@ -1547,12 +1744,12 @@
                         echo '<form method="POST" action="automation.php" style="display: inline;" id="' . automation_escape($queueGroupId) . '-selected" onsubmit="return ensureQueueSelection(\'' . automation_escape($queueGroupId) . '\');">';
                         echo '<input type="hidden" name="queue_action" value="execute_selected">';
                         echo '<input type="hidden" name="execute_selected_switch" value="' . automation_escape($switchName) . '">';
-                        echo '<button type="submit" class="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-700 text-white font-semibold">Auswahl ausfuehren</button>';
+                        echo '<button type="submit" class="queue-action-btn bg-emerald-500 hover:bg-emerald-700 text-white">Auswahl ausfuehren</button>';
                         echo '</form>';
                         echo '<form method="POST" action="automation.php" style="display: inline;">';
                         echo '<input type="hidden" name="queue_action" value="execute_all">';
                         echo '<input type="hidden" name="execute_all_switch" value="' . automation_escape($switchName) . '">';
-                        echo '<button type="submit" class="px-4 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Alle ausfuehren</button>';
+                        echo '<button type="submit" class="queue-action-btn bg-green-500 hover:bg-green-700 text-white">Alle ausfuehren</button>';
                         echo '</form>';
                         echo '</div>';
                         echo '</div>';
@@ -1579,12 +1776,12 @@
                             echo '<form method="POST" action="automation.php" style="display: inline;">';
                             echo '<input type="hidden" name="queue_action" value="execute_one">';
                             echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
-                            echo '<button type="submit" class="px-2 py-1 rounded bg-green-100 hover:bg-green-200 text-green-700 text-xs font-semibold">Ausfuehren</button>';
+                            echo '<button type="submit" class="queue-item-btn bg-green-100 hover:bg-green-200 text-green-700">Ausfuehren</button>';
                             echo '</form>';
                             echo '<form method="POST" action="automation.php" style="display: inline;">';
                             echo '<input type="hidden" name="queue_action" value="delete">';
                             echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
-                            echo '<button type="submit" class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold" onclick="return confirm(\'Wirklich loeschen?\')">Loeschen</button>';
+                            echo '<button type="submit" class="queue-item-btn bg-red-100 hover:bg-red-200 text-red-700" onclick="return confirm(\'Wirklich loeschen?\')">Loeschen</button>';
                             echo '</form>';
                             echo '</div>';
                             echo '</div>';
@@ -1605,6 +1802,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Tab switching
     const tabButtons = document.querySelectorAll('.automation-tab');
+    const executionLoading = document.getElementById('automationExecutionLoading');
+    const topActionButtons = document.querySelectorAll('.automation-top-btn');
     
     tabButtons.forEach(button => {
         button.addEventListener('click', function() {
@@ -1628,16 +1827,87 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update button styles
         tabButtons.forEach(button => {
             if (button.getAttribute('data-tab') === tabName) {
-                button.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700');
-                button.classList.add('border-blue-500', 'text-blue-600');
+                button.classList.add('automation-side-item-active');
             } else {
-                button.classList.remove('border-blue-500', 'text-blue-600');
-                button.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700');
+                button.classList.remove('automation-side-item-active');
             }
         });
     }
 
     showTab('<?php echo automation_escape($activeTab); ?>');
+
+    const previewForm = document.getElementById('automation-preview-form');
+    const switchSelect = document.getElementById('switch');
+    const profileSelect = document.getElementById('profile');
+    const templateSelect = document.getElementById('template');
+
+    function submitPreviewForm() {
+        if (!previewForm) {
+            return;
+        }
+        if (typeof previewForm.requestSubmit === 'function') {
+            previewForm.requestSubmit();
+        } else {
+            previewForm.submit();
+        }
+    }
+
+    if (profileSelect) {
+        profileSelect.addEventListener('change', submitPreviewForm);
+    }
+
+    if (templateSelect) {
+        templateSelect.addEventListener('change', submitPreviewForm);
+    }
+
+    if (switchSelect) {
+        switchSelect.addEventListener('change', function() {
+            const selectedOption = switchSelect.options[switchSelect.selectedIndex];
+            const profileValue = selectedOption ? selectedOption.getAttribute('data-profile') : '';
+
+            if (profileSelect && profileValue) {
+                for (let option of profileSelect.options) {
+                    if (option.value === profileValue) {
+                        profileSelect.value = profileValue;
+                        break;
+                    }
+                }
+            }
+
+            submitPreviewForm();
+        });
+    }
+
+    window.triggerAutomationExecution = function(mode) {
+        if (!window.syncExecutionFormValues()) {
+            return;
+        }
+
+        const executeForm = document.getElementById('automation-execute-form');
+        if (!executeForm) {
+            return;
+        }
+
+        let queueInput = executeForm.querySelector('input[name="queue_mode"]');
+        if (!queueInput) {
+            queueInput = document.createElement('input');
+            queueInput.type = 'hidden';
+            queueInput.name = 'queue_mode';
+            executeForm.appendChild(queueInput);
+        }
+
+        queueInput.value = mode === 'on' ? 'on' : 'off';
+
+        if (executionLoading && mode !== 'on') {
+            executionLoading.classList.remove('hidden');
+            topActionButtons.forEach(function(button) {
+                button.disabled = true;
+                button.classList.add('opacity-60', 'cursor-not-allowed');
+            });
+        }
+
+        executeForm.submit();
+    };
 
     window.syncExecutionFormValues = function() {
         const previewForm = document.getElementById('automation-preview-form');
@@ -1684,26 +1954,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return true;
     };
 
-    // Switch select logic
-    const switchSelect = document.getElementById('switch');
-    const profileSelect = document.getElementById('profile');
-    
-    if (!switchSelect || !profileSelect) return;
-    
-    switchSelect.addEventListener('change', function() {
-        const selectedOption = switchSelect.options[switchSelect.selectedIndex];
-        const profileValue = selectedOption.getAttribute('data-profile');
-        
-        if (profileValue && profileValue !== '') {
-            // Find and select the profile option
-            for (let option of profileSelect.options) {
-                if (option.value === profileValue) {
-                    profileSelect.value = profileValue;
-                    break;
-                }
-            }
-        }
-    });
 });
 </script>
 

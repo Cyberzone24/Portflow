@@ -14,54 +14,387 @@
 
     $limit = $_COOKIE['table_limit'] ?? 100;
 ?>
-<div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
-    <div class="basis-1/6 flex flex-col gap-6 overflow-y-scroll">  
-        <p><?php echo $lang['it asset-management']; ?></p>
-        <ul class="w-full flex flex-col gap-6" id="itam_nav">
-            <li onclick="loadTable('location_details')" class="bg-white py-2 px-4 rounded-l-lg pr-0"><?php echo $lang['location']; ?></li>
-            <li onclick="loadTable('ip_range_join_metadata')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['ipam']; ?></li>
-            <li onclick="loadTable('vlan_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['vlan']; ?></li>
-            <li onclick="loadTable('device_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['devices']; ?></li>
-            <li onclick="loadTable('device_port_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['device ports']; ?></li>
-            <li onclick="loadTable('connection_details')" class="bg-white py-2 px-4 rounded-lg mr-4"><?php echo $lang['connections']; ?></li>
+<style>
+    .itam-shell {
+        margin: 0.75rem 1rem 1rem;
+        margin-top: 0;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        display: grid;
+        gap: 0.95rem;
+        grid-template-columns: 1fr;
+        min-height: 0;
+    }
+
+    .itam-sidebar {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        overflow: auto;
+        display: none;
+        min-height: 0;
+        position: relative;
+    }
+
+    .itam-sidebar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.85rem;
+        padding-right: 2.5rem;
+    }
+
+    .itam-sidebar-toggle {
+        height: 2.35rem;
+        width: 2.35rem;
+        border-radius: 9999px;
+        background: #94a3b8;
+        color: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+        flex-shrink: 0;
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+    }
+
+    .itam-sidebar-toggle:hover {
+        background: #64748b;
+    }
+
+    .itam-nav {
+        display: grid;
+        gap: 0.55rem;
+    }
+
+    .itam-nav-item {
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #1e293b;
+        border-radius: 9999px;
+        padding: 0.62rem 0.85rem;
+        cursor: pointer;
+        transition: 140ms ease;
+        font-weight: 600;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+    }
+
+    .itam-nav-item-main {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        min-width: 0;
+    }
+
+    .itam-nav-item-main i[data-lucide],
+    .itam-nav-chevron i[data-lucide] {
+        width: 1rem;
+        height: 1rem;
+        flex-shrink: 0;
+    }
+
+    .itam-nav-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .itam-nav-item:hover {
+        background: #f1f5f9;
+    }
+
+    .itam-nav-item-active {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #ffffff;
+    }
+
+    .itam-mobile-subnav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+    }
+
+    .itam-mobile-subnav .itam-nav-item {
+        flex: 0 0 auto;
+    }
+
+    .itam-mobile-subnav .itam-nav-chevron {
+        display: none;
+    }
+
+    .itam-content {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 1rem;
+        position: relative;
+        overflow: auto;
+        min-height: 0;
+    }
+
+    .itam-content-head {
+        margin-bottom: 0.95rem;
+    }
+
+    .itam-content-title {
+        font-size: 1.55rem;
+        line-height: 1.2;
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    .itam-content-copy {
+        margin-top: 0.25rem;
+        color: #64748b;
+    }
+
+    .itam-toolbar {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .itam-toolbar-top {
+        display: block;
+        gap: 0.75rem;
+    }
+
+    .itam-search-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        min-width: 0;
+        flex-wrap: nowrap;
+    }
+
+    .itam-search-form {
+        flex: 0 1 30rem;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .itam-search-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border-radius: 9999px;
+        border: 1px solid #cbd5e1;
+        padding: 0.58rem 1rem;
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+    }
+
+    .itam-circle-btn {
+        height: 2.5rem;
+        width: 2.5rem;
+        border-radius: 9999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+    }
+
+    .itam-count-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .itam-count-left {
+        display: inline-flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .itam-limit-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .itam-limit-select {
+        border: 1px solid #cbd5e1;
+        border-radius: 9999px;
+        background: #ffffff;
+        padding: 0.35rem 0.8rem;
+    }
+
+    .itam-table-wrap {
+        overflow: auto;
+        border-radius: 0.8rem;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
+    }
+
+    .itam-table {
+        min-width: 100%;
+        margin-bottom: 0;
+    }
+
+    .itam-table thead tr {
+        background: #e2e8f0;
+    }
+
+    .itam-table th {
+        font-weight: 700;
+        color: #1e293b;
+        white-space: nowrap;
+    }
+
+    .itam-table td {
+        color: #475569;
+    }
+
+    @media (min-width: 1024px) {
+        .itam-shell {
+            grid-template-columns: minmax(76px, 15.5rem) minmax(0, 1fr);
+            align-items: stretch;
+            height: calc(100vh - 7.2rem);
+        }
+
+        .itam-shell.sidebar-collapsed {
+            grid-template-columns: 4.75rem minmax(0, 1fr);
+        }
+
+        .itam-sidebar {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .itam-mobile-subnav {
+            display: none;
+        }
+
+        .itam-nav {
+            display: grid;
+            gap: 0.7rem;
+        }
+
+        .itam-shell.sidebar-collapsed .itam-sidebar-copy,
+        .itam-shell.sidebar-collapsed .itam-nav-label,
+        .itam-shell.sidebar-collapsed .itam-nav-chevron {
+            display: none;
+        }
+
+        .itam-shell.sidebar-collapsed .itam-nav-item {
+            justify-content: center;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            min-height: 3rem;
+        }
+
+        .itam-shell.sidebar-collapsed .itam-nav-item-main {
+            justify-content: center;
+            gap: 0;
+            width: 100%;
+        }
+
+        .itam-shell.sidebar-collapsed .itam-nav-item-main i[data-lucide] {
+            width: 1.25rem;
+            height: 1.25rem;
+        }
+
+        .itam-toolbar-top {
+            display: block;
+        }
+
+        .itam-count-row {
+            justify-content: space-between;
+        }
+    }
+</style>
+<div class="itam-shell" id="itamShell">
+    <aside class="itam-sidebar" id="itamSidebar">  
+        <div class="itam-sidebar-head">
+            <div class="itam-sidebar-copy">
+                <p class="text-lg font-bold"><?php echo $lang['it asset-management']; ?></p>
+                <p class="text-sm text-slate-500"><?php echo $lang['navigation'] ?? 'Navigation'; ?></p>
+            </div>
+            <button id="itamSidebarToggle" class="itam-sidebar-toggle" type="button" title="Leiste verkleinern">
+                <i data-lucide="panel-left"></i>
+            </button>
+        </div>
+        <ul class="itam-nav" id="itam_nav">
+            <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item itam-nav-item-active"><span class="itam-nav-item-main"><i data-lucide="map-pin"></i><span class="itam-nav-label"><?php echo $lang['location']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="network"></i><span class="itam-nav-label"><?php echo $lang['ipam']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="layers"></i><span class="itam-nav-label"><?php echo $lang['vlan']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="server"></i><span class="itam-nav-label"><?php echo $lang['devices']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="ethernet-port"></i><span class="itam-nav-label"><?php echo $lang['device ports']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="link-2"></i><span class="itam-nav-label"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
         </ul>
-    </div>
-    <div class="h-full basis-5/6 flex bg-white rounded-lg relative overflow-y-scroll">
+    </aside>
+    <div class="itam-content">
         <div class="h-fit w-full p-4">
-            <div class="flex justify-between mb-4">
-                <p id="count"></p>
-                <div class="flex flex-row">
-                    <form id="searchForm" class="flex flex-row" enctype="multipart/form-data" onsubmit="searchTable(event)">
-                        <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
-                        <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
-                            <button type="submit" class="text-2xl text-white"><i data-lucide="search"></i></button>
+            <div class="itam-content-head">
+                <div class="itam-content-title"><?php echo $lang['it asset-management']; ?></div>
+                <div class="itam-content-copy"><?php echo $lang['quick note'] ?? 'Kurze Erklaerung: Hier werden Locations, Devices, Ports und Verbindungen schnell erfasst und gepflegt.'; ?></div>
+            </div>
+
+            <ul class="itam-mobile-subnav" id="itam_nav_mobile">
+                <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item itam-nav-item-active"><span class="itam-nav-item-main"><i data-lucide="map-pin"></i><span class="itam-nav-label"><?php echo $lang['location']; ?></span></span></li>
+                <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="network"></i><span class="itam-nav-label"><?php echo $lang['ipam']; ?></span></span></li>
+                <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="layers"></i><span class="itam-nav-label"><?php echo $lang['vlan']; ?></span></span></li>
+                <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="server"></i><span class="itam-nav-label"><?php echo $lang['devices']; ?></span></span></li>
+                <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="ethernet-port"></i><span class="itam-nav-label"><?php echo $lang['device ports']; ?></span></span></li>
+                <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="link-2"></i><span class="itam-nav-label"><?php echo $lang['connections']; ?></span></span></li>
+            </ul>
+
+            <div class="itam-toolbar mb-4">
+                <div class="itam-toolbar-top">
+                    <div class="itam-search-row">
+                        <form id="searchForm" class="itam-search-form" enctype="multipart/form-data" onsubmit="searchTable(event)">
+                            <input type="text" name="search" placeholder="Suchen ..." class="itam-search-input">
+                            <div class="itam-circle-btn bg-blue-500 hover:bg-blue-700">
+                                <button type="submit" class="text-2xl text-white"><i data-lucide="search"></i></button>
+                            </div>
+                        </form>
+                        <div class="itam-circle-btn bg-green-500 hover:bg-green-700">
+                            <button form="" onclick="openNewEntry()" class="new_entry_button text-2xl text-white"><i data-lucide="plus"></i></button>
                         </div>
-                    </form>
-                    <div class="h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                        <button form="" onclick="openNewEntry()" class="new_entry_button text-2xl text-white"><i data-lucide="plus"></i></button>
+                    </div>
+                </div>
+                <div class="itam-count-row">
+                    <div class="itam-count-left">
+                        <p id="count"></p>
+                        <div id="pagination" class="flex flex-row"></div>
+                    </div>
+                    <div class="itam-limit-wrap">
+                        <p><?php echo $lang['quantity']; ?>:</p>
+                        <select id="table_limit_1" name="limit" class="itam-limit-select" onchange="setTableLimit(this.value)">
+                            <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
+                            <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
+                            <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
+                            <option value="1000" <?php if ($limit == 1000) echo 'selected'; ?>>1000</option>
+                        </select>
                     </div>
                 </div>
             </div>
-            <div class="flex justify-between my-4">
-                <div id="pagination" class="flex flex-row"></div>
-                <div class="flex flex-row">
-                    <p class="mr-4"><?php echo $lang['quantity']; ?>:</p>
-                    <select id="table_limit_1" name="limit" class="bg-transparent" onchange="setTableLimit(this.value)">
-                        <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
-                        <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
-                        <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
-                        <option value="1000" <?php if ($limit == 1000) echo 'selected'; ?>>1000</option>
-                    </select>
-                </div>
-            </div>
-            <table class="static rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md">
+            <div class="itam-table-wrap">
+            <table class="static itam-table rounded-lg w-full text-sm text-left text-gray-500 shadow-md">
                 <thead class="text-gray-800"></thead>
                 <tbody></tbody>
             </table>
+            </div>
         </div>
         
         <!-- Details Popup -->
-        <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden">
+        <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden overflow-y-auto">
             <div class="flex justify-between pb-6">
                 <div class="text-xl font-bold">Details</div>
                 <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
@@ -72,16 +405,39 @@
         </div>
 
         <!-- New Location -->
-        <div id="formContainer" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 overflow-y-scroll hidden newEntry"></div>
+        <div id="formContainer" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 overflow-y-auto hidden newEntry"></div>
     </div>
 </div>
 <script>
 // search
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.querySelector('#searchForm input[name="search"]');
-    searchInput.addEventListener('input', () => {
-        loadTable(currentTable, searchInput.value);
-    });
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            loadTable(currentTable, searchInput.value);
+        });
+    }
+
+    const shell = document.getElementById('itamShell');
+    const sidebarToggle = document.getElementById('itamSidebarToggle');
+
+    if (shell && sidebarToggle) {
+        const syncToggleIcon = () => {
+            const collapsed = shell.classList.contains('sidebar-collapsed');
+            sidebarToggle.innerHTML = collapsed
+                ? '<i data-lucide="panel-right"></i>'
+                : '<i data-lucide="panel-left"></i>';
+            sidebarToggle.setAttribute('title', collapsed ? 'Leiste vergroessern' : 'Leiste verkleinern');
+            lucide.createIcons();
+        };
+
+        sidebarToggle.addEventListener('click', () => {
+            shell.classList.toggle('sidebar-collapsed');
+            syncToggleIcon();
+        });
+
+        syncToggleIcon();
+    }
 });
 function searchTable(event) {
     event.preventDefault();
@@ -945,19 +1301,20 @@ loadTable();
 
 // Tabellenhervorhebung aktualisieren
 function updateActiveTab(table) {
-    // Alle Listenelemente zurücksetzen
-    const listItems = document.querySelectorAll('#itam_nav li');
-    listItems.forEach(item => {
-        // Standardklassen für nicht ausgewähltes Element setzen
-        item.className = 'bg-white py-2 px-4 rounded-lg mr-4';
+    const navScopes = ['#itam_nav li', '#itam_nav_mobile li'];
+
+    navScopes.forEach(selector => {
+        document.querySelectorAll(selector).forEach(item => {
+            item.classList.remove('itam-nav-item-active');
+        });
     });
 
-    // Das ausgewählte Listenelement hervorheben
-    const selectedItem = document.querySelector(`#itam_nav li[onclick="loadTable('${table}')"]`);
-    if (selectedItem) {
-        // Klassen für das ausgewählte Element setzen
-        selectedItem.className = 'bg-white py-2 px-4 rounded-l-lg pr-0';
-    }
+    navScopes.forEach(selector => {
+        const selectedItem = document.querySelector(`${selector}[data-table="${table}"]`);
+        if (selectedItem) {
+            selectedItem.classList.add('itam-nav-item-active');
+        }
+    });
 }
 
 function displayTable(columnsConfig, userColumns, rows) {

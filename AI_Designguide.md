@@ -49,10 +49,15 @@ Layout rules:
 - Desktop should provide a clear toggle to switch between icon-only and full sidebar labels.
 - On mobile, the sidebar should become a drawer/overlay instead of squeezing the content area.
 - On mobile, header navigation and controls should compress cleanly before they wrap awkwardly.
+- Mobile header should use a dedicated layout with only logo and menu button; module links plus Settings/Logout should be inside the mobile drawer.
+- Responsive visibility rules must ensure mobile and desktop header variants are mutually exclusive to prevent duplicate logos or controls.
 - The main navigation must remain visually centered in the header, independent of logo width.
 - The header should keep the Portflow logo left-aligned without extra explanatory text next to it.
 - Theme, font, and font-size switchers should be represented as controls in the UI so their later Settings wiring can follow the same design language.
 - Sidebar tooltips are not required if the collapsed state already communicates the item clearly.
+- In collapsed desktop sidebar mode, icon hit areas must remain comfortable and not look compressed.
+- Collapsed sidebar KPI/status icons must stay centered and clipped inside their card/container.
+- When collapsing the desktop sidebar, the content area must expand immediately via layout column resizing.
 
 Tables and data density:
 - Tables should stay compact and readable.
