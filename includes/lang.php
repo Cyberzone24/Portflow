@@ -1,7 +1,7 @@
 <?php
 if (isset($_SESSION['settings'])) {
     $settings = json_decode($_SESSION['settings'], true);
-    $language = $settings['language'];
+    $language = is_array($settings) ? ($settings['language'] ?? '') : '';
     if($language == 'de-DE' || $language == 'de'){              include_once __DIR__ . '/lang/de-DE.php';   }
     elseif($language == 'en-EN' || $language == 'en'){          include_once __DIR__ . '/lang/en-EN.php';   }
     elseif($language == 'en-US' || $language == 'en'){          include_once __DIR__ . '/lang/en-EN.php';   }

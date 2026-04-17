@@ -116,6 +116,16 @@
                     $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
                     $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
 
+                    $pendingBefore = $queueManager->getPendingChanges($_SESSION['uuid'], $switchToExecute);
+                    $batchCommands = [];
+                    foreach ($pendingBefore as $pendingEntry) {
+                        $entryCommands = array_filter(
+                            array_map('trim', explode("\n", (string)($pendingEntry['commands'] ?? ''))),
+                            static fn($c): bool => $c !== ''
+                        );
+                        $batchCommands = array_merge($batchCommands, $entryCommands);
+                    }
+
                     $executionResult = $queueManager->executeQueueForSwitch(
                         $_SESSION['uuid'],
                         $switchToExecute,
@@ -151,7 +161,9 @@
                         !empty($executionResult['ok']),
                         [
                             'completed' => (int)($executionResult['completed'] ?? 0),
-                            'failed' => (int)($executionResult['failed'] ?? 0)
+                            'failed' => (int)($executionResult['failed'] ?? 0),
+                            'device_uuid' => resolveSwitchDeviceUuid($switchData),
+                            'script_content' => buildScriptContentForLog($batchCommands)
                         ]
                     );
                 } else {
@@ -224,7 +236,10 @@
                                 count($commands),
                                 !empty($result['ok']),
                                 [
-                                    'pending_uuid' => $pendingUuid
+                                    'pending_uuid' => $pendingUuid,
+                                    'warning' => !empty($result['warning']),
+                                    'device_uuid' => resolveSwitchDeviceUuid($switchData),
+                                    'script_content' => buildScriptContentForLog($commands)
                                 ]
                             );
                         }
@@ -326,7 +341,10 @@
                             count($commands),
                             $ok,
                             [
-                                'pending_uuid' => $pendingUuid
+                                'pending_uuid' => $pendingUuid,
+                                'warning' => !empty($result['warning']),
+                                'device_uuid' => resolveSwitchDeviceUuid($switchData),
+                                'script_content' => buildScriptContentForLog($commands)
                             ]
                         );
                     }
@@ -507,7 +525,10 @@
                     !empty($executionResult['ok']),
                     [
                         'error_strategy' => $selectedErrorStrategy,
-                        'save_mode' => $selectedSaveMode
+                        'save_mode' => $selectedSaveMode,
+                        'warning' => !empty($executionResult['warning']),
+                        'device_uuid' => resolveSwitchDeviceUuid($selectedSwitchData),
+                        'script_content' => buildScriptContentForLog($rendered['commands'] ?? [])
                     ]
                 );
 
@@ -678,6 +699,23 @@
             ? 'sshpass -p ******** ssh ...'
             : trim((string)$fullCommand);
 
+        $hasErrorSignals = outputHasStrongErrorSignals($lines);
+        $looksLikeSessionTermination = outputLooksLikeSessionTermination($lines);
+        $looksLikeCleanDisconnect = outputLooksLikeCleanDisconnect($lines);
+
+        $warning = false;
+        $ok = ($exitCode === 0);
+
+        if (!$ok && !$hasErrorSignals && !empty($commands)) {
+            if ($exitCode === 255 && $looksLikeCleanDisconnect) {
+                $ok = true;
+                $warning = false;
+            } elseif ($exitCode === 124 || $looksLikeSessionTermination || $exitCode === 255 || $exitCode === 1) {
+                $ok = true;
+                $warning = true;
+            }
+        }
+
         $reportedCommands = buildCommandStatusLines($commands, $lines, $exitCode);
 
         $outputText = "Command: " . $maskedCommand . "\n";
@@ -693,19 +731,97 @@
                 . "Die Session wurde moeglicherweise nicht sauber beendet oder ein Prompt blieb offen.";
         }
 
+        if ($warning) {
+            $outputText .= "\n\nBewertung: WARNUNG. Die Befehle wurden wahrscheinlich angewendet, aber die SSH-Session endete nicht sauber (Exit-Code " . $exitCode . ").";
+        }
+
+        $logLevel = $ok ? ($warning ? 2 : 1) : 3;
+
         $logger->log(
             'automation execute switch=' . $switchName
                 . ' profile=' . $profileId
                 . ' template=' . $templateId
                 . ' exit=' . $exitCode
                 . ' duration=' . number_format($durationSec, 2, '.', '') . 's',
-            $exitCode === 0 ? 1 : 3
+            $logLevel
         );
 
         return [
-            'ok' => ($exitCode === 0),
+            'ok' => $ok,
+            'warning' => $warning,
+            'exit_code' => $exitCode,
             'output' => $outputText
         ];
+    }
+
+    function outputHasStrongErrorSignals(array $outputLines): bool {
+        $errorPatterns = [
+            '/\\berror\\b/i',
+            '/\\bfailed\\b/i',
+            '/\\binvalid\\b/i',
+            '/\\bincomplete\\b/i',
+            '/\\bambiguous\\b/i',
+            '/\\bunrecognized\\b/i',
+            '/\\bdenied\\b/i',
+            '/\\bsyntax error\\b/i',
+            '/\\bpermission denied\\b/i'
+        ];
+
+        foreach ($outputLines as $line) {
+            $lineText = (string)$line;
+            foreach ($errorPatterns as $pattern) {
+                if (preg_match($pattern, $lineText)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    function outputLooksLikeSessionTermination(array $outputLines): bool {
+        $terminationPatterns = [
+            '/connection to .* closed/i',
+            '/session closed/i',
+            '/connection reset/i',
+            '/broken pipe/i',
+            '/connection closed by remote host/i'
+        ];
+
+        foreach ($outputLines as $line) {
+            $lineText = (string)$line;
+            foreach ($terminationPatterns as $pattern) {
+                if (preg_match($pattern, $lineText)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    function outputLooksLikeCleanDisconnect(array $outputLines): bool {
+        $sawQuitCommand = false;
+        $sawConnectionClosed = false;
+        $sawAbruptSignals = false;
+
+        foreach ($outputLines as $line) {
+            $lineText = (string)$line;
+
+            if (preg_match('/>\s*quit\s*$/i', $lineText)) {
+                $sawQuitCommand = true;
+            }
+
+            if (preg_match('/connection to .* closed\.?/i', $lineText)) {
+                $sawConnectionClosed = true;
+            }
+
+            if (preg_match('/broken pipe|connection reset|timed out|timeout/i', $lineText)) {
+                $sawAbruptSignals = true;
+            }
+        }
+
+        return $sawQuitCommand && $sawConnectionClosed && !$sawAbruptSignals;
     }
 
     function buildCommandStatusLines(array $commands, array $outputLines, int $exitCode): array {
@@ -1264,6 +1380,42 @@
         return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
     }
 
+    function buildScriptContentForLog(array $commands, int $maxChars = 8000): string {
+        $normalized = array_values(array_filter(array_map(static function ($command): string {
+            return trim((string)$command);
+        }, $commands), static function (string $command): bool {
+            return $command !== '';
+        }));
+
+        if (empty($normalized)) {
+            return '';
+        }
+
+        $joined = implode("\n", $normalized);
+        if (mb_strlen($joined) > $maxChars) {
+            return mb_substr($joined, 0, $maxChars) . "\n... truncated ...";
+        }
+
+        return $joined;
+    }
+
+    function resolveSwitchDeviceUuid(array $switchData): string {
+        $candidates = [
+            $switchData['device_id'] ?? '',
+            $switchData['device_uuid'] ?? '',
+            $switchData['uuid'] ?? ''
+        ];
+
+        foreach ($candidates as $candidate) {
+            $value = trim((string)$candidate);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
     function logAutomationExecutionEvent(
         \Portflow\Core\DatabaseAdapter $db,
         string $userUuid,
@@ -1793,7 +1945,6 @@
                 }
             ?>
         </div>
-
     </div>
 </div>
 

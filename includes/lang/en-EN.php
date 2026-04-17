@@ -1,6 +1,34 @@
 <?php
 if (isset($_GET['nav'])) {
     $nav = [];
+    $nav['location_details'] = [
+        'default' => ['location_type', 'location_parent_location_metadata_caption', 'location_metadata_tags'],
+        'details_layout' => [
+            'primary_title' => 'Core Data',
+            'primary_fields' => [
+                'location_metadata_caption',
+                'location_metadata_status',
+                'location_type',
+                'location_parent_location_metadata_caption',
+                'location_metadata_tags',
+                'location_metadata_description',
+                'location_metadata_specification'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'attachments', 'title' => 'Attachments & Images']
+            ]
+        ],
+        'columns' => [
+            'location_metadata_caption' => 'Name',
+            'location_metadata_status' => 'Status',
+            'location_type' => 'Location Type',
+            'location_parent_location_metadata_caption' => 'Parent Location',
+            'location_metadata_tags' => 'Tags',
+            'location_metadata_description' => 'Description',
+            'location_metadata_specification' => 'Specification'
+        ]
+    ];
     $nav['location_join_metadata_join_location'] = [
         'uuid' => 'Location UUID',
         'type' => 'Location Type',
@@ -40,6 +68,69 @@ if (isset($_GET['nav'])) {
         'metadata_tags_0' => 'Metadata Tags',
         'metadata_caption_0' => 'Metadata Caption',
         'metadata_description_0' => 'Metadata Description',
+        'details_layout' => [
+            'primary_title' => 'Core Data',
+            'primary_fields' => [
+                'ip_range_metadata_caption',
+                'ip_range_metadata_status',
+                'ip_range_ip_range',
+                'ip_range_gateway',
+                'ip_range_broadcast',
+                'ip_range_dns_server',
+                'ip_range_dns_zone',
+                'ip_range_dhcp_server',
+                'ip_range_metadata_tags',
+                'ip_range_metadata_description',
+                'ip_range_metadata_specification'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'attachments', 'title' => 'Attachments & Images']
+            ]
+        ],
+        'columns' => [
+            'ip_range_metadata_caption' => 'Name',
+            'ip_range_metadata_status' => 'Status',
+            'ip_range_ip_range' => 'IP Range',
+            'ip_range_gateway' => 'Gateway',
+            'ip_range_broadcast' => 'Broadcast',
+            'ip_range_dns_server' => 'DNS Server',
+            'ip_range_dns_zone' => 'DNS Zone',
+            'ip_range_dhcp_server' => 'DHCP Server',
+            'ip_range_metadata_tags' => 'Tags',
+            'ip_range_metadata_description' => 'Description',
+            'ip_range_metadata_specification' => 'Specification'
+        ]
+    ];
+    $nav['vlan_details'] = [
+        'default' => ['vlan_vlan', 'vlan_metadata_status', 'vlan_metadata_caption', 'vlan_metadata_tags', 'vlan_ip_range_ip_range', 'vlan_ip_range_metadata_caption'],
+        'details_layout' => [
+            'primary_title' => 'Core Data',
+            'primary_fields' => [
+                'vlan_metadata_caption',
+                'vlan_metadata_status',
+                'vlan_vlan',
+                'vlan_ip_range_ip_range',
+                'vlan_ip_range_metadata_caption',
+                'vlan_metadata_tags',
+                'vlan_metadata_description',
+                'vlan_metadata_specification'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'attachments', 'title' => 'Attachments & Images']
+            ]
+        ],
+        'columns' => [
+            'vlan_metadata_caption' => 'Name',
+            'vlan_metadata_status' => 'Status',
+            'vlan_vlan' => 'VLAN',
+            'vlan_ip_range_ip_range' => 'IP Range',
+            'vlan_ip_range_metadata_caption' => 'IP Range Name',
+            'vlan_metadata_tags' => 'Tags',
+            'vlan_metadata_description' => 'Description',
+            'vlan_metadata_specification' => 'Specification'
+        ]
     ];
     $nav['vlan_join_metadata_join_ip_range'] = [
         'uuid' => 'VLAN UUID',
@@ -85,6 +176,31 @@ if (isset($_GET['nav'])) {
     ];
     $nav['device_port_details'] = [
         'default' => ['device_port_metadata_status', 'device_port_metadata_caption', 'device_port_metadata_tags', 'device_port_device_location_parent_location_metadata_caption', 'device_port_device_metadata_caption', 'device_port_device_type'],
+        'details_layout' => [
+            'primary_title' => 'Port Core Data',
+            'primary_fields' => [
+                'device_port_metadata_caption',
+                'device_port_metadata_status',
+                'device_port_device_metadata_caption',
+                'device_port_device_type',
+                'device_port_device_location_parent_location_metadata_caption',
+                'device_port_device_port_vlan_vlan_vlan',
+                'device_port_device_port_ip_ip',
+                'device_port_speed',
+                'device_port_expected_speed',
+                'device_port_mac_address',
+                'device_port_type',
+                'device_port_poe',
+                'device_port_coupling',
+                'device_port_metadata_tags',
+                'device_port_metadata_description',
+                'device_port_metadata_specification'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'attachments', 'title' => 'Attachments & Images']
+            ]
+        ],
         'columns' => [
             'device_port_uuid' => 'Device Port UUID',
             'device_port_metadata' => 'Device Port Metadata',
@@ -124,7 +240,93 @@ if (isset($_GET['nav'])) {
             'device_port_device_size' => 'Device Size',
             'device_port_device_item_group' => 'Device Item Group',
             'device_port_device_template' => 'Device Template',
-            'device_port_device_location_parent_location_metadata_caption' => 'Room'
+            'device_port_device_location_parent_location_metadata_caption' => 'Room',
+            'device_port_device_port_vlan_vlan_vlan' => 'VLAN',
+            'device_port_device_port_ip_ip' => 'IP Address'
+        ]
+    ];
+    $nav['device_details'] = [
+        'default' => ['device_serial', 'device_asset', 'device_manufacturer', 'device_model', 'device_type', 'device_template', 'device_metadata_status', 'device_metadata_caption', 'device_metadata_tags'],
+        'details_layout' => [
+            'primary_title' => 'Core Data',
+            'primary_fields' => [
+                'device_metadata_caption',
+                'device_metadata_status',
+                'device_type',
+                'device_manufacturer',
+                'device_model',
+                'device_serial',
+                'device_asset',
+                'device_location_metadata_caption',
+                'device_item_group',
+                'device_template',
+                'device_metadata_tags',
+                'device_metadata_description',
+                'device_metadata_specification'
+            ],
+            'panels' => [
+                ['type' => 'scripts', 'title' => 'Recent Script Executions'],
+                ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'attachments', 'title' => 'Attachments & Images']
+            ]
+        ],
+        'columns' => [
+            'device_uuid' => 'Device UUID',
+            'device_metadata_caption' => 'Name',
+            'device_metadata_status' => 'Status',
+            'device_metadata_tags' => 'Tags',
+            'device_metadata_description' => 'Description',
+            'device_metadata_specification' => 'Specification',
+            'device_type' => 'Type',
+            'device_manufacturer' => 'Manufacturer',
+            'device_model' => 'Model',
+            'device_serial' => 'Serial',
+            'device_asset' => 'Asset',
+            'device_location_metadata_caption' => 'Location',
+            'device_item_group' => 'Item Group',
+            'device_template' => 'Template'
+        ]
+    ];
+    $nav['connection_details'] = [
+        'default' => ['connection_metadata_status', 'connection_metadata_caption', 'connection_metadata_tags', 'connection_device_port_source_device_metadata_caption', 'connection_device_port_source_metadata_caption', 'connection_device_port_destination_device_metadata_caption', 'connection_device_port_destination_metadata_caption'],
+        'details_layout' => [
+            'primary_title' => 'Connection Core Data',
+            'primary_fields' => [
+                'connection_metadata_caption',
+                'connection_metadata_status',
+                'connection_type',
+                'connection_cable_name',
+                'connection_length',
+                'connection_speed',
+                'connection_crossover',
+                'connection_device_port_source_device_metadata_caption',
+                'connection_device_port_source_metadata_caption',
+                'connection_device_port_destination_device_metadata_caption',
+                'connection_device_port_destination_metadata_caption',
+                'connection_metadata_tags',
+                'connection_metadata_description',
+                'connection_metadata_specification'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'attachments', 'title' => 'Attachments & Images']
+            ]
+        ],
+        'columns' => [
+            'connection_metadata_caption' => 'Name',
+            'connection_metadata_status' => 'Status',
+            'connection_type' => 'Type',
+            'connection_cable_name' => 'Cable Name',
+            'connection_length' => 'Length',
+            'connection_speed' => 'Speed',
+            'connection_crossover' => 'Crossover',
+            'connection_device_port_source_device_metadata_caption' => 'Source Device',
+            'connection_device_port_source_metadata_caption' => 'Source Port',
+            'connection_device_port_destination_device_metadata_caption' => 'Destination Device',
+            'connection_device_port_destination_metadata_caption' => 'Destination Port',
+            'connection_metadata_tags' => 'Tags',
+            'connection_metadata_description' => 'Description',
+            'connection_metadata_specification' => 'Specification'
         ]
     ];
     $nav['connection_join_device_port_join_device_port'] = [

@@ -12,12 +12,13 @@ define('APP_NAME', 'Portflow');
 # ================================================================================================= .htaccess config has to be replicated for lighttpd conf, just for testing with apache
 
 // check if session exists
-/*
-include_once __DIR__ . '/../includes/core/session.php';
-if (!in_array(__DIR__ . '/../includes/core/session.php', get_included_files())) {
-    die('could not verify session');
+@include_once __DIR__ . '/../includes/core/session.php';
+
+// Ensure session is initialized
+if (!isset($_SESSION)) {
+    $_SESSION = [];
 }
-*/
+
 
 // import dbAdapter
 include_once __DIR__ . '/../includes/core/db_adapter.php';
@@ -110,6 +111,12 @@ class API {
     }
 
     public function route() {
+        // Handle file uploads separately (before media type check)
+        if (isset($_FILES['file']) && $_SERVER['REQUEST_METHOD'] === 'POST' && strpos($_SERVER['REQUEST_URI'], '/api/upload') !== false) {
+            $this->uploadFile();
+            return;
+        }
+
         // check media types
         $this->checkMediaTypes($this->allowedContentTypes, $this->allowedAcceptTypes);
 
@@ -371,7 +378,7 @@ class API {
         try {
             $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
                 return $key . ' = :' . $key;
-            }, array_keys($data))) . " WHERE uuid = :uuid RETURNING " . implode(', ', array_keys($data));
+            }, array_keys($data))) . " WHERE uuid = :uuid RETURNING *";
             $params = $data;
             $params['uuid'] = $uuid;
             $results = $this->dbAdapter->db_query($query, $params);
@@ -441,19 +448,114 @@ class API {
 
     private function delete($resource, $uuid) {
         try {
+            // First fetch the record before deletion
+            $fetchQuery = "SELECT * FROM $resource WHERE uuid = :uuid";
+            $fetchResults = $this->dbAdapter->db_query($fetchQuery, ['uuid' => $uuid]);
+            
             $this->cleanupConnectionsForDevicePorts(
                 $this->collectImpactedDevicePortUuids((string)$resource, (string)$uuid)
             );
 
-            $query = "DELETE FROM $resource WHERE uuid = :uuid RETURNING *";
+            $query = "DELETE FROM $resource WHERE uuid = :uuid";
             $params['uuid'] = $uuid;
-            $results = $this->dbAdapter->db_query($query, $params);
+            $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
-            echo json_encode($results);
+            echo json_encode($fetchResults);
         } catch (\Exception $e) {
             http_response_code(500);
             echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
         }
+    }
+
+    private function uploadFile() {
+        // File upload handling
+        if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            echo json_encode(['error' => 'No file uploaded or upload error']);
+            return;
+        }
+
+        $file = $_FILES['file'];
+        $reference_table = $_POST['reference_table'] ?? '';
+        $reference_uuid = $_POST['reference_uuid'] ?? '';
+        $description = $_POST['description'] ?? '';
+
+        // Validate inputs
+        if (!$reference_table || !$reference_uuid) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing reference_table or reference_uuid']);
+            return;
+        }
+
+        // Validate UUID format
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $reference_uuid)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid UUID format']);
+            return;
+        }
+
+        // Sanitize table name
+        if (!preg_match('/^[a-z0-9_]+$/i', $reference_table)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid table name']);
+            return;
+        }
+
+        // Create attachment directory
+        $base_dir = __DIR__ . '/../data/attachments';
+        $ref_dir = $base_dir . '/' . $reference_table . '/' . $reference_uuid;
+
+        if (!is_dir($ref_dir)) {
+            if (!mkdir($ref_dir, 0755, true)) {
+                http_response_code(500);
+                echo json_encode(['error' => 'Failed to create attachment directory']);
+                return;
+            }
+        }
+
+        // Validate file type
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/csv'];
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $file_type = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+
+        if (!in_array($file_type, $allowed_types)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'File type not allowed: ' . $file_type]);
+            return;
+        }
+
+        // Check file size (50 MB)
+        $max_size = 50 * 1024 * 1024;
+        if ($file['size'] > $max_size) {
+            http_response_code(400);
+            echo json_encode(['error' => 'File size exceeds 50 MB limit']);
+            return;
+        }
+
+        // Generate safe filename
+        $original_name = basename($file['name']);
+        $ext = pathinfo($original_name, PATHINFO_EXTENSION);
+        $safe_filename = bin2hex(random_bytes(16)) . '.' . $ext;
+        $target_path = $ref_dir . '/' . $safe_filename;
+
+        // Move file
+        if (!move_uploaded_file($file['tmp_name'], $target_path)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to save uploaded file']);
+            return;
+        }
+
+        // Generate file URL
+        $file_url = '/data/attachments/' . $reference_table . '/' . $reference_uuid . '/' . $safe_filename;
+
+        http_response_code(200);
+        echo json_encode([
+            'success' => true,
+            'file_url' => $file_url,
+            'file_name' => $original_name,
+            'description' => $description
+        ]);
     }
 
     private function checkMediaTypes($allowedContentTypes, $allowedAcceptTypes) {

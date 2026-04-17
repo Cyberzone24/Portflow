@@ -174,6 +174,77 @@
         return in_array($rawTab, ['switch', 'templates', 'history'], true) ? $rawTab : 'switch';
     }
 
+    function getDefaultUserSettings(): array {
+        return [
+            'language' => 'de-DE',
+            'appearance' => [
+                'theme' => 'light',
+                'font_family' => 'jetbrains',
+                'font_size' => 'normal'
+            ]
+        ];
+    }
+
+    function normalizeAppearanceTheme(string $theme): string {
+        $theme = strtolower(trim($theme));
+
+        if ($theme === 'ocean' || $theme === 'emerald') {
+            return 'light';
+        }
+        if ($theme === 'slate') {
+            return 'dark';
+        }
+
+        return in_array($theme, ['light', 'dark', 'contrast'], true) ? $theme : 'light';
+    }
+
+    function getSessionUserSettings(): array {
+        $defaults = getDefaultUserSettings();
+        $raw = $_SESSION['settings'] ?? '';
+
+        if (is_array($raw)) {
+            $settings = $raw;
+        } elseif (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            $settings = is_array($decoded) ? $decoded : [];
+        } else {
+            $settings = [];
+        }
+
+        if (!isset($settings['language']) || !is_string($settings['language']) || $settings['language'] === '') {
+            $settings['language'] = $defaults['language'];
+        }
+
+        if (!isset($settings['appearance']) || !is_array($settings['appearance'])) {
+            $settings['appearance'] = [];
+        }
+
+        $settings['appearance']['theme'] = normalizeAppearanceTheme((string)($settings['appearance']['theme'] ?? ''));
+
+        $settings['appearance']['font_family'] = in_array((string)($settings['appearance']['font_family'] ?? ''), ['jetbrains', 'source_sans', 'fira_sans'], true)
+            ? (string)$settings['appearance']['font_family']
+            : $defaults['appearance']['font_family'];
+
+        $settings['appearance']['font_size'] = in_array((string)($settings['appearance']['font_size'] ?? ''), ['small', 'normal', 'large'], true)
+            ? (string)$settings['appearance']['font_size']
+            : $defaults['appearance']['font_size'];
+
+        return $settings;
+    }
+
+    function saveUserSettings(\Portflow\Core\DatabaseAdapter $dbAdapter, array $settings, string $uuid): void {
+        $encoded = json_encode($settings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded) || $encoded === '') {
+            $encoded = json_encode(getDefaultUserSettings(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+
+        $_SESSION['settings'] = (string)$encoded;
+        $dbAdapter->db_query(
+            "UPDATE users SET settings = :settings, changed = NOW() WHERE uuid = :uuid",
+            ['settings' => (string)$encoded, 'uuid' => $uuid]
+        );
+    }
+
     function scriptsUrlWithTab(string $tab): string {
         $safeTab = in_array($tab, ['switch', 'templates', 'history'], true) ? $tab : 'switch';
         return '?site=scripts&tab=' . rawurlencode($safeTab);
@@ -409,6 +480,12 @@
             case 'language':
                 $language = $_POST['language'] ?? null;
 
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for language update', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
                 // check inputs
                 if (mb_strlen($language) !== 5) {
                     $logger->log('language length not correct', 2, echoToWeb: true);
@@ -421,17 +498,53 @@
                     die();
                 }
 
-                // find language in settings
-                $settings = json_decode($_SESSION['settings']);
-                $settings->language = $language;
+                $settings = getSessionUserSettings();
+                $settings['language'] = $language;
+                saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
 
-                // update session
-                $_SESSION['settings'] = json_encode($settings);
-
-                // update database
-                $query = "UPDATE users SET settings = :settings, changed = NOW() WHERE uuid = :uuid";
-                $result = $db_adapter->db_query($query, ['settings' => json_encode($settings), 'uuid' => $_SESSION['uuid']]);
                 $logger->log('language updated', 1, echoToWeb: true);
+                header('Location: ?site=appearance');
+                break;
+
+            case 'appearance_preferences':
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for appearance update', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                $language = trim((string)($_POST['language'] ?? ''));
+                $theme = trim((string)($_POST['theme'] ?? ''));
+                $fontFamily = trim((string)($_POST['font_family'] ?? ''));
+                $fontSize = trim((string)($_POST['font_size'] ?? ''));
+
+                $allowedLanguages = ['de-DE', 'en-EN', 'en-US'];
+                $allowedThemes = ['light', 'dark', 'contrast'];
+                $allowedFonts = ['jetbrains', 'source_sans', 'fira_sans'];
+                $allowedSizes = ['small', 'normal', 'large'];
+
+                $settings = getSessionUserSettings();
+
+                if (in_array($language, $allowedLanguages, true)) {
+                    $settings['language'] = $language;
+                }
+
+                $normalizedTheme = normalizeAppearanceTheme($theme);
+                $settings['appearance']['theme'] = in_array($normalizedTheme, $allowedThemes, true)
+                    ? $normalizedTheme
+                    : $settings['appearance']['theme'];
+
+                $settings['appearance']['font_family'] = in_array($fontFamily, $allowedFonts, true)
+                    ? $fontFamily
+                    : $settings['appearance']['font_family'];
+
+                $settings['appearance']['font_size'] = in_array($fontSize, $allowedSizes, true)
+                    ? $fontSize
+                    : $settings['appearance']['font_size'];
+
+                saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
+
+                $logger->log('appearance preferences updated', 1, echoToWeb: true);
                 header('Location: ?site=appearance');
                 break;
             case 'delete_account':
@@ -1169,8 +1282,8 @@
     }
 
     .settings-sidebar {
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
+        background: var(--pf-surface);
+        border: 1px solid var(--pf-border);
         border-radius: 1rem;
         padding: 0.95rem;
         overflow-y: auto;
@@ -1178,8 +1291,8 @@
     }
 
     .settings-content {
-        background: #f8fafc;
-        border: 1px solid #cbd5e1;
+        background: var(--pf-surface-alt);
+        border: 1px solid var(--pf-border);
         border-radius: 1rem;
         position: relative;
         overflow-y: auto;
@@ -1201,54 +1314,54 @@
 
     .settings-nav-item {
         display: block;
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
+        border: 1px solid var(--pf-border);
+        background: var(--pf-surface-alt);
         border-radius: 9999px;
         padding: 0.62rem 0.9rem;
         font-weight: 600;
-        color: #1e293b;
+        color: var(--pf-text);
         transition: 140ms ease;
         white-space: nowrap;
     }
 
     .settings-nav-item:hover {
-        background: #f1f5f9;
+        background: var(--pf-hover);
     }
 
     .settings-nav-item-active {
-        background: #2563eb;
-        border-color: #2563eb;
+        background: var(--pf-accent-600);
+        border-color: var(--pf-accent-600);
         color: #ffffff;
     }
 
     .settings-subnav {
         margin-top: -0.15rem;
         padding-left: 0.45rem;
-        border-left: 2px solid #dbeafe;
+        border-left: 2px solid var(--pf-accent-500);
         display: grid;
         gap: 0.42rem;
     }
 
     .settings-nav-subitem {
         display: block;
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
+        border: 1px solid var(--pf-border);
+        background: var(--pf-surface-alt);
         border-radius: 9999px;
         padding: 0.48rem 0.82rem;
         font-size: 0.82rem;
         font-weight: 600;
-        color: #334155;
+        color: var(--pf-text);
         transition: 140ms ease;
         white-space: nowrap;
     }
 
     .settings-nav-subitem:hover {
-        background: #f1f5f9;
+        background: var(--pf-hover);
     }
 
     .settings-nav-subitem-active {
-        background: #1d4ed8;
-        border-color: #1d4ed8;
+        background: var(--pf-accent-700);
+        border-color: var(--pf-accent-700);
         color: #ffffff;
     }
 
@@ -1258,10 +1371,10 @@
     .settings-content input[type="number"],
     .settings-content select,
     .settings-content textarea {
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--pf-border);
         border-radius: 9999px;
-        background: #ffffff;
-        color: #1e293b;
+        background: var(--pf-surface-alt);
+        color: var(--pf-text);
     }
 
     .settings-content textarea {
@@ -1269,10 +1382,10 @@
     }
 
     .settings-content table {
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--pf-border);
         border-radius: 0.9rem;
         overflow: hidden;
-        background: #ffffff;
+        background: var(--pf-surface-alt);
         width: 100%;
     }
 
@@ -1284,11 +1397,11 @@
     }
 
     .settings-content thead {
-        background: #e2e8f0 !important;
+        background: var(--pf-surface-soft) !important;
     }
 
     .settings-content thead th {
-        color: #1e293b;
+        color: var(--pf-text);
         font-weight: 700;
     }
 
@@ -1307,8 +1420,27 @@
 
     .settings-content .text-xl,
     .settings-content .text-2xl {
-        color: #0f172a;
+        color: var(--pf-text);
         font-weight: 700;
+    }
+
+    .settings-content label,
+    .settings-content summary,
+    .settings-content strong {
+        color: var(--pf-text);
+    }
+
+    .settings-content .text-gray-500,
+    .settings-content .text-gray-600,
+    .settings-content .text-slate-500 {
+        color: var(--pf-muted);
+    }
+
+    .settings-content .text-gray-700,
+    .settings-content .text-gray-800,
+    .settings-content .text-gray-900,
+    .settings-content .text-slate-900 {
+        color: var(--pf-text);
     }
 
     .settings-content .text-xs {
@@ -1318,23 +1450,23 @@
     .settings-content input[type="checkbox"] {
         width: 0.95rem;
         height: 0.95rem;
-        accent-color: #2563eb;
+        accent-color: var(--pf-accent-600);
         cursor: pointer;
     }
 
     .settings-surface {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+        background: var(--pf-surface-alt);
+        border: 1px solid var(--pf-border);
         border-radius: 1rem;
         padding: 1rem;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        box-shadow: 0 2px 10px rgba(2, 6, 23, 0.25);
     }
 
     .settings-table-wrap {
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--pf-border);
         border-radius: 0.9rem;
         overflow: hidden;
-        background: #ffffff;
+        background: var(--pf-surface-alt);
     }
 
     .settings-table-wrap table {
@@ -1342,11 +1474,11 @@
         border-radius: 0 !important;
         box-shadow: none !important;
         margin-bottom: 0 !important;
-        color: #334155 !important;
+        color: var(--pf-text) !important;
     }
 
     .settings-data-row:hover {
-        background: #f8fafc;
+        background: var(--pf-hover);
     }
 
     .settings-icon-btn {
@@ -1836,10 +1968,10 @@ HTML;
         $historyRows = [];
         try {
             $historyRows = $db_adapter->db_query(
-                "SELECT c.operation, c.changed_data, TO_CHAR(c.changed, 'DD.MM.YYYY HH24:MI:SS') AS changed_at, u.username
+                "SELECT c.operation, c.changed_table, c.changed_data, TO_CHAR(c.changed, 'DD.MM.YYYY HH24:MI:SS') AS changed_at, u.username
                  FROM changelog c
                  LEFT JOIN users u ON u.uuid = c.users
-                 WHERE c.changed_table = 'automation_settings'
+                 WHERE c.changed_table IN ('automation_settings', 'script_execution')
                  ORDER BY c.changed DESC
                  LIMIT 30"
             ) ?: [];
@@ -1852,23 +1984,56 @@ HTML;
             $changedAtEscaped = htmlspecialchars((string)($historyRow['changed_at'] ?? ''), ENT_QUOTES, 'UTF-8');
             $usernameEscaped = htmlspecialchars((string)($historyRow['username'] ?? 'unknown'), ENT_QUOTES, 'UTF-8');
             $operationEscaped = htmlspecialchars((string)($historyRow['operation'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $changedTable = (string)($historyRow['changed_table'] ?? '');
 
             $actionText = '';
             $payloadText = '';
+            $scriptContentText = '';
             $decodedChange = json_decode((string)($historyRow['changed_data'] ?? ''), true);
-            if (is_array($decodedChange)) {
-                $actionText = (string)($decodedChange['action'] ?? '');
-                $payloadValue = $decodedChange['payload'] ?? null;
-                if (is_array($payloadValue)) {
-                    $payloadText = json_encode($payloadValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                } else {
-                    $payloadText = is_scalar($payloadValue) ? (string)$payloadValue : '';
+            if ($changedTable === 'script_execution') {
+                if (is_array($decodedChange)) {
+                    $mode = (string)($decodedChange['mode'] ?? 'unknown');
+                    $switchName = (string)($decodedChange['switch'] ?? '');
+                    $profile = (string)($decodedChange['profile'] ?? '');
+                    $template = (string)($decodedChange['template'] ?? '');
+                    $ok = isset($decodedChange['ok']) ? (bool)$decodedChange['ok'] : false;
+                    $warning = isset($decodedChange['warning']) ? (bool)$decodedChange['warning'] : false;
+                    $commandCount = (int)($decodedChange['command_count'] ?? 0);
+                    $resultLabel = $ok ? ($warning ? 'warning' : 'ok') : 'failed';
+
+                    $actionText = 'script_execution/' . $mode;
+                    $payloadText = trim(
+                        'switch=' . $switchName
+                        . ' | profile=' . $profile
+                        . ' | template=' . $template
+                        . ' | commands=' . $commandCount
+                        . ' | result=' . $resultLabel
+                    );
+
+                    $scriptContentText = (string)($decodedChange['script_content'] ?? '');
+                }
+            } else {
+                if (is_array($decodedChange)) {
+                    $actionText = (string)($decodedChange['action'] ?? '');
+                    $payloadValue = $decodedChange['payload'] ?? null;
+                    if (is_array($payloadValue)) {
+                        $payloadText = json_encode($payloadValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    } else {
+                        $payloadText = is_scalar($payloadValue) ? (string)$payloadValue : '';
+                    }
                 }
             }
 
             $actionEscaped = htmlspecialchars($actionText !== '' ? $actionText : '-', ENT_QUOTES, 'UTF-8');
             $payloadEscaped = htmlspecialchars($payloadText !== '' ? mb_substr($payloadText, 0, 280) : '-', ENT_QUOTES, 'UTF-8');
-            $historySearch = strtolower($changedAtEscaped . ' ' . $usernameEscaped . ' ' . $operationEscaped . ' ' . $actionEscaped . ' ' . $payloadEscaped);
+
+            $scriptContentHtml = '';
+            if ($scriptContentText !== '') {
+                $scriptContentEscaped = htmlspecialchars($scriptContentText, ENT_QUOTES, 'UTF-8');
+                $scriptContentHtml = '<details class="mt-1"><summary class="cursor-pointer text-xs text-gray-700">Skriptinhalt</summary><pre class="mt-2 p-2 rounded bg-gray-50 text-xs font-mono whitespace-pre-wrap">' . $scriptContentEscaped . '</pre></details>';
+            }
+
+            $historySearch = strtolower($changedAtEscaped . ' ' . $usernameEscaped . ' ' . $operationEscaped . ' ' . $actionText . ' ' . $payloadText . ' ' . $scriptContentText);
             $historySearchEscaped = htmlspecialchars($historySearch, ENT_QUOTES, 'UTF-8');
 
             $historyRowsHtml .= <<<HTML
@@ -1877,7 +2042,7 @@ HTML;
                     <td class="py-2 px-3 text-sm text-gray-800">{$usernameEscaped}</td>
                     <td class="py-2 px-3 text-sm text-gray-800">{$operationEscaped}</td>
                     <td class="py-2 px-3 text-sm text-gray-800">{$actionEscaped}</td>
-                    <td class="py-2 px-3 text-xs font-mono text-gray-600">{$payloadEscaped}</td>
+                    <td class="py-2 px-3 text-xs font-mono text-gray-600">{$payloadEscaped}{$scriptContentHtml}</td>
                 </tr>
             HTML;
         }
@@ -2362,26 +2527,79 @@ HTML;
         break; 
     case 'appearance':
     default:
+        $csrf = $auth->csrf();
+        $userSettings = getSessionUserSettings();
+        $currentLanguage = (string)($userSettings['language'] ?? 'de-DE');
+        $currentTheme = (string)($userSettings['appearance']['theme'] ?? 'light');
+        $currentFontFamily = (string)($userSettings['appearance']['font_family'] ?? 'jetbrains');
+        $currentFontSize = (string)($userSettings['appearance']['font_size'] ?? 'normal');
+
+        $langDeSelected = $currentLanguage === 'de-DE' ? 'selected' : '';
+        $langEnSelected = ($currentLanguage === 'en-EN' || $currentLanguage === 'en-US') ? 'selected' : '';
+
+        $themeLightSelected = $currentTheme === 'light' ? 'selected' : '';
+        $themeDarkSelected = $currentTheme === 'dark' ? 'selected' : '';
+        $themeContrastSelected = $currentTheme === 'contrast' ? 'selected' : '';
+
+        $fontJetbrainsSelected = $currentFontFamily === 'jetbrains' ? 'selected' : '';
+        $fontSourceSelected = $currentFontFamily === 'source_sans' ? 'selected' : '';
+        $fontFiraSelected = $currentFontFamily === 'fira_sans' ? 'selected' : '';
+
+        $sizeSmallSelected = $currentFontSize === 'small' ? 'selected' : '';
+        $sizeNormalSelected = $currentFontSize === 'normal' ? 'selected' : '';
+        $sizeLargeSelected = $currentFontSize === 'large' ? 'selected' : '';
+
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <div class="h-fit max-w-lg">
-                <div class="text-xl font-bold pb-6">Sprache</div>
-                <form action="?set=language" method="post">
+            <div class="settings-surface max-w-3xl">
+                <div class="text-xl font-bold pb-2">Darstellung</div>
+                <p class="text-sm text-gray-600 pb-6">Farbschema, Schriftart und Schriftgroesse werden in deinem Nutzerprofil gespeichert.</p>
+
+                <form action="?set=appearance_preferences" method="post" class="space-y-5">
+                    <input type="hidden" name="csrf" value="$csrf">
+
                     <div class="pb-6">
-                        <label class="block mb-2" for="language">
+                        <label class="block mb-2 text-sm font-semibold" for="language">
                             Sprache
                         </label>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
-                            <option value="de-DE">Deutsch</option>
-                            <option value="en-EN">English</option>
+                            <option value="de-DE" $langDeSelected>Deutsch</option>
+                            <option value="en-EN" $langEnSelected>English</option>
                         </select>
                     </div>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="theme">Farbschema</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="theme" name="theme">
+                            <option value="light" $themeLightSelected>Lightmode</option>
+                            <option value="dark" $themeDarkSelected>Darkmode</option>
+                            <option value="contrast" $themeContrastSelected>Kontrastmodus</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="font_family">Schriftart</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_family" name="font_family">
+                            <option value="jetbrains" $fontJetbrainsSelected>JetBrains Mono</option>
+                            <option value="source_sans" $fontSourceSelected>Source Sans 3</option>
+                            <option value="fira_sans" $fontFiraSelected>Fira Sans</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="font_size">Schriftgroesse</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_size" name="font_size">
+                            <option value="small" $sizeSmallSelected>Kompakt</option>
+                            <option value="normal" $sizeNormalSelected>Standard</option>
+                            <option value="large" $sizeLargeSelected>Gross</option>
+                        </select>
+                    </div>
+
                     <div class="pb-6 flex justify-between items-center">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Darstellung speichern">
                     </div>
                 </form>
             </div>
-            <p>Farbschema, Schriftart, Schriftgröße</p>
         </div>
         HTML;
         break;

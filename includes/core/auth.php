@@ -453,7 +453,12 @@ class Auth {
                                 // prepare vars for query
                                 $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
                                 $settings = [
-                                    'language' => $language
+                                    'language' => $language,
+                                    'appearance' => [
+                                        'theme' => 'light',
+                                        'font_family' => 'jetbrains',
+                                        'font_size' => 'normal'
+                                    ]
                                 ];
 
                                 LDAP_TRUST ? $this->activation_code = 'activated' : $this->activation_code = $this->random_string(10);
@@ -650,7 +655,12 @@ class Auth {
             $activation_code = $this->random_string(10);
             $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
             $settings = [
-                'language' => $language
+                'language' => $language,
+                'appearance' => [
+                    'theme' => 'light',
+                    'font_family' => 'jetbrains',
+                    'font_size' => 'normal'
+                ]
             ];
             
             // hash password
