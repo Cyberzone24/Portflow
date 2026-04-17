@@ -3107,11 +3107,15 @@ async function loadAttachmentMetadataForRow(rowData) {
     }
 
     try {
-        const query = `?reference_table=${encodeURIComponent(baseTable)}&reference_uuid=${encodeURIComponent(baseUuid)}&limit=50`;
-        const response = await fetch(`<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata${query}`);
+        const response = await fetch(`<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata&search=${encodeURIComponent(baseUuid)}&limit=200`);
         if (response.ok) {
             const payload = await response.json();
-            return (payload && Array.isArray(payload.items)) ? payload.items : [];
+            const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
+            const expectedPrefix = `/data/attachments/${baseTable}/${baseUuid}/`;
+            return items.filter((item) => {
+                const spec = String(item.specification || '');
+                return spec.includes(expectedPrefix);
+            });
         }
     } catch (error) {
         console.error('Fehler beim Laden der Anhänge:', error);
@@ -3250,6 +3254,7 @@ async function buildDetailsPanelContent(panel, rowData) {
             const rowUser = getDisplayValue(entry, ['journal_metadata_users_username', 'metadata_users_username', 'journal_metadata_users', 'metadata_users'], '--');
             const rowDescription = getDisplayValue(entry, ['journal_metadata_description', 'metadata_description'], '');
             const journalUuid = entry.journal_uuid || entry.uuid || '';
+            const journalMetadataUuid = entry.journal_metadata_uuid || entry.metadata_uuid || '';
 
             return `<div class="mt-2 p-2 rounded border border-slate-200 bg-slate-50 text-xs">`
                 + `<div class="itam-details-journal-head">`
@@ -3259,7 +3264,7 @@ async function buildDetailsPanelContent(panel, rowData) {
                 + `<div class="itam-details-journal-meta">${escapeHtml(rowCreated)} | ${escapeHtml(rowUser)}</div>`
                 + (rowDescription !== '--' && rowDescription !== '' ? `<div class="itam-details-journal-body">${escapeHtml(rowDescription)}</div>` : '')
                 + `<div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">`
-                + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #3b82f6; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="openEditJournalModal('${escapeHtml(journalUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Bearbeiten</button>`
+                + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #3b82f6; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="openEditJournalModal('${escapeHtml(journalMetadataUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Bearbeiten</button>`
                 + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #ef4444; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="deleteJournalEntry('${escapeHtml(journalUuid)}')" title="Löschen"><i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Löschen</button>`
                 + `</div>`
                 + `</div>`;
@@ -3656,8 +3661,6 @@ async function submitFileUpload() {
 
                         // Save file URL to metadata
                         const metadataData = {
-                            reference_table: baseTable,
-                            reference_uuid: baseUuid,
                             caption: uploadResult.file_name || 'Attachment',
                             description: description || uploadResult.description || '',
                             specification: uploadResult.file_url
@@ -3758,7 +3761,7 @@ function closeEditJournalModal() {
 
 async function submitEditJournal() {
     if (!currentEditingJournalUuid) {
-        alert('Keine Journal-UUID gefunden.');
+        alert('Keine Journal-Metadaten-UUID gefunden.');
         return;
     }
 
@@ -3766,11 +3769,10 @@ async function submitEditJournal() {
     const description = document.getElementById('editJournalDescription').value.trim();
 
     try {
-        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=journal', {
+        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata&uuid=' + encodeURIComponent(currentEditingJournalUuid), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                uuid: currentEditingJournalUuid,
                 caption: caption,
                 description: description
             })
@@ -3833,11 +3835,10 @@ async function submitEditFile() {
     const description = document.getElementById('editFileDescription').value.trim();
 
     try {
-        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata', {
+        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata&uuid=' + encodeURIComponent(currentEditingMetadataUuid), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                uuid: currentEditingMetadataUuid,
                 description: description
             })
         });

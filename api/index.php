@@ -120,12 +120,17 @@ class API {
         // check media types
         $this->checkMediaTypes($this->allowedContentTypes, $this->allowedAcceptTypes);
 
-        // Parse the request URI
-        $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
-        $requestUri = explode('/', explode('/api', $requestUri)[1] ?? $requestUri);
+        // Parse resource and uuid.
+        // Support both query style (/api/?table=metadata&uuid=...) and path style (/api/metadata/<uuid>).
+        $resource = $_GET['table'] ?? NULL;
+        $uuid = $_GET['uuid'] ?? NULL;
 
-        $resource = $requestUri[1] ?? NULL;
-        $uuid = $requestUri[2] ?? NULL;
+        if (!$resource) {
+            $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
+            $requestUri = explode('/', explode('/api', $requestUri)[1] ?? $requestUri);
+            $resource = $requestUri[1] ?? NULL;
+            $uuid = $requestUri[2] ?? NULL;
+        }
 
         $this->logger->log("Request URI: {$resource}", 0);
 
@@ -232,6 +237,12 @@ class API {
                 return;
         }
 
+            // Remove routing control parameters from payload/filter data.
+            // They are used to resolve resource/uuid and must not be treated as table columns.
+            if (is_array($data)) {
+                unset($data['table'], $data['uuid']);
+            }
+
         // Sanitize data
         $data = array_filter(array_map(function($value) {
             if (is_string($value)) {
@@ -291,15 +302,22 @@ class API {
             $page = $data['page'] ?? 1;
             $offset = ($page - 1) * $limit;
 
+            // Resolve available columns for the target table/view and ignore unknown filter keys.
+            $columns = $this->dbAdapter->db_query(
+                "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'"
+            );
+            $validColumns = array_map(static function($column) {
+                return $column['column_name'];
+            }, $columns);
+            $validColumnSet = array_flip($validColumns);
+
             // Initialisiere Bedingungsliste
             $conditions = [];
 
             // Überprüfe auf Suchparameter
             if (isset($data['search']) && !empty($data['search'])) {
-                // Tabellenspalten abfragen
-                $columns = $this->dbAdapter->db_query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'");
                 $textColumns = array_filter($columns, function($column) {
-                    return in_array($column['data_type'], ['character varying', 'inet', 'smallserial']);
+                    return in_array($column['data_type'], ['character varying', 'text', 'inet', 'smallserial']);
                 });
                 // Bedingung für die Suchabfrage erstellen
                 $searchConditions = [];
@@ -319,9 +337,15 @@ class API {
                     // Überprüfe auf Vergleichsparameter
                     if (preg_match('/^(.*?)(Min|Max)$/', $key, $matches)) {
                         $column = $matches[1];
+                        if (!isset($validColumnSet[$column])) {
+                            continue;
+                        }
                         $operator = ($matches[2] === 'Min') ? '>' : '<';
                         $conditions[] = "$column $operator '{$value}'";
                     } else {
+                        if (!isset($validColumnSet[$key])) {
+                            continue;
+                        }
                         // Standardgleichheitsbedingung
                         $conditions[] = "$key = '{$value}'";
                     }
