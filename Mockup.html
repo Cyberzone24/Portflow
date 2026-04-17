@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portflow Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="./includes/js/lucide.min.js"></script>
+  <style>
+    :root {
+      --app-bg: #f3f4f6;
+      --app-surface: #ffffff;
+      --app-surface-2: #eef2f7;
+      --app-border: #d6dde8;
+      --app-text: #0f172a;
+      --app-muted: #64748b;
+      --app-primary: #2563eb;
+      --app-success: #22c55e;
+      --app-warning: #f59e0b;
+      --app-danger: #ef4444;
+      --app-gray: #94a3b8;
+      --app-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --app-radius: 18px;
+      --app-font: 'Inter', sans-serif;
+      --app-font-size: 16px;
+    }
+
+    html[data-theme="dark"] {
+      --app-bg: #080b12;
+      --app-surface: #0e1522;
+      --app-surface-2: #131c2c;
+      --app-border: #243041;
+      --app-text: #f4f7fb;
+      --app-muted: #c2cad6;
+      --app-primary: #5b8cff;
+      --app-success: #4ade80;
+      --app-warning: #fbbf24;
+      --app-danger: #f87171;
+      --app-gray: #c2cad6;
+      --app-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+    }
+
+    html[data-font="mono"] {
+      --app-font: 'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--app-bg);
+      color: var(--app-text);
+      font-family: var(--app-font);
+    }
+
+    html {
+      font-size: var(--app-font-size);
+    }
+
+    .app-shell {
+      color: var(--app-text);
+    }
+
+    .top-shell {
+      position: relative;
+    }
+
+    .theme-control,
+    .font-control,
+    .size-control {
+      appearance: none;
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      color: var(--app-text);
+      border-radius: 9999px;
+      padding: 0.55rem 0.95rem;
+      font-size: 0.875rem;
+      line-height: 1.25;
+    }
+
+    .field-control {
+      appearance: none;
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      color: var(--app-text);
+      border-radius: 9999px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .field-control::placeholder {
+      color: var(--app-muted);
+    }
+
+    .surface {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius);
+      box-shadow: var(--app-shadow);
+    }
+
+    .surface-soft {
+      background: var(--app-surface-2);
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius);
+    }
+
+    .portflow-text {
+      font-family: var(--app-font);
+      font-size: var(--app-font-size);
+      line-height: 1.55;
+    }
+
+    .portflow-h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .portflow-h2 {
+      font-size: 1.125rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .portflow-small {
+      font-size: 0.875rem;
+      color: var(--app-muted);
+      line-height: 1.45;
+    }
+
+    .muted-text {
+      color: var(--app-muted);
+    }
+
+    .chip-soft {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 9999px;
+      border: 1px solid var(--app-border);
+      background: var(--app-surface);
+      color: var(--app-muted);
+    }
+
+    .nav-pill {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      color: var(--app-text);
+      border-radius: 9999px;
+      transition: 150ms ease;
+    }
+
+    .nav-pill.active {
+      background: var(--app-primary);
+      color: white;
+      border-color: transparent;
+    }
+
+    .sidebar-shell {
+      width: 15.5rem;
+      transition: width 180ms ease, transform 180ms ease;
+      overflow: hidden;
+    }
+
+    .sidebar-shell.collapsed {
+      width: 4.75rem;
+    }
+
+    .sidebar-shell.collapsed .sidebar-label,
+    .sidebar-shell.collapsed .sidebar-copy,
+    .sidebar-shell.collapsed .sidebar-subnav,
+    .sidebar-shell.collapsed .sidebar-kpi-label {
+      display: none;
+    }
+
+    .sidebar-shell.collapsed .sidebar-item {
+      justify-content: center;
+      gap: 0;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+      min-height: 3rem;
+    }
+
+    .sidebar-shell.collapsed .sidebar-item > span {
+      width: 100%;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .sidebar-shell.collapsed .sidebar-item i[data-lucide] {
+      margin-right: 0;
+      width: 1.35rem;
+      height: 1.35rem;
+      flex-shrink: 0;
+    }
+
+    .sidebar-shell.collapsed .kpi {
+      padding: 0.75rem 0.5rem;
+    }
+
+    .sidebar-shell.collapsed .kpi > .flex {
+      justify-content: center;
+    }
+
+    .sidebar-shell.collapsed .kpi .status-icon {
+      margin: 0 auto;
+    }
+
+    .layout-main {
+      grid-template-columns: minmax(72px, 15.5rem) minmax(0, 1fr);
+      transition: grid-template-columns 180ms ease;
+    }
+
+    .layout-main.sidebar-collapsed {
+      grid-template-columns: 4.75rem minmax(0, 1fr);
+    }
+
+    .sidebar-drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      background: rgba(15, 23, 42, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease;
+    }
+
+    .sidebar-drawer.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sidebar-panel-mobile {
+      width: min(92vw, 20rem);
+      height: 100%;
+      background: var(--app-surface);
+      border-right: 1px solid var(--app-border);
+      transform: translateX(-100%);
+      transition: transform 180ms ease;
+    }
+
+    .sidebar-panel-mobile .nav-pill {
+      padding: 0.9rem 1.05rem;
+      font-size: 1.04rem;
+      line-height: 1.35;
+    }
+
+    .mobile-nav-stack {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .mobile-nav-section {
+      margin-top: 0.6rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--app-border);
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .sidebar-drawer.open .sidebar-panel-mobile {
+      transform: translateX(0);
+    }
+
+    .icon-btn {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 9999px;
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: 150ms ease;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.15);
+    }
+
+    .icon-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-blue { background: #3b82f6; }
+    .btn-blue:hover { background: #2563eb; }
+    .btn-green { background: #22c55e; }
+    .btn-green:hover { background: #16a34a; }
+    .btn-orange { background: #f59e0b; }
+    .btn-orange:hover { background: #d97706; }
+    .btn-red { background: #ef4444; }
+    .btn-red:hover { background: #dc2626; }
+    .btn-gray { background: #94a3b8; }
+    .btn-gray:hover { background: #64748b; }
+
+    .status-dot {
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 9999px;
+      display: inline-block;
+    }
+
+    .tooltip {
+      position: relative;
+    }
+
+    .tooltip:hover::after {
+      content: attr(title);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 10px);
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.96);
+      color: white;
+      padding: 0.35rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      z-index: 50;
+    }
+
+    .table-shell {
+      border-radius: var(--app-radius);
+      overflow: hidden;
+      border: 1px solid var(--app-border);
+      background: var(--app-surface);
+    }
+
+    .table-shell thead th {
+      background: var(--app-surface-2);
+      color: var(--app-text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .table-shell table,
+    .table-shell th,
+    .table-shell td {
+      font-size: inherit;
+    }
+
+    .status-icon {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+    }
+
+    .status-icon svg {
+      stroke-width: 2.25;
+    }
+
+    .status-green { color: var(--app-success); }
+    .status-orange { color: var(--app-warning); }
+    .status-red { color: var(--app-danger); }
+    .status-blue { color: var(--app-primary); }
+    .status-gray { color: var(--app-gray); }
+
+    .kpi {
+      background: linear-gradient(135deg, rgba(91, 140, 255, 0.09), rgba(34, 197, 94, 0.08));
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius);
+    }
+
+    .toolbar-row {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: center;
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    .toolbar-search {
+      width: 100%;
+      max-width: 48rem;
+      min-width: 0;
+    }
+
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0.75rem;
+    }
+
+    .mobile-header-row {
+      display: none;
+    }
+
+    @media (min-width: 1025px) {
+      .toolbar-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .toolbar-right {
+        justify-content: flex-end;
+      }
+    }
+
+    @media (max-width: 1024px) {
+      header {
+        margin: 0.5rem;
+        padding: 0.75rem 1rem;
+      }
+
+      .brand-logo {
+        height: 2.5rem;
+      }
+
+      .header-nav .nav-pill {
+        padding: 0.45rem 0.85rem;
+        font-size: 0.875rem;
+      }
+
+      .header-nav .icon-btn {
+        width: 2.25rem;
+        height: 2.25rem;
+      }
+
+      .desktop-header-row {
+        display: none;
+      }
+
+      .mobile-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
+      .mobile-header-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .sidebar-panel-mobile {
+        width: min(94vw, 22rem);
+      }
+
+      .sidebar-shell {
+        width: 100%;
+      }
+
+      .layout-main,
+      .layout-main.sidebar-collapsed {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .toolbar-left {
+        flex-wrap: wrap;
+      }
+
+      .toolbar-search {
+        order: 1;
+      }
+
+      .toolbar-left > .icon-btn {
+        order: 2;
+      }
+
+      .toolbar-right {
+        justify-content: flex-start;
+      }
+
+      .portflow-h1 {
+        font-size: 1.25rem;
+      }
+
+      .portflow-h2 {
+        font-size: 1rem;
+      }
+
+      .portflow-small {
+        font-size: 0.8rem;
+      }
+
+      .field-control {
+        min-height: 2.8rem;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="app-shell min-h-screen flex flex-col top-shell">
+    <header class="surface m-3 md:m-4 px-4 md:px-6 py-3 relative">
+      <div class="mobile-header-row lg:hidden">
+        <img src="./includes/img/portflow.png" alt="Portflow" class="brand-logo h-10 w-auto shrink-0">
+        <div class="mobile-header-actions">
+          <button id="mobileMenuButton" class="icon-btn btn-gray tooltip shrink-0" title="Menue oeffnen"><i data-lucide="menu"></i></button>
+        </div>
+      </div>
+
+      <div class="desktop-header-row hidden lg:grid lg:grid-cols-[1fr_auto_1fr] gap-3 lg:items-center">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <img src="./includes/img/portflow.png" alt="Portflow" class="brand-logo h-10 w-auto shrink-0">
+          </div>
+        </div>
+
+        <nav class="header-nav hidden lg:flex items-center justify-center gap-2 md:gap-3 py-1 lg:py-0 lg:overflow-visible">
+          <a class="nav-pill active px-4 py-2 font-semibold whitespace-nowrap" href="#">ITAM</a>
+          <a class="nav-pill px-4 py-2 font-semibold whitespace-nowrap" href="#">Automation</a>
+          <a class="nav-pill px-4 py-2 font-semibold whitespace-nowrap" href="#">Portview</a>
+          <select id="themeSelect" class="theme-control hidden lg:inline-flex" title="Theme wechseln">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="contrast">Contrast</option>
+          </select>
+          <select id="fontSelect" class="font-control hidden lg:inline-flex" title="Schriftart wechseln">
+            <option value="inter">Inter</option>
+            <option value="mono">JetBrains Mono</option>
+          </select>
+          <select id="sizeSelect" class="size-control hidden lg:inline-flex" title="Schriftgroesse wechseln">
+            <option value="15px">S</option>
+            <option value="16px" selected>M</option>
+            <option value="17px">L</option>
+          </select>
+        </nav>
+
+        <div class="hidden lg:flex items-center gap-2 md:gap-3 lg:justify-end">
+          <button class="icon-btn btn-blue tooltip" title="Einstellungen"><i data-lucide="settings"></i></button>
+          <button class="icon-btn btn-gray tooltip" title="Logout"><i data-lucide="log-out"></i></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="sidebar-drawer lg:hidden" id="sidebarDrawer">
+      <aside class="sidebar-panel-mobile p-4 md:p-5 overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <div class="portflow-h2">Navigation</div>
+            <div class="portflow-small">Module und Unterpunkte</div>
+          </div>
+          <button class="icon-btn btn-gray tooltip" id="mobileMenuClose" title="Schliessen"><i data-lucide="x"></i></button>
+        </div>
+        <div class="mobile-nav-stack">
+          <button class="w-full nav-pill active px-4 py-3 text-left flex items-center justify-between" title="ITAM starten">
+            <span>ITAM</span><i data-lucide="grid-2x2"></i>
+          </button>
+          <button class="w-full nav-pill px-4 py-3 text-left flex items-center justify-between" title="Automation starten">
+            <span>Automation</span><i data-lucide="bot"></i>
+          </button>
+          <button class="w-full nav-pill px-4 py-3 text-left flex items-center justify-between" title="Port View starten">
+            <span>Portview</span><i data-lucide="monitor-dot"></i>
+          </button>
+          <div class="mobile-nav-section">
+            <button class="w-full nav-pill px-4 py-3 text-left flex items-center justify-between" title="Einstellungen">
+              <span>Einstellungen</span><i data-lucide="settings"></i>
+            </button>
+            <button class="w-full nav-pill px-4 py-3 text-left flex items-center justify-between" title="Logout">
+              <span>Logout</span><i data-lucide="log-out"></i>
+            </button>
+          </div>
+          <div class="mobile-nav-section">
+            <button class="w-full nav-pill active px-4 py-3 text-left flex items-center justify-between mb-2" title="Aktiver Unterpunkt">
+              <span>Locations</span><i data-lucide="chevron-right"></i>
+            </button>
+            <button class="w-full nav-pill px-4 py-3 text-left flex items-center justify-between" title="Weitere Unterpunkte">
+              <span>Devices</span><i data-lucide="chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <main id="mainLayout" class="layout-main flex-1 px-3 md:px-4 pb-4 grid gap-4 items-stretch">
+      <aside id="desktopSidebar" class="surface sidebar-shell hidden lg:flex flex-col p-4 md:p-5 sticky top-4 self-stretch min-h-[calc(100vh-8.5rem)]">
+        <div class="flex items-start justify-between gap-3 mb-4">
+          <div class="sidebar-copy">
+            <div class="portflow-h2 mb-1">ITAM Navigation</div>
+            <div class="portflow-small">Schneller Wechsel zwischen den Bereichen.</div>
+          </div>
+          <button id="toggleSidebarButton" class="icon-btn btn-gray tooltip flex-shrink-0" title="Leiste verkleinern"><i data-lucide="panel-left"></i></button>
+        </div>
+
+        <div class="space-y-2">
+          <button class="sidebar-item w-full nav-pill active px-4 py-3 text-left flex items-center justify-between tooltip" title="Aktuelle Seite: Locations">
+            <span class="flex items-center gap-3"><i data-lucide="map-pin"></i><span class="sidebar-label">Locations</span></span>
+            <i class="sidebar-label" data-lucide="chevron-right"></i>
+          </button>
+          <button class="sidebar-item w-full nav-pill px-4 py-3 text-left flex items-center justify-between tooltip" title="Gebaeude, Raeume und Racks">
+            <span class="flex items-center gap-3"><i data-lucide="network"></i><span class="sidebar-label">IPAM</span></span>
+            <i class="sidebar-label" data-lucide="chevron-right"></i>
+          </button>
+          <button class="sidebar-item w-full nav-pill px-4 py-3 text-left flex items-center justify-between tooltip" title="VLANs und Zuordnungen">
+            <span class="flex items-center gap-3"><i data-lucide="server"></i><span class="sidebar-label">Devices</span></span>
+            <i class="sidebar-label" data-lucide="chevron-right"></i>
+          </button>
+          <button class="sidebar-item w-full nav-pill px-4 py-3 text-left flex items-center justify-between tooltip" title="Ports und Verbindungen">
+            <span class="flex items-center gap-3"><i data-lucide="link-2"></i><span class="sidebar-label">Connections</span></span>
+            <i class="sidebar-label" data-lucide="chevron-right"></i>
+          </button>
+        </div>
+
+        <div class="mt-5 p-4 kpi mt-auto">
+          <div class="portflow-small sidebar-kpi-label">Status</div>
+          <div class="flex items-center justify-between mt-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="status-icon status-green" title="Aktiv"><i data-lucide="check"></i></span>
+              <span class="font-semibold sidebar-kpi-label">Aktiv</span>
+            </div>
+            <span class="text-sm text-gray-600 sidebar-kpi-label" title="12 aktive Eintraege">12</span>
+          </div>
+          <div class="flex items-center justify-between mt-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="status-icon status-orange" title="Hinweis"><i data-lucide="info"></i></span>
+              <span class="font-semibold sidebar-kpi-label">Hinweis</span>
+            </div>
+            <span class="text-sm text-gray-600 sidebar-kpi-label" title="3 offene Hinweise">3</span>
+          </div>
+          <div class="flex items-center justify-between mt-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="status-icon status-red" title="Fehler"><i data-lucide="alert-triangle"></i></span>
+              <span class="font-semibold sidebar-kpi-label">Fehler</span>
+            </div>
+            <span class="text-sm text-gray-600 sidebar-kpi-label" title="1 kritischer Punkt">1</span>
+          </div>
+        </div>
+      </aside>
+
+      <section class="surface p-4 md:p-5 flex flex-col gap-5 min-w-0 min-h-[calc(100vh-8.5rem)]">
+        <div>
+          <div class="portflow-h1">IT Asset Management</div>
+          <div class="portflow-small">Kurze Erklaerung: Hier werden Locations, Devices, Ports und Verbindungen schnell erfasst und gepflegt.</div>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="toolbar-left">
+            <div class="toolbar-search relative">
+              <input class="field-control w-full px-4 py-3 pr-12" placeholder="Suchen ..." title="Suche in den sichtbaren Daten">
+              <button class="absolute right-1 top-1 icon-btn btn-blue tooltip" title="Suche ausfuehren"><i data-lucide="search"></i></button>
+            </div>
+            <button class="icon-btn btn-green tooltip" title="Neu anlegen"><i data-lucide="plus"></i></button>
+          </div>
+          <div class="toolbar-right">
+            <span class="portflow-small">Anzahl</span>
+            <select class="field-control px-4 py-2" title="Datensatze pro Seite">
+              <option>50</option>
+              <option selected>100</option>
+              <option>500</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-shell overflow-hidden hidden md:block max-h-[42vh] xl:max-h-[52vh] overflow-y-auto">
+          <table class="w-full text-left">
+            <thead class="sticky top-0 z-10">
+              <tr>
+                <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3">Titel</th>
+                <th class="px-4 py-3">Tags</th>
+                <th class="px-4 py-3">Raum</th>
+                <th class="px-4 py-3">Gerät</th>
+                <th class="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-t border-[color:var(--app-border)]">
+                <td class="px-4 py-4">
+                  <span class="status-icon status-green" title="Aktiv / Netzport"><i data-lucide="ethernet-port"></i></span>
+                </td>
+                <td class="px-4 py-4 font-semibold">1.4/I.05</td>
+                <td class="px-4 py-4 muted-text">--</td>
+                <td class="px-4 py-4 muted-text">1.4/I</td>
+                <td class="px-4 py-4 muted-text">Switch</td>
+                <td class="px-4 py-4">
+                  <div class="flex items-center gap-2">
+                    <button class="icon-btn btn-orange tooltip" title="Bearbeiten"><i data-lucide="pencil"></i></button>
+                    <button class="icon-btn btn-blue tooltip" title="Details anzeigen"><i data-lucide="info"></i></button>
+                    <button class="icon-btn btn-red tooltip" title="Loeschen"><i data-lucide="trash-2"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="border-t border-[color:var(--app-border)]">
+                <td class="px-4 py-4">
+                  <span class="status-icon status-orange" title="Hinweis / Netzport"><i data-lucide="ethernet-port"></i></span>
+                </td>
+                <td class="px-4 py-4 font-semibold">1.4/I.06</td>
+                <td class="px-4 py-4 muted-text">Audit</td>
+                <td class="px-4 py-4 muted-text">1.4/I</td>
+                <td class="px-4 py-4 muted-text">Patch Panel</td>
+                <td class="px-4 py-4">
+                  <div class="flex items-center gap-2">
+                    <button class="icon-btn btn-orange tooltip" title="Bearbeiten"><i data-lucide="pencil"></i></button>
+                    <button class="icon-btn btn-blue tooltip" title="Details anzeigen"><i data-lucide="info"></i></button>
+                    <button class="icon-btn btn-red tooltip" title="Loeschen"><i data-lucide="trash-2"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="md:hidden space-y-3">
+          <div class="surface-soft p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-lg font-bold">1.4/I.05</div>
+                <div class="portflow-small">1.4/I · Switch</div>
+              </div>
+              <span class="status-icon status-green" title="Aktiv / Netzport"><i data-lucide="ethernet-port"></i></span>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <span class="chip-soft px-3 py-1">#Tag</span>
+              <span class="chip-soft px-3 py-1">Port</span>
+            </div>
+            <div class="mt-4 flex items-center gap-2 flex-wrap">
+              <button class="icon-btn btn-orange tooltip" title="Bearbeiten"><i data-lucide="pencil"></i></button>
+              <button class="icon-btn btn-blue tooltip" title="Details anzeigen"><i data-lucide="info"></i></button>
+              <button class="icon-btn btn-red tooltip" title="Loeschen"><i data-lucide="trash-2"></i></button>
+            </div>
+          </div>
+          <div class="surface-soft p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-lg font-bold">1.4/I.06</div>
+                <div class="portflow-small">1.4/I · Patch Panel</div>
+              </div>
+              <span class="status-icon status-orange" title="Hinweis / Netzport"><i data-lucide="ethernet-port"></i></span>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <span class="chip-soft px-3 py-1">Audit</span>
+              <span class="chip-soft px-3 py-1">Patch</span>
+            </div>
+            <div class="mt-4 flex items-center gap-2 flex-wrap">
+              <button class="icon-btn btn-orange tooltip" title="Bearbeiten"><i data-lucide="pencil"></i></button>
+              <button class="icon-btn btn-blue tooltip" title="Details anzeigen"><i data-lucide="info"></i></button>
+              <button class="icon-btn btn-red tooltip" title="Loeschen"><i data-lucide="trash-2"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="surface-soft p-4">
+            <div class="portflow-h2 mb-1">Automation</div>
+            <div class="portflow-small mb-4">Kurze Erklaerung: Vorlagen pruefen, anpassen und gezielt ausfuehren oder in die Warteschlange legen.</div>
+            <div class="flex flex-wrap gap-2 mb-4">
+              <button class="nav-pill active px-4 py-2 font-semibold">Automation</button>
+              <button class="nav-pill px-4 py-2 font-semibold">Warteschlange <span class="ml-2 inline-flex items-center rounded-full bg-orange-400 px-2 py-0.5 text-white text-xs">4</span></button>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button class="px-4 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold flex items-center gap-2" title="Ausfuehren"><i data-lucide="play"></i> Sofort ausfuehren</button>
+              <button class="px-4 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold flex items-center gap-2" title="Zur Warteschlange hinzufuegen"><i data-lucide="inbox"></i> Zu Warteschlange</button>
+            </div>
+          </div>
+
+          <div class="surface-soft p-4">
+            <div class="portflow-h2 mb-1">Settings / Zugangsverwaltung</div>
+            <div class="portflow-small mb-4">Kurze Erklaerung: Benutzer, Rollen, Rechte und Audit-Historie verwalten.</div>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold">Read</span>
+                <button class="icon-btn btn-green tooltip" title="Lesen aktiv"><i data-lucide="check"></i></button>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold">Write</span>
+                <button class="icon-btn btn-orange tooltip" title="Schreiben aktiv"><i data-lucide="pen-line"></i></button>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold">Execute</span>
+                <button class="icon-btn btn-blue tooltip" title="Ausfuehren aktiv"><i data-lucide="rocket"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      lucide.createIcons();
+
+      var sidebar = document.getElementById('desktopSidebar');
+      var mainLayout = document.getElementById('mainLayout');
+      var drawer = document.getElementById('sidebarDrawer');
+      var toggleButton = document.getElementById('toggleSidebarButton');
+      var mobileButton = document.getElementById('mobileMenuButton');
+      var mobileClose = document.getElementById('mobileMenuClose');
+      var themeSelect = document.getElementById('themeSelect');
+      var fontSelect = document.getElementById('fontSelect');
+      var sizeSelect = document.getElementById('sizeSelect');
+
+      function setCollapsed(collapsed) {
+        if (!sidebar || !toggleButton) {
+          return;
+        }
+
+        sidebar.classList.toggle('collapsed', collapsed);
+        if (mainLayout) {
+          mainLayout.classList.toggle('sidebar-collapsed', collapsed);
+        }
+        toggleButton.innerHTML = collapsed
+          ? '<i data-lucide="panel-right"></i>'
+          : '<i data-lucide="panel-left"></i>';
+        toggleButton.setAttribute('title', collapsed ? 'Leiste vergroessern' : 'Leiste verkleinern');
+        lucide.createIcons();
+      }
+
+      function openDrawer(open) {
+        if (!drawer) {
+          return;
+        }
+
+        drawer.classList.toggle('open', open);
+        document.body.style.overflow = open ? 'hidden' : '';
+      }
+
+      function applyTheme(value) {
+        document.documentElement.setAttribute('data-theme', value === 'contrast' ? 'dark' : value);
+
+        if (value === 'contrast') {
+          document.documentElement.style.setProperty('--app-bg', '#000000');
+          document.documentElement.style.setProperty('--app-surface', '#111111');
+          document.documentElement.style.setProperty('--app-surface-2', '#191919');
+          document.documentElement.style.setProperty('--app-border', '#525252');
+          document.documentElement.style.setProperty('--app-text', '#ffffff');
+          document.documentElement.style.setProperty('--app-muted', '#d4d4d8');
+          document.documentElement.style.setProperty('--app-primary', '#f59e0b');
+          document.documentElement.style.setProperty('--app-success', '#4ade80');
+          document.documentElement.style.setProperty('--app-warning', '#fbbf24');
+          document.documentElement.style.setProperty('--app-danger', '#f87171');
+          document.documentElement.style.setProperty('--app-gray', '#94a3b8');
+        } else {
+          document.documentElement.style.removeProperty('--app-bg');
+          document.documentElement.style.removeProperty('--app-surface');
+          document.documentElement.style.removeProperty('--app-surface-2');
+          document.documentElement.style.removeProperty('--app-border');
+          document.documentElement.style.removeProperty('--app-text');
+          document.documentElement.style.removeProperty('--app-muted');
+          document.documentElement.style.removeProperty('--app-primary');
+          document.documentElement.style.removeProperty('--app-success');
+          document.documentElement.style.removeProperty('--app-warning');
+          document.documentElement.style.removeProperty('--app-danger');
+          document.documentElement.style.removeProperty('--app-gray');
+        }
+      }
+
+      function applyFont(value) {
+        if (value === 'mono') {
+          document.documentElement.setAttribute('data-font', 'mono');
+        } else {
+          document.documentElement.removeAttribute('data-font');
+        }
+      }
+
+      function applySize(value) {
+        document.documentElement.style.setProperty('--app-font-size', value);
+      }
+
+      if (toggleButton) {
+        toggleButton.addEventListener('click', function() {
+          setCollapsed(!sidebar.classList.contains('collapsed'));
+        });
+      }
+
+      if (mobileButton) {
+        mobileButton.addEventListener('click', function() {
+          openDrawer(true);
+        });
+      }
+
+      if (mobileClose) {
+        mobileClose.addEventListener('click', function() {
+          openDrawer(false);
+        });
+      }
+
+      if (drawer) {
+        drawer.addEventListener('click', function(event) {
+          if (event.target === drawer) {
+            openDrawer(false);
+          }
+        });
+      }
+
+      if (themeSelect) {
+        themeSelect.addEventListener('change', function() {
+          applyTheme(this.value);
+        });
+      }
+
+      if (fontSelect) {
+        fontSelect.addEventListener('change', function() {
+          applyFont(this.value);
+        });
+      }
+
+      if (sizeSelect) {
+        sizeSelect.addEventListener('change', function() {
+          applySize(this.value);
+        });
+      }
+
+      applyTheme('light');
+      applyFont('inter');
+      applySize('16px');
+    });
+  </script>
+</body>
+</html>

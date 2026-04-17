@@ -59,8 +59,13 @@
         ],
         "commands": [
             "interface {{interface}}",
+            "undo shutdown",
             "port link-type access",
             "port default vlan {{vlan_id}}",
+            "loopback-detect enable",
+            "loopback-detect action error-down",
+            "loopback-detect vlan {{vlan_id}}",
+            "dhcp snooping enable",
             "quit"
         ]
         },

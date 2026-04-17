@@ -517,6 +517,82 @@
                 $logger->log('account deactivated', 1, echoToWeb: true);
                 header('Location: ?site=access');
                 break;
+            case 'update_account':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for account update', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $uuid = trim((string)($_POST['uuid'] ?? ''));
+                $username = trim((string)($_POST['username'] ?? ''));
+                $email = trim((string)($_POST['email'] ?? ''));
+                $roleUuid = trim((string)($_POST['role'] ?? ''));
+
+                if ($uuid === '' || $username === '' || $email === '' || $roleUuid === '') {
+                    $logger->log('account update missing required fields', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                if (mb_strlen($username) < 2 || mb_strlen($username) > 255) {
+                    $logger->log('account update invalid username length', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $logger->log('account update invalid email', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $existingRole = $db_adapter->db_query("SELECT uuid FROM role WHERE uuid = :uuid LIMIT 1", ['uuid' => $roleUuid]);
+                if (empty($existingRole)) {
+                    $logger->log('account update invalid role uuid', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $existingUsername = $db_adapter->db_query(
+                    "SELECT uuid FROM users WHERE username = :username AND uuid <> :uuid LIMIT 1",
+                    ['username' => $username, 'uuid' => $uuid]
+                );
+                if (!empty($existingUsername)) {
+                    $logger->log('account update failed: username already exists', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $existingEmail = $db_adapter->db_query(
+                    "SELECT uuid FROM users WHERE email = :email AND uuid <> :uuid LIMIT 1",
+                    ['email' => $email, 'uuid' => $uuid]
+                );
+                if (!empty($existingEmail)) {
+                    $logger->log('account update failed: email already exists', 2, echoToWeb: true);
+                    header('Location: ?site=access');
+                    die();
+                }
+
+                $db_adapter->db_query(
+                    "UPDATE users SET username = :username, email = :email, role = :role, changed = NOW() WHERE uuid = :uuid",
+                    [
+                        'username' => $username,
+                        'email' => $email,
+                        'role' => $roleUuid,
+                        'uuid' => $uuid
+                    ]
+                );
+
+                $logger->log('account updated: ' . $uuid, 1, echoToWeb: true);
+                header('Location: ?site=access');
+                break;
             case 'update_access_right':
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -532,7 +608,21 @@
 
                 $roleUuid = trim((string)($_POST['role_uuid'] ?? ''));
                 $resource = trim((string)($_POST['resource'] ?? ''));
-                $accessRight = (int)($_POST['access_right'] ?? -1);
+                $accessRight = -1;
+                if (isset($_POST['access_right']) && is_numeric($_POST['access_right'])) {
+                    $accessRight = (int)$_POST['access_right'];
+                } else {
+                    $accessRight = 0;
+                    if (isset($_POST['access_read'])) {
+                        $accessRight += 4;
+                    }
+                    if (isset($_POST['access_write'])) {
+                        $accessRight += 2;
+                    }
+                    if (isset($_POST['access_execute'])) {
+                        $accessRight += 1;
+                    }
+                }
 
                 if ($roleUuid === '' || $resource === '') {
                     $logger->log('access right update missing role or resource', 2, echoToWeb: true);
@@ -1018,7 +1108,7 @@
                 die();
             }
     // get
-    } elseif ($_SERVER['REQUEST_METHOD'] == 'GET' && $get == 'details') {
+    } elseif ($_SERVER['REQUEST_METHOD'] == 'GET' && in_array((string)$get, ['details', 'changelog_details'], true)) {
         $uuid = $_GET['uuid'] ?? null;
 
         // check if user is admin
@@ -1035,10 +1125,26 @@
             die();
         }
 
-        // get details
-        $query = "SELECT * FROM users WHERE uuid = :uuid";
-        $result = $db_adapter->db_query($query, ['uuid' => $uuid]);
-        $result = !empty($result) ? $result[0] : null;
+        if ($get === 'details') {
+            $query = "SELECT * FROM users WHERE uuid = :uuid";
+            $result = $db_adapter->db_query($query, ['uuid' => $uuid]);
+            $result = !empty($result) ? $result[0] : null;
+        } else {
+            $query = "SELECT c.uuid,
+                             c.operation,
+                             c.changed_table,
+                             c.changed_row,
+                             c.changed_data,
+                             c.users,
+                             u.username,
+                             TO_CHAR(c.changed, 'YYYY-MM-DD HH24:MI:SS') AS changed_at
+                      FROM changelog c
+                      LEFT JOIN users u ON u.uuid = c.users
+                      WHERE c.uuid = :uuid
+                      LIMIT 1";
+            $result = $db_adapter->db_query($query, ['uuid' => $uuid]);
+            $result = !empty($result) ? $result[0] : null;
+        }
 
         if (!empty($result)) {
             echo json_encode($result);
@@ -1062,6 +1168,7 @@
             <?php echo ($role == 'admin') ? '<a href="?site=configuration"><li class="bg-white py-2 px-4 ' . ($site == 'configuration' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
             <?php echo ($role == 'admin') ? '<a href="?site=scripts"><li class="bg-white py-2 px-4 ' . ($site == 'scripts' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
             <?php echo ($role == 'admin') ? '<a href="?site=access"><li class="bg-white py-2 px-4 ' . ($site == 'access' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a href="?site=changelog"><li class="bg-white py-2 px-4 ' . ($site == 'changelog' ? 'rounded-l-lg pr-0' : 'rounded-lg mr-4') . '">Changelog</li></a>' : ''; ?>
         </ul>
     </div>
     <div class="h-full basis-5/6 flex bg-white rounded-lg relative overflow-y-scroll">
@@ -1196,6 +1303,9 @@ switch ($site) {
 
         echo '<div class="h-fit w-full p-4">';
 
+        $csrf = $auth->csrf();
+        $allRoleRows = $db_adapter->db_query("SELECT uuid, caption, description FROM role ORDER BY caption") ?: [];
+
         $query = "SELECT users.uuid, users.username, users.email, role.caption AS role, users.login_provider, users.ip_address, CASE WHEN users.activation_code = 'activated' THEN 'activated' ELSE 'deactivated' END AS activation_code, TO_CHAR (users.last_login, 'HH24:MI DD.MM.YYYY') AS last_login, TO_CHAR (users.created, 'HH24:MI DD.MM.YYYY') AS created FROM users INNER JOIN role ON users.role = role.uuid";
         $results = $db_adapter->db_query($query);
 
@@ -1232,13 +1342,18 @@ switch ($site) {
                 echo <<<HTML
                     <td class='p-2 border-b flex flex-row gap-4'>
                         <form action='?set=$form_action' method='post' class='m-0'>
+                            <input type='hidden' name='csrf' value='$csrf'>
                             <input type='hidden' name='uuid' value='$uuid'>
                             $button
                         </form>
+                        <button class='h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-700 text-white flex items-center justify-center' onclick="openEditPopup('$uuid')" title='Bearbeiten'>
+                            <i data-lucide='pencil'></i>
+                        </button>
                         <button class='h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center' onclick="openDetailsPopup('$uuid')">
                             <i data-lucide='info'></i>
                         </button>
                         <form action='?set=delete_account' method='post' class='m-0'>
+                            <input type='hidden' name='csrf' value='$csrf'>
                             <input type='hidden' name='uuid' value='$uuid'>
                             <button class='h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center'>
                                 <i data-lucide='trash'></i>
@@ -1256,8 +1371,7 @@ switch ($site) {
         }
 
         echo "<br><br>";
-        $query = "SELECT caption, description FROM role";
-        $results = $db_adapter->db_query($query);
+        $results = $allRoleRows;
 
         if ($results) {
             echo "<div class='text-xl font-bold pb-6'>Roles</div><div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
@@ -1279,11 +1393,10 @@ switch ($site) {
         }
 
         echo "<br><br>";
-        $csrf = $auth->csrf();
         $query = "SELECT access.uuid, access.role, role.caption AS role_caption, access.resource, access.access_right FROM access INNER JOIN role ON access.role = role.uuid ORDER BY role.caption, access.resource";
         $results = $db_adapter->db_query($query) ?: [];
 
-        $roleRows = $db_adapter->db_query("SELECT uuid, caption FROM role ORDER BY caption") ?: [];
+    $roleRows = $db_adapter->db_query("SELECT uuid, caption FROM role ORDER BY caption") ?: [];
         foreach ($roleRows as $roleRow) {
             $automationExists = false;
             foreach ($results as $existingAccess) {
@@ -1314,12 +1427,15 @@ switch ($site) {
 
         if (!empty($results)) {
             echo "<div class='text-xl font-bold pb-2'>Access Rights</div>";
-            echo "<p class='text-sm text-gray-600 pb-4'>Rechte im Unix/Linux-Stil: 0-7 (z. B. 0 = kein Zugriff, 7 = voller Zugriff).</p>";
+            echo "<p class='text-sm text-gray-600 pb-4'>Rechte direkt per Klick setzen: Read (4), Write (2), Execute (1).</p>";
             echo "<div class='max-h-96 overflow-y-auto'><table class='rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md'><thead class='bg-gray-200 sticky top-0 z-1'>";
             echo "<tr class='border-b bg-gray-200 text-gray-800'>";
             echo "<th class='p-2'>Role</th>";
             echo "<th class='p-2'>Resource</th>";
-            echo "<th class='p-2'>Access Right (0-7)</th>";
+            echo "<th class='p-2'>Read</th>";
+            echo "<th class='p-2'>Write</th>";
+            echo "<th class='p-2'>Execute</th>";
+            echo "<th class='p-2'>Wert</th>";
             echo "<th class='p-2'>Action</th>";
             echo "</tr></thead><tbody>";
             foreach ($results as $row) {
@@ -1327,17 +1443,21 @@ switch ($site) {
                 $roleCaptionEscaped = htmlspecialchars((string)$row['role_caption'], ENT_QUOTES, 'UTF-8');
                 $resourceEscaped = htmlspecialchars((string)$row['resource'], ENT_QUOTES, 'UTF-8');
                 $accessRightValue = (int)($row['access_right'] ?? 0);
+                $hasRead = ($accessRightValue & 4) === 4 ? 'checked' : '';
+                $hasWrite = ($accessRightValue & 2) === 2 ? 'checked' : '';
+                $hasExecute = ($accessRightValue & 1) === 1 ? 'checked' : '';
 
                 echo "<tr class='hover:bg-gray-200'>";
                 echo "<td class='p-2 border-b'>{$roleCaptionEscaped}</td>";
                 echo "<td class='p-2 border-b font-mono'>{$resourceEscaped}</td>";
-                echo "<td class='p-2 border-b'>";
-                echo "<form action='?set=update_access_right' method='post' class='m-0 flex items-center gap-2'>";
+                echo "<form action='?set=update_access_right' method='post' class='m-0'>";
                 echo "<input type='hidden' name='csrf' value='{$csrf}'>";
                 echo "<input type='hidden' name='role_uuid' value='{$roleUuidEscaped}'>";
                 echo "<input type='hidden' name='resource' value='{$resourceEscaped}'>";
-                echo "<input class='appearance-none border rounded-full w-20 py-1 px-3 leading-tight focus:outline-none focus:shadow-outline' type='number' min='0' max='7' step='1' name='access_right' value='{$accessRightValue}' required>";
-                echo "</td>";
+                echo "<td class='p-2 border-b text-center'><input type='checkbox' name='access_read' {$hasRead}></td>";
+                echo "<td class='p-2 border-b text-center'><input type='checkbox' name='access_write' {$hasWrite}></td>";
+                echo "<td class='p-2 border-b text-center'><input type='checkbox' name='access_execute' {$hasExecute}></td>";
+                echo "<td class='p-2 border-b font-mono text-gray-700'>{$accessRightValue}</td>";
                 echo "<td class='p-2 border-b'>";
                 echo "<button class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full focus:outline-none focus:shadow-outline' type='submit'>Save</button>";
                 echo "</form>";
@@ -1368,6 +1488,44 @@ switch ($site) {
                 </div>
                 <div id="detailsContent" class="space-y-2"></div>
             </div>
+            <div id="editAccountPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden overflow-y-auto">
+                <div class="flex justify-between pb-6">
+                    <div class="text-xl font-bold">Account bearbeiten</div>
+                    <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
+                        <button type="button" onclick="closeEditPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
+                    </div>
+                </div>
+                <form action="?set=update_account" method="post" class="max-w-xl">
+                    <input type="hidden" name="csrf" value="$csrf">
+                    <input type="hidden" id="edit_uuid" name="uuid" value="">
+                    <div class="pb-4">
+                        <label class="block mb-2 text-sm font-semibold" for="edit_username">Username</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="edit_username" type="text" name="username" required>
+                    </div>
+                    <div class="pb-4">
+                        <label class="block mb-2 text-sm font-semibold" for="edit_email">E-Mail</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="edit_email" type="email" name="email" required>
+                    </div>
+                    <div class="pb-6">
+                        <label class="block mb-2 text-sm font-semibold" for="edit_role">Role</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="edit_role" name="role" required>
+HTML;
+
+        foreach ($allRoleRows as $roleRow) {
+            $roleUuidEsc = htmlspecialchars((string)($roleRow['uuid'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $roleCaptionEsc = htmlspecialchars((string)($roleRow['caption'] ?? ''), ENT_QUOTES, 'UTF-8');
+            echo "<option value='{$roleUuidEsc}'>{$roleCaptionEsc}</option>";
+        }
+
+        echo <<<HTML
+                        </select>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button class="bg-gray-300 hover:bg-gray-400 text-gray-900 font-bold py-2 px-4 rounded-full" type="button" onclick="closeEditPopup()">Abbrechen</button>
+                        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full" type="submit">Speichern</button>
+                    </div>
+                </form>
+            </div>
             <script>
                 function openDetailsPopup(uuid) {
                     ajaxGet('?get=details&uuid=' + uuid, function(response) {
@@ -1380,6 +1538,22 @@ switch ($site) {
                 }
                 function closeDetailsPopup() {
                     document.getElementById('detailsPopup').classList.add('hidden');
+                }
+                function openEditPopup(uuid) {
+                    ajaxGet('?get=details&uuid=' + uuid, function(response) {
+                        if (!response) {
+                            return;
+                        }
+
+                        document.getElementById('edit_uuid').value = response.uuid || '';
+                        document.getElementById('edit_username').value = response.username || '';
+                        document.getElementById('edit_email').value = response.email || '';
+                        document.getElementById('edit_role').value = response.role || '';
+                        document.getElementById('editAccountPopup').classList.remove('hidden');
+                    });
+                }
+                function closeEditPopup() {
+                    document.getElementById('editAccountPopup').classList.add('hidden');
                 }
                 function ajaxGet(url, successCallback, errorCallback) {
                     $.ajax({
@@ -2003,6 +2177,176 @@ switch ($site) {
             <p>Farbschema, Schriftart, Schriftgröße</p>
         </div>
         HTML;
+        break;
+    case 'changelog':
+        if ($role !== 'admin') {
+            $logger->log('user is not admin', 2, echoToWeb: true);
+            header('Location: ?site=appearance');
+            die();
+        }
+
+        $filterTable = trim((string)($_GET['filter_table'] ?? ''));
+        $filterOperation = strtoupper(trim((string)($_GET['filter_operation'] ?? '')));
+        $filterUser = trim((string)($_GET['filter_user'] ?? ''));
+        $limit = (int)($_GET['limit'] ?? 200);
+        if ($limit < 50) {
+            $limit = 50;
+        }
+        if ($limit > 1000) {
+            $limit = 1000;
+        }
+
+        $conditions = [];
+        $params = ['limit' => $limit];
+
+        if ($filterTable !== '') {
+            $conditions[] = 'c.changed_table ILIKE :filter_table';
+            $params['filter_table'] = $filterTable;
+        }
+
+        if (in_array($filterOperation, ['INSERT', 'UPDATE', 'DELETE'], true)) {
+            $conditions[] = 'c.operation = :filter_operation';
+            $params['filter_operation'] = $filterOperation;
+        }
+
+        if ($filterUser !== '') {
+            $conditions[] = '(u.username ILIKE :filter_user OR c.users::text ILIKE :filter_user)';
+            $params['filter_user'] = '%' . $filterUser . '%';
+        }
+
+        $whereClause = '';
+        if (!empty($conditions)) {
+            $whereClause = 'WHERE ' . implode(' AND ', $conditions);
+        }
+
+        $query = "SELECT c.uuid,
+                         c.operation,
+                         c.changed_table,
+                         c.changed_row,
+                         c.changed_data,
+                         c.users,
+                         u.username,
+                         TO_CHAR(c.changed, 'YYYY-MM-DD HH24:MI:SS') AS changed_at
+                  FROM changelog c
+                  LEFT JOIN users u ON u.uuid = c.users
+                  $whereClause
+                  ORDER BY c.changed DESC
+                  LIMIT :limit";
+
+        $changelogRows = $db_adapter->db_query($query, $params) ?: [];
+
+        $filterTableEscaped = htmlspecialchars($filterTable, ENT_QUOTES, 'UTF-8');
+        $filterOperationEscaped = htmlspecialchars($filterOperation, ENT_QUOTES, 'UTF-8');
+        $filterUserEscaped = htmlspecialchars($filterUser, ENT_QUOTES, 'UTF-8');
+        $limitEscaped = htmlspecialchars((string)$limit, ENT_QUOTES, 'UTF-8');
+
+        echo "<div class='h-fit w-full p-4'>";
+        echo "<div class='text-2xl font-bold pb-2'>Changelog</div>";
+        echo "<p class='text-sm text-gray-600 pb-6'>Nachvollziehbarkeit von Nutzer- und API-Aenderungen (INSERT/UPDATE/DELETE).</p>";
+
+        echo "<form method='GET' class='bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 grid grid-cols-1 md:grid-cols-5 gap-3'>";
+        echo "<input type='hidden' name='site' value='changelog'>";
+        echo "<div><label class='block text-xs text-gray-600 mb-1'>Table</label><input class='w-full border rounded-full px-3 py-2' type='text' name='filter_table' value='{$filterTableEscaped}' placeholder='z. B. device_port'></div>";
+        echo "<div><label class='block text-xs text-gray-600 mb-1'>Operation</label><select class='w-full border rounded-full px-3 py-2' name='filter_operation'>";
+        echo "<option value=''" . ($filterOperationEscaped === '' ? ' selected' : '') . ">Alle</option>";
+        echo "<option value='INSERT'" . ($filterOperationEscaped === 'INSERT' ? ' selected' : '') . ">INSERT</option>";
+        echo "<option value='UPDATE'" . ($filterOperationEscaped === 'UPDATE' ? ' selected' : '') . ">UPDATE</option>";
+        echo "<option value='DELETE'" . ($filterOperationEscaped === 'DELETE' ? ' selected' : '') . ">DELETE</option>";
+        echo "</select></div>";
+        echo "<div><label class='block text-xs text-gray-600 mb-1'>User</label><input class='w-full border rounded-full px-3 py-2' type='text' name='filter_user' value='{$filterUserEscaped}' placeholder='Username oder UUID'></div>";
+        echo "<div><label class='block text-xs text-gray-600 mb-1'>Limit</label><input class='w-full border rounded-full px-3 py-2' type='number' min='50' max='1000' step='50' name='limit' value='{$limitEscaped}'></div>";
+        echo "<div class='flex items-end gap-2'><button class='bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full' type='submit'>Filtern</button><a class='bg-gray-300 hover:bg-gray-400 text-gray-900 font-bold py-2 px-4 rounded-full' href='?site=changelog'>Reset</a></div>";
+        echo "</form>";
+
+        if (empty($changelogRows)) {
+            echo "<div class='rounded-xl bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3'>Keine Changelog-Eintraege fuer den gewaehlten Filter gefunden.</div>";
+        } else {
+            echo "<div class='max-h-[70vh] overflow-auto rounded-xl border border-gray-200'>";
+            echo "<table class='w-full text-sm text-left text-gray-700'>";
+            echo "<thead class='bg-gray-100 sticky top-0'><tr>";
+            echo "<th class='p-2 border-b'>Zeit</th>";
+            echo "<th class='p-2 border-b'>Operation</th>";
+            echo "<th class='p-2 border-b'>Tabelle</th>";
+            echo "<th class='p-2 border-b'>Changed Row</th>";
+            echo "<th class='p-2 border-b'>User</th>";
+            echo "<th class='p-2 border-b'>Data</th>";
+            echo "<th class='p-2 border-b'>Action</th>";
+            echo "</tr></thead><tbody>";
+
+            foreach ($changelogRows as $row) {
+                $uuidEscaped = htmlspecialchars((string)($row['uuid'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $changedAtEscaped = htmlspecialchars((string)($row['changed_at'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $operationEscaped = htmlspecialchars((string)($row['operation'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $tableEscaped = htmlspecialchars((string)($row['changed_table'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $changedRowEscaped = htmlspecialchars((string)($row['changed_row'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $username = (string)($row['username'] ?? '');
+                $usersUuid = (string)($row['users'] ?? '');
+                $userTextEscaped = htmlspecialchars($username !== '' ? $username : $usersUuid, ENT_QUOTES, 'UTF-8');
+                $changedDataRaw = (string)($row['changed_data'] ?? '');
+
+                $decoded = json_decode($changedDataRaw, true);
+                if (is_array($decoded)) {
+                    $changedDataRaw = json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                }
+                if (!is_string($changedDataRaw)) {
+                    $changedDataRaw = '';
+                }
+                if (strlen($changedDataRaw) > 800) {
+                    $changedDataRaw = substr($changedDataRaw, 0, 800) . '...';
+                }
+                $changedDataEscaped = htmlspecialchars($changedDataRaw, ENT_QUOTES, 'UTF-8');
+
+                echo "<tr class='hover:bg-gray-50 align-top'>";
+                echo "<td class='p-2 border-b whitespace-nowrap'>{$changedAtEscaped}</td>";
+                echo "<td class='p-2 border-b font-semibold'>{$operationEscaped}</td>";
+                echo "<td class='p-2 border-b font-mono text-xs'>{$tableEscaped}</td>";
+                echo "<td class='p-2 border-b font-mono text-xs'>{$changedRowEscaped}</td>";
+                echo "<td class='p-2 border-b'>{$userTextEscaped}</td>";
+                echo "<td class='p-2 border-b font-mono text-xs whitespace-pre-wrap break-all'>{$changedDataEscaped}</td>";
+                echo "<td class='p-2 border-b whitespace-nowrap'>";
+                echo "<button type='button' class='bg-amber-500 hover:bg-amber-700 text-white font-bold py-1 px-3 rounded-full text-xs' onclick=\"openChangelogDetailsPopup('{$uuidEscaped}')\">Details</button>";
+                echo "</td>";
+                echo "</tr>";
+            }
+
+            echo "</tbody></table></div>";
+        }
+
+        echo "<div id='changelogDetailsPopup' class='fixed inset-0 hidden z-50 bg-black/30'>";
+        echo "<div class='bg-white rounded-xl shadow-xl max-w-5xl mx-auto mt-10 p-4 max-h-[85vh] overflow-y-auto'>";
+        echo "<div class='flex items-center justify-between pb-3 border-b'>";
+        echo "<div class='text-lg font-bold'>Changelog Details</div>";
+        echo "<button type='button' class='h-9 w-9 rounded-full bg-red-500 hover:bg-red-700 text-white font-bold' onclick='closeChangelogDetailsPopup()'>X</button>";
+        echo "</div>";
+        echo "<div id='changelogDetailsMeta' class='pt-3 text-sm text-gray-700'></div>";
+        echo "<pre id='changelogDetailsPayload' class='mt-3 p-3 bg-gray-100 rounded text-xs font-mono whitespace-pre-wrap break-all'></pre>";
+        echo "</div>";
+        echo "</div>";
+
+        echo "<script>\n"
+            . "function escapeHtml(value){return String(value).replace(/[&<>\"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'})[c];});}\n"
+            . "function closeChangelogDetailsPopup(){document.getElementById('changelogDetailsPopup').classList.add('hidden');}\n"
+            . "function openChangelogDetailsPopup(uuid){\n"
+            . "  $.ajax({url:'?get=changelog_details&uuid='+encodeURIComponent(uuid),type:'GET',dataType:'json',success:function(response){\n"
+            . "    if(!response){return;}\n"
+            . "    var userText = response.username ? response.username : (response.users || '');\n"
+            . "    var meta = ''\n"
+            . "      + '<div><strong>Zeit:</strong> '+escapeHtml(response.changed_at || '')+'</div>'\n"
+            . "      + '<div><strong>Operation:</strong> '+escapeHtml(response.operation || '')+'</div>'\n"
+            . "      + '<div><strong>Tabelle:</strong> '+escapeHtml(response.changed_table || '')+'</div>'\n"
+            . "      + '<div><strong>Changed Row:</strong> '+escapeHtml(response.changed_row || '')+'</div>'\n"
+            . "      + '<div><strong>User:</strong> '+escapeHtml(userText)+'</div>'\n"
+            . "      + '<div><strong>UUID:</strong> '+escapeHtml(response.uuid || '')+'</div>';\n"
+            . "    document.getElementById('changelogDetailsMeta').innerHTML = meta;\n"
+            . "    var payloadText = response.changed_data || '';\n"
+            . "    try { payloadText = JSON.stringify(JSON.parse(payloadText), null, 2); } catch (e) {}\n"
+            . "    document.getElementById('changelogDetailsPayload').textContent = payloadText;\n"
+            . "    document.getElementById('changelogDetailsPopup').classList.remove('hidden');\n"
+            . "  },error:function(){alert('Details konnten nicht geladen werden.');}});\n"
+            . "}\n"
+            . "</script>";
+
+        echo "</div>";
         break;
 };
 ?>

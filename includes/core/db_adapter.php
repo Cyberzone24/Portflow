@@ -24,6 +24,8 @@ class DatabaseAdapter {
     private $logger;
 
     private array $excludedDataFolders = ['role', 'users', 'changelog', 'metadata', 'access', 'device_port_vlan', 'device_port_ip', 'device_lifecycle'];
+    private array $auditExcludedTables = ['changelog'];
+    private array $auditUserNoiseColumns = ['last_login', 'last_login_attempt', 'login_attempts', 'ip_address', 'changed'];
 
     public function __construct() {
         $this->logger = new Logger();
@@ -106,8 +108,10 @@ class DatabaseAdapter {
     
         try {
             $stmt->execute();
+            $affectedRows = $stmt->rowCount();
             // Fetch results and return
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $this->writeAuditTrail($query, $params, $results, $affectedRows);
             return $results;
         } catch (\Exception $e) {
             $this->logger->log('error during query execution: ' . $query . ' - ' . $e->getMessage(), 1);
@@ -115,6 +119,205 @@ class DatabaseAdapter {
         }
 
         // ============================================================= HIER CHANGELOG =============================================================
+    }
+
+    private function writeAuditTrail(string $query, array $params, array $results, int $affectedRows): void {
+        $parsed = $this->parseAuditOperation($query);
+        if ($parsed === null) {
+            return;
+        }
+
+        $operation = $parsed['operation'];
+        $table = $parsed['table'];
+
+        if (in_array($table, $this->auditExcludedTables, true)) {
+            return;
+        }
+
+        if ($table === 'users' && $operation === 'UPDATE') {
+            $updatedColumns = $this->extractUpdatedColumns($query);
+            if (!empty($updatedColumns) && $this->isUserNoiseUpdate($updatedColumns)) {
+                return;
+            }
+        }
+
+        $context = $this->buildAuditContext();
+        $changedRow = $this->extractChangedRowUuid($results, $params);
+
+        $payload = [
+            'source' => $context['source'],
+            'request_method' => $context['method'],
+            'request_uri' => $context['uri'],
+            'ip' => $context['ip'],
+            'user_agent' => $context['user_agent'],
+            'affected_rows' => $affectedRows,
+            'params' => $this->sanitizeAuditParams($params)
+        ];
+
+        $encodedPayload = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encodedPayload)) {
+            $encodedPayload = '{"error":"audit_payload_encoding_failed"}';
+        }
+
+        try {
+            $stmt = $this->pdo->prepare(
+                "INSERT INTO changelog (users, operation, changed_table, changed_row, changed_data)
+                 VALUES (:users, :operation, :changed_table, :changed_row, :changed_data)"
+            );
+            $stmt->bindValue(':users', $context['users'], $context['users'] === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+            $stmt->bindValue(':operation', $operation, PDO::PARAM_STR);
+            $stmt->bindValue(':changed_table', $table, PDO::PARAM_STR);
+            $stmt->bindValue(':changed_row', $changedRow, PDO::PARAM_STR);
+            $stmt->bindValue(':changed_data', $encodedPayload, PDO::PARAM_STR);
+            $stmt->execute();
+        } catch (\Throwable $e) {
+            // Audit logging must never break business operations.
+            $this->logger->log('audit write skipped: ' . $e->getMessage(), 0);
+        }
+    }
+
+    private function parseAuditOperation(string $query): ?array {
+        $trimmed = ltrim($query);
+        if (!preg_match('/^(INSERT|UPDATE|DELETE)\s+/i', $trimmed, $operationMatch)) {
+            return null;
+        }
+
+        $operation = strtoupper((string)$operationMatch[1]);
+        $table = '';
+
+        if ($operation === 'INSERT' && preg_match('/^INSERT\s+INTO\s+"?([a-zA-Z0-9_]+)"?/i', $trimmed, $tableMatch)) {
+            $table = (string)$tableMatch[1];
+        } elseif ($operation === 'UPDATE' && preg_match('/^UPDATE\s+"?([a-zA-Z0-9_]+)"?/i', $trimmed, $tableMatch)) {
+            $table = (string)$tableMatch[1];
+        } elseif ($operation === 'DELETE' && preg_match('/^DELETE\s+FROM\s+"?([a-zA-Z0-9_]+)"?/i', $trimmed, $tableMatch)) {
+            $table = (string)$tableMatch[1];
+        }
+
+        if ($table === '') {
+            return null;
+        }
+
+        return [
+            'operation' => $operation,
+            'table' => $table
+        ];
+    }
+
+    private function extractUpdatedColumns(string $query): array {
+        $trimmed = ltrim($query);
+        if (!preg_match('/^UPDATE\s+"?[a-zA-Z0-9_]+"?\s+SET\s+(.+?)\s+WHERE\s+/is', $trimmed, $setMatch)) {
+            return [];
+        }
+
+        $setClause = (string)$setMatch[1];
+        $parts = preg_split('/\s*,\s*/', $setClause) ?: [];
+        $columns = [];
+
+        foreach ($parts as $part) {
+            if (preg_match('/^"?([a-zA-Z0-9_]+)"?\s*=/', trim($part), $columnMatch)) {
+                $columns[] = strtolower((string)$columnMatch[1]);
+            }
+        }
+
+        return array_values(array_unique($columns));
+    }
+
+    private function isUserNoiseUpdate(array $updatedColumns): bool {
+        if (empty($updatedColumns)) {
+            return false;
+        }
+
+        foreach ($updatedColumns as $column) {
+            if (!in_array($column, $this->auditUserNoiseColumns, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function buildAuditContext(): array {
+        $userUuid = null;
+        if (isset($_SESSION) && is_array($_SESSION) && !empty($_SESSION['uuid'])) {
+            $userUuid = (string)$_SESSION['uuid'];
+        }
+
+        $uri = isset($_SERVER['REQUEST_URI']) ? (string)$_SERVER['REQUEST_URI'] : '';
+        $method = isset($_SERVER['REQUEST_METHOD']) ? (string)$_SERVER['REQUEST_METHOD'] : 'CLI';
+        $source = (strpos($uri, '/api/') !== false) ? 'api' : 'web';
+        if (PHP_SAPI === 'cli') {
+            $source = 'cli';
+        }
+
+        return [
+            'users' => $userUuid,
+            'source' => $source,
+            'method' => $method,
+            'uri' => $uri,
+            'ip' => isset($_SERVER['REMOTE_ADDR']) ? (string)$_SERVER['REMOTE_ADDR'] : '',
+            'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? (string)$_SERVER['HTTP_USER_AGENT'] : ''
+        ];
+    }
+
+    private function extractChangedRowUuid(array $results, array $params): string {
+        if (!empty($results) && is_array($results[0]) && !empty($results[0]['uuid'])) {
+            $candidate = (string)$results[0]['uuid'];
+            if ($this->isValidUuid($candidate)) {
+                return $candidate;
+            }
+        }
+
+        if (!empty($params['uuid'])) {
+            $candidate = (string)$params['uuid'];
+            if ($this->isValidUuid($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $this->generateUuidV4();
+    }
+
+    private function sanitizeAuditParams(array $params): array {
+        $sanitized = [];
+        foreach ($params as $key => $value) {
+            $lowerKey = strtolower((string)$key);
+            if (strpos($lowerKey, 'password') !== false || strpos($lowerKey, 'secret') !== false || strpos($lowerKey, 'token') !== false) {
+                $sanitized[$key] = '***';
+                continue;
+            }
+
+            if (is_scalar($value) || $value === null) {
+                $text = (string)$value;
+                if (strlen($text) > 512) {
+                    $text = substr($text, 0, 512) . '...';
+                }
+                $sanitized[$key] = $text;
+            } else {
+                $sanitized[$key] = '[non-scalar]';
+            }
+        }
+
+        return $sanitized;
+    }
+
+    private function isValidUuid(string $value): bool {
+        return (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value);
+    }
+
+    private function generateUuidV4(): string {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+
+        $hex = bin2hex($bytes);
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hex, 0, 8),
+            substr($hex, 8, 4),
+            substr($hex, 12, 4),
+            substr($hex, 16, 4),
+            substr($hex, 20, 12)
+        );
     }
 
     private function getDbTablesConfiguration(): array {

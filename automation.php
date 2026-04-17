@@ -139,6 +139,21 @@
                             $executionResult['output'] .= "\nAusgabe der SSH-Session:\n" . $executionResult['details'][0]['output'];
                         }
                     }
+
+                    logAutomationExecutionEvent(
+                        $db,
+                        (string)($_SESSION['uuid'] ?? ''),
+                        'queue_execute_all',
+                        $switchToExecute,
+                        'queue_batch',
+                        'queue_batch',
+                        (int)($executionResult['total'] ?? 0),
+                        !empty($executionResult['ok']),
+                        [
+                            'completed' => (int)($executionResult['completed'] ?? 0),
+                            'failed' => (int)($executionResult['failed'] ?? 0)
+                        ]
+                    );
                 } else {
                     $executionResult = [
                         'ok' => false,
@@ -198,8 +213,132 @@
                                 'ok' => !empty($result['ok']),
                                 'output' => "Einzel-Eintrag ausgefuehrt: " . $pendingUuid . "\n\n" . (string)($result['output'] ?? '')
                             ];
+
+                            logAutomationExecutionEvent(
+                                $db,
+                                (string)($_SESSION['uuid'] ?? ''),
+                                'queue_execute_one',
+                                $switchToExecute,
+                                (string)($pendingChange['profile_id'] ?? ''),
+                                (string)($pendingChange['template_id'] ?? ''),
+                                count($commands),
+                                !empty($result['ok']),
+                                [
+                                    'pending_uuid' => $pendingUuid
+                                ]
+                            );
                         }
                     }
+                }
+            } elseif ($queueAction === 'execute_selected' && isset($_POST['pending_uuids']) && is_array($_POST['pending_uuids'])) {
+                $pendingUuids = array_values(array_unique(array_filter(array_map(static function($uuid) {
+                    return trim((string)$uuid);
+                }, $_POST['pending_uuids']), static function($uuid) {
+                    return $uuid !== '';
+                })));
+                $switchToExecute = (string)($_POST['execute_selected_switch'] ?? '');
+
+                if (empty($pendingUuids)) {
+                    $executionResult = [
+                        'ok' => false,
+                        'output' => 'Keine Queue-Eintraege fuer die Ausfuehrung ausgewaehlt.'
+                    ];
+                } elseif ($switchToExecute === '' || !isset($switches[$switchToExecute])) {
+                    $executionResult = [
+                        'ok' => false,
+                        'output' => 'Ausfuehrung fehlgeschlagen: Ungueltiger Switch fuer Auswahl-Ausfuehrung.'
+                    ];
+                } else {
+                    $switchData = $switches[$switchToExecute];
+                    $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
+                    $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
+                    $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+
+                    $executedCount = 0;
+                    $failedCount = 0;
+                    $resultLines = [];
+
+                    foreach ($pendingUuids as $pendingUuid) {
+                        $pendingChange = $queueManager->getPendingChange($pendingUuid, $_SESSION['uuid']);
+                        if (!is_array($pendingChange)) {
+                            $failedCount++;
+                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Eintrag nicht gefunden oder keine Berechtigung.';
+                            continue;
+                        }
+
+                        if ((string)($pendingChange['status'] ?? '') !== 'pending') {
+                            $failedCount++;
+                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Eintrag ist nicht mehr ausstehend.';
+                            continue;
+                        }
+
+                        $entrySwitch = (string)($pendingChange['switch_name'] ?? '');
+                        if ($entrySwitch !== $switchToExecute) {
+                            $failedCount++;
+                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Eintrag gehoert zu einem anderen Switch (' . $entrySwitch . ').';
+                            continue;
+                        }
+
+                        $commands = array_filter(
+                            array_map('trim', explode("\n", (string)($pendingChange['commands'] ?? ''))),
+                            static fn($c): bool => $c !== ''
+                        );
+
+                        if (empty($commands)) {
+                            $queueManager->updatePendingChange($pendingUuid, 'failed', 'Queue-Eintrag enthaelt keine Befehle.');
+                            $failedCount++;
+                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Keine Befehle im Queue-Eintrag.';
+                            continue;
+                        }
+
+                        $queueManager->updatePendingChange($pendingUuid, 'executing');
+                        $result = runAutomationSshCommands(
+                            $switchData,
+                            $commands,
+                            $logger,
+                            $switchToExecute,
+                            (string)($pendingChange['profile_id'] ?? ''),
+                            (string)($pendingChange['template_id'] ?? '')
+                        );
+
+                        $ok = !empty($result['ok']);
+                        $queueManager->updatePendingChange(
+                            $pendingUuid,
+                            $ok ? 'completed' : 'failed',
+                            (string)($result['output'] ?? '')
+                        );
+
+                        if ($ok) {
+                            $executedCount++;
+                            $resultLines[] = '[' . $pendingUuid . '] OK';
+                        } else {
+                            $failedCount++;
+                            $resultLines[] = '[' . $pendingUuid . '] FEHLER';
+                        }
+
+                        logAutomationExecutionEvent(
+                            $db,
+                            (string)($_SESSION['uuid'] ?? ''),
+                            'queue_execute_selected',
+                            $switchToExecute,
+                            (string)($pendingChange['profile_id'] ?? ''),
+                            (string)($pendingChange['template_id'] ?? ''),
+                            count($commands),
+                            $ok,
+                            [
+                                'pending_uuid' => $pendingUuid
+                            ]
+                        );
+                    }
+
+                    $executionResult = [
+                        'ok' => ($failedCount === 0),
+                        'output' => "Auswahl-Ausfuehrung abgeschlossen:\n"
+                            . '- Ausgewaehlt: ' . count($pendingUuids) . "\n"
+                            . '- Erfolgreich: ' . $executedCount . "\n"
+                            . '- Fehlgeschlagen: ' . $failedCount . "\n\n"
+                            . implode("\n", $resultLines)
+                    ];
                 }
             } elseif ($queueAction === 'delete' && isset($_POST['pending_uuid'])) {
                 $pendingUuid = (string)($_POST['pending_uuid']);
@@ -356,6 +495,21 @@
                 } else {
                     $executionResult = runAutomationSshCommands($selectedSwitchData, $rendered['commands'] ?? [], $logger, $selectedSwitch, $selectedProfile, $selectedTemplate);
                 }
+
+                logAutomationExecutionEvent(
+                    $db,
+                    (string)($_SESSION['uuid'] ?? ''),
+                    'immediate_execute',
+                    $selectedSwitch,
+                    $selectedProfile,
+                    $selectedTemplate,
+                    count($rendered['commands'] ?? []),
+                    !empty($executionResult['ok']),
+                    [
+                        'error_strategy' => $selectedErrorStrategy,
+                        'save_mode' => $selectedSaveMode
+                    ]
+                );
 
                 $logger->log(
                     'automation execute finished switch=' . $selectedSwitch
@@ -1100,6 +1254,48 @@
     function automation_escape($value): string {
         return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
     }
+
+    function logAutomationExecutionEvent(
+        \Portflow\Core\DatabaseAdapter $db,
+        string $userUuid,
+        string $mode,
+        string $switchName,
+        string $profileId,
+        string $templateId,
+        int $commandCount,
+        bool $ok,
+        array $extra = []
+    ): void {
+        $payload = array_merge([
+            'event' => 'script_execution',
+            'mode' => $mode,
+            'switch' => $switchName,
+            'profile' => $profileId,
+            'template' => $templateId,
+            'command_count' => $commandCount,
+            'ok' => $ok
+        ], $extra);
+
+        $encodedPayload = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encodedPayload)) {
+            $encodedPayload = '{"event":"script_execution","error":"encoding_failed"}';
+        }
+
+        try {
+            $db->db_query(
+                "INSERT INTO changelog (users, operation, changed_table, changed_row, changed_data)
+                 VALUES (:users, :operation, :changed_table, gen_random_uuid(), :changed_data)",
+                [
+                    'users' => $userUuid !== '' ? $userUuid : null,
+                    'operation' => 'INSERT',
+                    'changed_table' => 'script_execution',
+                    'changed_data' => $encodedPayload
+                ]
+            );
+        } catch (\Throwable $ignored) {
+            // Best-effort execution trace logging.
+        }
+    }
 ?>
 <div class="h-full flex overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
     <div class="basis-1/5 flex flex-col gap-4 overflow-y-scroll pr-4">
@@ -1340,17 +1536,29 @@
                     echo '<div class="rounded-xl bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3">Keine ausstehenden Aenderungen in der Warteschlange.</div>';
                 } else {
                     foreach ($userPendingSummary as $switchName => $count) {
+                        $queueGroupId = 'queue-group-' . md5((string)$switchName);
                         echo '<div class="bg-gray-50 rounded-xl p-4 mb-4">';
                         echo '<div class="flex justify-between items-center pb-4">';
                         echo '<div>';
                         echo '<div class="text-lg font-bold">' . automation_escape($switchName) . '</div>';
                         echo '<div class="text-sm text-gray-600">' . $count . ' ausstehende Aenderung' . ($count !== 1 ? 'en' : '') . '</div>';
                         echo '</div>';
+                        echo '<div class="flex items-center gap-2">';
+                        echo '<form method="POST" action="automation.php" style="display: inline;" id="' . automation_escape($queueGroupId) . '-selected" onsubmit="return ensureQueueSelection(\'' . automation_escape($queueGroupId) . '\');">';
+                        echo '<input type="hidden" name="queue_action" value="execute_selected">';
+                        echo '<input type="hidden" name="execute_selected_switch" value="' . automation_escape($switchName) . '">';
+                        echo '<button type="submit" class="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-700 text-white font-semibold">Auswahl ausfuehren</button>';
+                        echo '</form>';
                         echo '<form method="POST" action="automation.php" style="display: inline;">';
                         echo '<input type="hidden" name="queue_action" value="execute_all">';
                         echo '<input type="hidden" name="execute_all_switch" value="' . automation_escape($switchName) . '">';
                         echo '<button type="submit" class="px-4 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Alle ausfuehren</button>';
                         echo '</form>';
+                        echo '</div>';
+                        echo '</div>';
+                        echo '<div class="pb-3 text-sm text-gray-700 flex items-center gap-2">';
+                        echo '<input type="checkbox" id="' . automation_escape($queueGroupId) . '-all" onchange="toggleQueueGroup(\'' . automation_escape($queueGroupId) . '\', this.checked)">';
+                        echo '<label for="' . automation_escape($queueGroupId) . '-all">Alle Eintraege dieser Gruppe markieren</label>';
                         echo '</div>';
                         
                         $pendingChanges = $queueManager->getPendingChanges($_SESSION['uuid'] ?? '', $switchName);
@@ -1359,6 +1567,10 @@
                             echo '<div class="bg-white border border-gray-200 rounded-lg p-3 text-sm">';
                             echo '<div class="flex justify-between items-start gap-3">';
                             echo '<div>';
+                            echo '<div class="pb-2">';
+                            echo '<input type="checkbox" name="pending_uuids[]" value="' . automation_escape($change['uuid']) . '" form="' . automation_escape($queueGroupId) . '-selected" data-queue-group="' . automation_escape($queueGroupId) . '">';
+                            echo '<span class="ml-2 text-xs text-gray-600">Markieren fuer Sammelausfuehrung</span>';
+                            echo '</div>';
                             echo '<div class="font-semibold">' . automation_escape($change['profile_id']) . ' → ' . automation_escape($change['template_id']) . '</div>';
                             echo '<div class="text-xs text-gray-500 mt-1">' . (new DateTime($change['created']))->format('Y-m-d H:i:s') . '</div>';
                             echo '<div class="text-xs text-gray-600 mt-2 font-mono bg-gray-100 p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap">' . automation_escape((string)($change['commands'] ?? '')) . '</div>';
@@ -1453,6 +1665,22 @@ document.addEventListener('DOMContentLoaded', function() {
             target.value = field.value;
         });
 
+        return true;
+    };
+
+    window.toggleQueueGroup = function(groupId, checked) {
+        const items = document.querySelectorAll('input[data-queue-group="' + groupId + '"]');
+        items.forEach(function(item) {
+            item.checked = checked;
+        });
+    };
+
+    window.ensureQueueSelection = function(groupId) {
+        const selected = document.querySelectorAll('input[data-queue-group="' + groupId + '"]:checked');
+        if (selected.length === 0) {
+            alert('Bitte mindestens einen Queue-Eintrag markieren.');
+            return false;
+        }
         return true;
     };
 
