@@ -270,10 +270,22 @@
         <label><input id="pauseHiddenToggle" type="checkbox" checked> Pause bei inaktivem Tab</label>
         <label><input id="rackEarsToggle" type="checkbox" checked> Rackohren anzeigen (2 mm, kurz)</label>
         <label><input id="loadOverlayToggle" type="checkbox" checked> Last-Heat-Overlay anzeigen</label>
+        <label>Overlay-Metrik
+          <select id="loadOverlayMetricSelect">
+            <option value="weight" selected>Gewicht (kg)</option>
+            <option value="power">Power (W)</option>
+            <option value="thermal">Thermal (W)</option>
+          </select>
+        </label>
         <label><input id="portsToggle" type="checkbox" checked> Ports anzeigen</label>
         <label><input id="portLabelsToggle" type="checkbox"> Port-Beschriftung anzeigen</label>
         <label><input id="cablesToggle" type="checkbox" checked> Kabel anzeigen</label>
         <label><input id="cableLabelsToggle" type="checkbox"> Kabel-Beschriftung anzeigen</label>
+        <label><input id="cableMetaLabelsToggle" type="checkbox" checked> Kabel-Metadaten in Labels</label>
+        <label><input id="cableFilterFiberToggle" type="checkbox" checked> Fiber</label>
+        <label><input id="cableFilterCopperToggle" type="checkbox" checked> Copper/CAT</label>
+        <label><input id="cableFilterPowerToggle" type="checkbox" checked> Power</label>
+        <label><input id="cableFilterTrunkToggle" type="checkbox" checked> Trunks</label>
         <label><input id="cableRearAwareToggle" type="checkbox" checked> Kabel rear-aware Routing</label>
         <label><input id="comMarkerToggle" type="checkbox" checked> Last-Schwerpunktmarker anzeigen</label>
       </div>
@@ -377,6 +389,8 @@
       rack: {
         name: "Rack A01",
         loadLimitKg: 120,
+        powerLimitW: 1200,
+        thermalLimitW: 1100,
         geometry: {
           outer: { x: 600, y: 2200, z: 1000 },
           between: { x_left: 25, x_right: 25, y_bottom: 60, y_top: 60, z_front: 40, z_back: 40 },
@@ -513,10 +527,16 @@
       pauseWhenHidden: true,
       showRackEars: true,
       showLoadOverlay: true,
+      loadOverlayMetric: 'weight',
       showPorts: true,
       showPortLabels: false,
       showCables: true,
       showCableLabels: false,
+      showCableMetaLabels: true,
+      cableFilterFiber: true,
+      cableFilterCopper: true,
+      cableFilterPower: true,
+      cableFilterTrunk: true,
       cableRearAware: true,
       showComMarker: true,
       showRoomLayout: false,
@@ -556,10 +576,16 @@
     const pauseHiddenToggle = document.getElementById('pauseHiddenToggle');
     const rackEarsToggle = document.getElementById('rackEarsToggle');
     const loadOverlayToggle = document.getElementById('loadOverlayToggle');
+    const loadOverlayMetricSelect = document.getElementById('loadOverlayMetricSelect');
     const portsToggle = document.getElementById('portsToggle');
     const portLabelsToggle = document.getElementById('portLabelsToggle');
     const cablesToggle = document.getElementById('cablesToggle');
     const cableLabelsToggle = document.getElementById('cableLabelsToggle');
+    const cableMetaLabelsToggle = document.getElementById('cableMetaLabelsToggle');
+    const cableFilterFiberToggle = document.getElementById('cableFilterFiberToggle');
+    const cableFilterCopperToggle = document.getElementById('cableFilterCopperToggle');
+    const cableFilterPowerToggle = document.getElementById('cableFilterPowerToggle');
+    const cableFilterTrunkToggle = document.getElementById('cableFilterTrunkToggle');
     const cableRearAwareToggle = document.getElementById('cableRearAwareToggle');
     const comMarkerToggle = document.getElementById('comMarkerToggle');
     const loadSummaryEl = document.getElementById('loadSummary');
@@ -612,10 +638,18 @@
     state.pauseWhenHidden = !!pauseHiddenToggle.checked;
     state.showRackEars = !!rackEarsToggle.checked;
     state.showLoadOverlay = !!loadOverlayToggle.checked;
+    state.loadOverlayMetric = ['weight', 'power', 'thermal'].includes(String(loadOverlayMetricSelect.value))
+      ? String(loadOverlayMetricSelect.value)
+      : 'weight';
     state.showPorts = !!portsToggle.checked;
     state.showPortLabels = !!portLabelsToggle.checked;
     state.showCables = !!cablesToggle.checked;
     state.showCableLabels = !!cableLabelsToggle.checked;
+    state.showCableMetaLabels = !!cableMetaLabelsToggle.checked;
+    state.cableFilterFiber = !!cableFilterFiberToggle.checked;
+    state.cableFilterCopper = !!cableFilterCopperToggle.checked;
+    state.cableFilterPower = !!cableFilterPowerToggle.checked;
+    state.cableFilterTrunk = !!cableFilterTrunkToggle.checked;
     state.cableRearAware = !!cableRearAwareToggle.checked;
     state.showComMarker = !!comMarkerToggle.checked;
     state.showRoomLayout = !!roomModeToggle.checked;
@@ -692,7 +726,42 @@
       ].join(' | ');
     }
 
-    function renderCableSummary(connections, renderedCount = 0) {
+    function classifyCableType(conn) {
+      const uuid = String(conn?.uuid || '').toLowerCase();
+      const routeProfile = String(conn?.routeProfile || '').toLowerCase();
+      const type = String(conn?.type || '').toLowerCase();
+      const isTrunk = uuid.startsWith('fiber-trunk-') || routeProfile === 'downward' || routeProfile === 'overhead';
+      const isFiber = type.includes('fiber') || type.includes('glas') || type.includes('sfp');
+      const isCopper = type.includes('cat') || type.includes('copper') || type.includes('kupfer') || type.includes('rj45');
+      const isPower = type.includes('power') || type.includes('strom') || type.includes('pdu');
+      return { isTrunk, isFiber, isCopper, isPower };
+    }
+
+    function isCableVisibleByFilter(conn) {
+      const kind = classifyCableType(conn);
+      if (kind.isTrunk && !state.cableFilterTrunk) return false;
+      if (kind.isPower) return !!state.cableFilterPower;
+      if (kind.isFiber) return !!state.cableFilterFiber;
+      if (kind.isCopper) return !!state.cableFilterCopper;
+      return true;
+    }
+
+    function formatCableLabel(conn) {
+      const base = String(conn?.uuid || conn?.itemGroup || conn?.type || 'Cable').trim();
+      if (!state.showCableMetaLabels) return base;
+
+      const parts = [];
+      const type = String(conn?.type || '').trim();
+      if (type) parts.push(type);
+      const speed = ensureNum(conn?.speed, NaN);
+      if (Number.isFinite(speed) && speed > 0) parts.push(`${speed.toFixed(0)}M`);
+      const length = ensureNum(conn?.length, NaN);
+      if (Number.isFinite(length) && length > 0) parts.push(`${length.toFixed(1)}m`);
+      if (parts.length === 0) return base;
+      return `${base} | ${parts.join(' ')}`;
+    }
+
+    function renderCableSummary(connections, renderedCount = 0, skippedByFilter = 0) {
       const all = Array.isArray(connections) ? connections : [];
       if (all.length === 0) {
         cableSummaryEl.classList.remove('warn', 'error');
@@ -707,10 +776,10 @@
       const speeds = [];
 
       for (const c of all) {
-        const t = String(c.type || '').toLowerCase();
-        if (t.includes('fiber') || t.includes('glas') || t.includes('sfp')) fiber += 1;
-        else if (t.includes('cat') || t.includes('copper') || t.includes('kupfer') || t.includes('rj45')) copper += 1;
-        else other += 1;
+        const kind = classifyCableType(c);
+        if (kind.isFiber) fiber += 1;
+        else if (kind.isCopper) copper += 1;
+        else if (!kind.isPower) other += 1;
 
         if (c.crossover) crossoverCount += 1;
         const s = ensureNum(c.speed, NaN);
@@ -729,6 +798,7 @@
 
       cableSummaryEl.textContent = [
         `Kabel gerendert: ${renderedCount}/${all.length}`,
+        `Ausgeblendet (Filter): ${Math.max(0, skippedByFilter)}`,
         `Copper/CAT: ${copper}`,
         `Fiber: ${fiber}`,
         `Other: ${other}`,
@@ -1073,6 +1143,20 @@
       return 7.5;
     }
 
+    function inferPowerFromType(device) {
+      const t = String(device?.name || '').toLowerCase();
+      if (t.includes('patch')) return 18;
+      if (t.includes('switch')) return 180;
+      if (t.includes('firewall')) return 240;
+      if (t.includes('server')) return 420;
+      return 120;
+    }
+
+    function inferThermalFromPower(powerW) {
+      const p = ensureNum(powerW, 0);
+      return Math.max(0, p * 0.92);
+    }
+
     function summarizeRackLoad(data) {
       const devices = Array.isArray(data?.devices) ? data.devices : [];
       const innerHeightMm = ensureNum(data?.rack?.geometry?.inner?.y, 0);
@@ -1080,9 +1164,23 @@
         const raw = ensureNum(d.weightKg ?? d.weight_kg, NaN);
         return Number.isFinite(raw) && raw >= 0 ? raw : inferWeightFromType(d);
       });
+      const powerWatts = devices.map((d) => {
+        const raw = ensureNum(d.powerW ?? d.power_w, NaN);
+        return Number.isFinite(raw) && raw >= 0 ? raw : inferPowerFromType(d);
+      });
+      const thermalWatts = devices.map((d, i) => {
+        const raw = ensureNum(d.thermalW ?? d.thermal_w, NaN);
+        return Number.isFinite(raw) && raw >= 0 ? raw : inferThermalFromPower(powerWatts[i]);
+      });
       const totalKg = weights.reduce((s, w) => s + w, 0);
+      const totalPowerW = powerWatts.reduce((s, p) => s + p, 0);
+      const totalThermalW = thermalWatts.reduce((s, t) => s + t, 0);
       const limitKg = ensureNum(data?.rack?.loadLimitKg ?? data?.rack?.load_limit_kg ?? data?.rack?.geometry?.loadLimitKg, 0);
+      const powerLimitW = ensureNum(data?.rack?.powerLimitW ?? data?.rack?.power_limit_w ?? data?.rack?.geometry?.powerLimitW, 0);
+      const thermalLimitW = ensureNum(data?.rack?.thermalLimitW ?? data?.rack?.thermal_limit_w ?? data?.rack?.geometry?.thermalLimitW, 0);
       const utilizationPct = limitKg > 0 ? (totalKg / limitKg) * 100 : null;
+      const powerUtilizationPct = powerLimitW > 0 ? (totalPowerW / powerLimitW) * 100 : null;
+      const thermalUtilizationPct = thermalLimitW > 0 ? (totalThermalW / thermalLimitW) * 100 : null;
 
       let weightedY = 0;
       for (let i = 0; i < devices.length; i += 1) {
@@ -1100,7 +1198,9 @@
         idx: i,
         from: segHeight * i,
         to: segHeight * (i + 1),
-        kg: 0
+        kg: 0,
+        powerW: 0,
+        thermalW: 0
       }));
 
       if (segHeight > 0) {
@@ -1109,21 +1209,36 @@
           const centerY = ensureNum(dev?.placement?.y, 0) + ensureNum(dev?.size?.y, 0) / 2;
           const segIdx = Math.max(0, Math.min(segmentCount - 1, Math.floor(centerY / segHeight)));
           segments[segIdx].kg += weights[i];
+          segments[segIdx].powerW += powerWatts[i];
+          segments[segIdx].thermalW += thermalWatts[i];
         }
       }
 
+      const maxSegmentKg = Math.max(...segments.map((s) => ensureNum(s.kg, 0)), 0);
+      const maxSegmentPowerW = Math.max(...segments.map((s) => ensureNum(s.powerW, 0)), 0);
+      const maxSegmentThermalW = Math.max(...segments.map((s) => ensureNum(s.thermalW, 0)), 0);
+
       return {
         totalKg,
+        totalPowerW,
+        totalThermalW,
         limitKg,
+        powerLimitW,
+        thermalLimitW,
         utilizationPct,
+        powerUtilizationPct,
+        thermalUtilizationPct,
         deviceCount: devices.length,
         centerOfMassY,
         innerHeightMm,
+        maxSegmentKg,
+        maxSegmentPowerW,
+        maxSegmentThermalW,
         segments
       };
     }
 
-    function createLoadOverlayMesh(THREE, rackGeom, loadData) {
+    function createLoadOverlayMesh(THREE, rackGeom, loadData, metric = 'weight') {
       const { inner } = getRackGeometryDefaults(rackGeom);
       const offsets = getRackOffsets(rackGeom);
       const overlayGroup = new THREE.Group();
@@ -1136,13 +1251,14 @@
       const segs = Array.isArray(loadData?.segments) ? loadData.segments : [];
       if (segs.length === 0) return overlayGroup;
 
-      const maxKg = Math.max(...segs.map((s) => ensureNum(s.kg, 0)), 0.0001);
+      const metricKey = metric === 'power' ? 'powerW' : metric === 'thermal' ? 'thermalW' : 'kg';
+      const maxMetric = Math.max(...segs.map((s) => ensureNum(s[metricKey], 0)), 0.0001);
       const segHeight = innerH / segs.length;
       const innerMinY = offsets.innerCenterOffset.y - innerH / 2;
 
       for (let i = 0; i < segs.length; i += 1) {
-        const segKg = ensureNum(segs[i].kg, 0);
-        const ratio = Math.min(1, Math.max(0, segKg / maxKg));
+        const segMetric = ensureNum(segs[i][metricKey], 0);
+        const ratio = Math.min(1, Math.max(0, segMetric / maxMetric));
 
         const color = new THREE.Color().setHSL((1 - ratio) * 0.35, 0.82, 0.5);
         const mat = new THREE.MeshBasicMaterial({
@@ -1546,6 +1662,7 @@
       let renderedRackCount = 0;
       let renderedDeviceCount = 0;
       let renderedCableCount = 0;
+      let skippedCableByFilterCount = 0;
       let focusRackName = 'automatisch';
       let focusedRackPosition = null;
       const roomPortAnchors = new Map();
@@ -1665,7 +1782,8 @@
         const cables = createCableRoutingGroup(THREE, roomConnections, roomPortAnchors, roomConfig.cableRenderLimit, {
           rearAware: state.cableRearAware
         });
-        renderedCableCount = cables.children.length;
+        renderedCableCount = ensureNum(cables.userData?.renderedCount, 0);
+        skippedCableByFilterCount = ensureNum(cables.userData?.skippedByFilter, 0);
         roomGroup.add(cables);
       }
 
@@ -1679,6 +1797,7 @@
           deviceCount: totalDevices,
           renderedDeviceCount,
           renderedCableCount,
+          skippedCableByFilterCount,
           cableTotalCount: roomConnections.length,
           deviceLoadingMode: state.roomAutoNearby
             ? `Auto-Near (${Math.min(roomConfig.nearbyRackCount, renderedRackCount)} Racks, sticky ${Math.min(state.roomNearbyStickyIds.size, Math.min(roomConfig.nearbyRackCount, renderedRackCount))}), Chunking ${state.roomChunking ? `on (${roomConfig.chunkCount} Chunks)` : 'off'}, Device-Limit ${roomConfig.deviceRenderLimit}, Cable-Limit ${roomConfig.cableRenderLimit}`
@@ -1715,17 +1834,36 @@
         parts.push(`Schwerpunkt Y: ${sum.centerOfMassY.toFixed(1)} mm`);
       }
 
+      parts.push(`Power gesamt: ${sum.totalPowerW.toFixed(0)} W`);
+      parts.push(`Thermal gesamt: ${sum.totalThermalW.toFixed(0)} W`);
+      if (sum.powerLimitW > 0) {
+        parts.push(`Power-Limit: ${sum.powerLimitW.toFixed(0)} W`);
+        parts.push(`Power-Auslastung: ${sum.powerUtilizationPct.toFixed(1)} %`);
+      } else {
+        parts.push('Power-Limit: nicht gesetzt');
+      }
+      if (sum.thermalLimitW > 0) {
+        parts.push(`Thermal-Limit: ${sum.thermalLimitW.toFixed(0)} W`);
+        parts.push(`Thermal-Auslastung: ${sum.thermalUtilizationPct.toFixed(1)} %`);
+      } else {
+        parts.push('Thermal-Limit: nicht gesetzt');
+      }
+
       const segLines = sum.segments
-        .map((s) => `${s.idx + 1}: ${s.from.toFixed(0)}-${s.to.toFixed(0)} mm => ${s.kg.toFixed(1)} kg`)
+        .map((s) => `${s.idx + 1}: ${s.from.toFixed(0)}-${s.to.toFixed(0)} mm => ${s.kg.toFixed(1)} kg, ${s.powerW.toFixed(0)} W, ${s.thermalW.toFixed(0)} W`)
         .join(' | ');
 
       loadSummaryEl.classList.remove('warn', 'error');
-      if (sum.utilizationPct !== null) {
-        if (sum.utilizationPct > 100) loadSummaryEl.classList.add('error');
-        else if (sum.utilizationPct > 85) loadSummaryEl.classList.add('warn');
-      }
+      const hasError = (sum.utilizationPct !== null && sum.utilizationPct > 100)
+        || (sum.powerUtilizationPct !== null && sum.powerUtilizationPct > 100)
+        || (sum.thermalUtilizationPct !== null && sum.thermalUtilizationPct > 100);
+      const hasWarn = (sum.utilizationPct !== null && sum.utilizationPct > 85)
+        || (sum.powerUtilizationPct !== null && sum.powerUtilizationPct > 85)
+        || (sum.thermalUtilizationPct !== null && sum.thermalUtilizationPct > 85);
+      if (hasError) loadSummaryEl.classList.add('error');
+      else if (hasWarn) loadSummaryEl.classList.add('warn');
 
-      loadSummaryEl.textContent = `${parts.join(' | ')}\nSegmentlast (unten->oben): ${segLines}`;
+      loadSummaryEl.textContent = `${parts.join(' | ')}\nSegmentlast (unten->oben): ${segLines}\nSegment-Peaks: ${sum.maxSegmentKg.toFixed(1)} kg | ${sum.maxSegmentPowerW.toFixed(0)} W | ${sum.maxSegmentThermalW.toFixed(0)} W`;
     }
 
     function renderDebugOutput(rack, devices) {
@@ -1869,6 +2007,9 @@
           return {
             uuid,
             name,
+            loadLimitKg: ensureNum(row.load_limit_kg ?? row.location_load_limit_kg ?? row.loadLimitKg, NaN),
+            powerLimitW: ensureNum(row.power_limit_w ?? row.location_power_limit_w ?? row.powerLimitW, NaN),
+            thermalLimitW: ensureNum(row.thermal_limit_w ?? row.location_thermal_limit_w ?? row.thermalLimitW, NaN),
             geometry,
             raw: row
           };
@@ -1962,6 +2103,8 @@
             size,
             rotation,
             weightKg: ensureNum(row.weight_kg ?? row.weight ?? row.device_weight_kg, NaN),
+            powerW: ensureNum(row.power_w ?? row.power ?? row.device_power_w, NaN),
+            thermalW: ensureNum(row.thermal_w ?? row.thermal ?? row.device_thermal_w, NaN),
             ports,
             color: inferDeviceColor(row.type || row.device_type),
             mounting: mounting && typeof mounting === 'object' ? mounting : null,
@@ -2019,6 +2162,8 @@
           size,
           rotation,
           weightKg: ensureNum(row.weight_kg ?? row.weight ?? row.device_weight_kg, NaN),
+          powerW: ensureNum(row.power_w ?? row.power ?? row.device_power_w, NaN),
+          thermalW: ensureNum(row.thermal_w ?? row.thermal ?? row.device_thermal_w, NaN),
           ports: deviceUuid ? (portsByDevice.get(deviceUuid) || []) : [],
           color: inferDeviceColor(row.type || row.device_type),
           mounting: mounting && typeof mounting === 'object' ? mounting : null,
@@ -2477,10 +2622,15 @@
       const groupLaneMap = new Map();
       let rendered = 0;
       let skipped = 0;
+      let skippedByFilter = 0;
       const skippedCables = [];
 
       for (const conn of connections) {
         if (rendered >= limit) break;
+        if (!isCableVisibleByFilter(conn)) {
+          skippedByFilter += 1;
+          continue;
+        }
         const srcData = portAnchors.get(String(conn.sourcePortUuid || '').trim());
         const dstData = portAnchors.get(String(conn.destinationPortUuid || '').trim());
         if (!srcData || !dstData || !srcData.position || !dstData.position) {
@@ -2583,12 +2733,8 @@
         g.add(cableMesh);
 
         if (state.showCableLabels) {
-          const cableLabelText = String(
-            conn.uuid
-            || conn.itemGroup
-            || conn.type
-            || `${String(conn.sourcePortUuid || '')} -> ${String(conn.destinationPortUuid || '')}`
-          ).trim();
+          const cableLabelText = formatCableLabel(conn)
+            || `${String(conn.sourcePortUuid || '')} -> ${String(conn.destinationPortUuid || '')}`;
           if (cableLabelText) {
             const label = createTextLabelSprite(THREE, cableLabelText, {
               worldWidth: 0.13,
@@ -2611,6 +2757,12 @@
       if (skipped > 0) {
         console.log(`Cable Routing: rendered ${rendered}, skipped ${skipped} (limit ${limit})`, skippedCables);
       }
+
+      g.userData = {
+        renderedCount: rendered,
+        skippedByMissingAnchors: skipped,
+        skippedByFilter
+      };
 
       return g;
     }
@@ -2730,7 +2882,11 @@
           focusCameraOnRackInRoom(roomLayout.summary.focusedRackPosition, roomConfig);
         }
         renderRoomSummary(roomLayout.summary);
-        renderCableSummary(roomLayout.cableConnections || [], roomLayout.summary.renderedCableCount || 0);
+        renderCableSummary(
+          roomLayout.cableConnections || [],
+          roomLayout.summary.renderedCableCount || 0,
+          ensureNum(roomLayout.summary.skippedCableByFilterCount, 0)
+        );
         setStatus(`Room-Modus: Fokus auf ${roomLayout.summary.focusLabel}, Geräte ${roomLayout.summary.renderedDeviceCount}/${roomLayout.summary.deviceCount}.`);
         return;
       }
@@ -2753,13 +2909,17 @@
           rearAware: state.cableRearAware
         });
         g.add(cables);
-        renderCableSummary(activeConnections, cables.children.length);
+        renderCableSummary(
+          activeConnections,
+          ensureNum(cables.userData?.renderedCount, 0),
+          ensureNum(cables.userData?.skippedByFilter, 0)
+        );
       } else {
         renderCableSummary([], 0);
       }
 
       if (state.showLoadOverlay) {
-        const loadOverlay = createLoadOverlayMesh(state.THREE, rackGeom, summarizeRackLoad(data));
+        const loadOverlay = createLoadOverlayMesh(state.THREE, rackGeom, summarizeRackLoad(data), state.loadOverlayMetric);
         g.add(loadOverlay);
       }
 
@@ -2917,6 +3077,14 @@
       if (state.loaded) renderFromInput();
       setStatus(`Last-Heat-Overlay ${state.showLoadOverlay ? 'aktiv' : 'deaktiviert'}.`);
     });
+    loadOverlayMetricSelect.addEventListener('change', () => {
+      state.loadOverlayMetric = ['weight', 'power', 'thermal'].includes(String(loadOverlayMetricSelect.value))
+        ? String(loadOverlayMetricSelect.value)
+        : 'weight';
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Overlay-Metrik: ${state.loadOverlayMetric}.`);
+    });
     portsToggle.addEventListener('change', () => {
       state.showPorts = portsToggle.checked;
       state.lastModelSignature = null;
@@ -2940,6 +3108,28 @@
       state.lastModelSignature = null;
       if (state.loaded) renderFromInput();
       setStatus(`Kabel-Beschriftung ${state.showCableLabels ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    cableMetaLabelsToggle.addEventListener('change', () => {
+      state.showCableMetaLabels = cableMetaLabelsToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Kabel-Metadaten in Labels ${state.showCableMetaLabels ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    [
+      cableFilterFiberToggle,
+      cableFilterCopperToggle,
+      cableFilterPowerToggle,
+      cableFilterTrunkToggle
+    ].forEach((el) => {
+      el.addEventListener('change', () => {
+        state.cableFilterFiber = cableFilterFiberToggle.checked;
+        state.cableFilterCopper = cableFilterCopperToggle.checked;
+        state.cableFilterPower = cableFilterPowerToggle.checked;
+        state.cableFilterTrunk = cableFilterTrunkToggle.checked;
+        state.lastModelSignature = null;
+        if (state.loaded) renderFromInput();
+        setStatus(`Kabel-Filter: Fiber ${state.cableFilterFiber ? 'on' : 'off'}, Copper ${state.cableFilterCopper ? 'on' : 'off'}, Power ${state.cableFilterPower ? 'on' : 'off'}, Trunks ${state.cableFilterTrunk ? 'on' : 'off'}.`);
+      });
     });
     cableRearAwareToggle.addEventListener('change', () => {
       state.cableRearAware = cableRearAwareToggle.checked;

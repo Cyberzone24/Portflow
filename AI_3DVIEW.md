@@ -164,10 +164,10 @@ Benefits:
   - `assets`
 
 ## 10. Immediate Next Action
-Proceed with Phase 1 mockup implementation in `Mockup.html` (overwrite), including:
-- Click-to-load Three.js,
-- Rack + devices visualization,
-- Sample JSON controls for quick testing.
+Proceed with the next open expansion block (post-Phase-7 cable foundation):
+- Add cable presets (Debug Trunks / Power only / Full / Minimal focus)
+- Add optional trunk waypoint controls (tray height/clearance)
+- Add route stress warnings (too long / high bend density)
 
 ## 11. Status Log
 
@@ -456,3 +456,77 @@ Proceed with Phase 1 mockup implementation in `Mockup.html` (overwrite), includi
   - Sample-Racks erhalten eindeutige Port-UUIDs pro Rack.
   - Zusätzliche synthetische Fiber-Trunks zwischen benachbarten Sample-Racks.
   - Bundle-Gruppen teilen sich Routing-Lanes für besser lesbare Glasfaser-Bündel.
+
+### 2026-04-18 - Cable Labels + Downward Trunk Routing
+- Neue UI-Toggles in `Mockup.html`:
+  - `Port-Beschriftung anzeigen`
+  - `Kabel-Beschriftung anzeigen`
+- Label-Rendering ergänzt:
+  - Ports und Kabel werden optional als Sprite-Labels im 3D-Viewport dargestellt.
+  - Label-Material/Texture werden beim Scene-Cleanup explizit freigegeben.
+- Trunk-Routing angepasst:
+  - Inter-Rack-Trunks nutzen `routeProfile: downward` statt Overhead.
+  - Pfadführung senkt Trunks auf ein bodennahes Tray-Niveau vor dem Horizontalabschnitt.
+
+### 2026-04-18 - Next Expansion: Cable Filter Controls
+- Kabel-Filter ergänzt, um komplexe Room-Szenen gezielt zu analysieren:
+  - `Fiber`, `Copper/CAT`, `Power`, `Trunks` einzeln ein-/ausblendbar.
+- Routing-Engine (`createCableRoutingGroup`) filtert vor dem Mesh-Bau.
+- Cable Summary erweitert um `Ausgeblendet (Filter)`.
+- Render-Zählung korrigiert:
+  - Kabel-Counts basieren auf tatsächlichen Kabelmeshes (`renderedCount`) statt auf Gruppenkindern (damit Labels nicht als Kabel mitgezählt werden).
+
+### 2026-04-18 - Phase 5 Open Points Implemented (Power/Thermal + Cable Metadata)
+- Last-Overlay wurde von reinem Gewichts-Heatmap-Modus auf umschaltbare Metriken erweitert:
+  - `Gewicht (kg)`
+  - `Power (W)`
+  - `Thermal (W)`
+- Datenpfad erweitert:
+  - Geräte können nun `powerW`/`power_w` und `thermalW`/`thermal_w` führen.
+  - Bei fehlenden Feldern werden typbasierte Fallback-Werte verwendet.
+- Rack-Load-Summary erweitert:
+  - `Power gesamt` und `Thermal gesamt` werden im Summary angezeigt.
+  - Segmentdaten enthalten jetzt parallel `kg`, `powerW`, `thermalW`.
+- Kabel-Metadaten in Labels erweitert:
+  - Optionales Label-Suffix mit `Typ`, `Speed`, `Länge`.
+  - Toggle `Kabel-Metadaten in Labels` ergänzt.
+
+### 2026-04-18 - Phase 5 Budget Warnings (Weight/Power/Thermal)
+- Rack-Modell unterstützt jetzt zusätzlich:
+  - `powerLimitW`
+  - `thermalLimitW`
+- Load-Summary erweitert:
+  - Auslastung für Gewicht, Power und Thermal mit Limitvergleich.
+  - Warn-/Error-Zustände reagieren jetzt auf alle drei Budgets.
+  - Segmentausgabe zeigt pro Segment: `kg`, `W`, `thermal W`.
+  - Segment-Peaks als schnelle Hotspot-Kennzahl ergänzt.
+
+## 12. Open Points (as of 2026-04-18)
+
+### High Priority
+- Cable Routing QoL:
+  - Presets für schnelle Filter-/Debug-Ansichten fehlen noch.
+  - Trunk-Waypoint/Tray-Parameter sind noch nicht als UI-Regler verfügbar.
+  - Automatische Kollisionsvermeidung auf Segment-Ebene (Segment-vs-AABB) ist noch nicht implementiert.
+
+### Medium Priority
+- Engineering Extensions (Phase 5):
+  - Thermal/Power-Overlay ist noch rudimentär bzw. nicht vollständig datengetrieben.
+  - Port-/Kabel-Metadaten (z. B. Länge, Typ, Speed) als optionale In-Scene-Legend/Tooltip können erweitert werden.
+
+### Medium/Long Term
+- Visual Extensions (Phase 6):
+  - Real component images / glTF assets noch offen.
+  - Front/Rear view presets für schnellen Perspektivwechsel fehlen.
+  - Hybrid mode (parametric + real assets) ist noch offen.
+
+### Long Term
+- Room Survey Expansion (Phase 7+):
+  - Raumstruktur-Objekte (Wände/Türen/Trassen) als echte Constraints fehlen.
+  - Walkway-/Pathway-Analyse jenseits rack-rack clearance ist noch offen.
+
+## 13. Recommended Next Build Step
+Implement "Cable View Presets" in `Mockup.html`:
+- Buttons/Select für: `Debug Trunks`, `Power only`, `Full`, `Minimal Focus`.
+- Presets setzen bestehende Filter- und Label-Toggles atomar.
+- Ergebnis: deutlich schnelleres Debugging/Review bei großen Room-Szenen.
