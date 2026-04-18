@@ -445,3 +445,14 @@ Proceed with Phase 1 mockup implementation in `Mockup.html` (overwrite), includi
 - Nächste Ausbauschritte begonnen:
   - Rear-aware Routing-Option (`Kabel rear-aware Routing`) ergänzt.
   - Cable Summary/Legend ergänzt (Counts je Typ, Crossover, Speed-Range, gerendert/gesamt).
+
+### 2026-04-18 - Rear Ports + Inter-Rack Fiber Bundle Showcase
+- Default-Beispieldaten erweitert um Rear-Ports:
+  - Rear-SFP/Fiber-Ports an Switch/Patchpanel.
+  - Rear-Power-Ports am Firewall-Beispiel.
+- Beispiel-Connections erweitert:
+  - Strom- und Fiber-Verbindungen inkl. `item_group` für Bundle-Darstellung.
+- Room-Sample-Modus erweitert:
+  - Sample-Racks erhalten eindeutige Port-UUIDs pro Rack.
+  - Zusätzliche synthetische Fiber-Trunks zwischen benachbarten Sample-Racks.
+  - Bundle-Gruppen teilen sich Routing-Lanes für besser lesbare Glasfaser-Bündel.

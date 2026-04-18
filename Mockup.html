@@ -271,7 +271,9 @@
         <label><input id="rackEarsToggle" type="checkbox" checked> Rackohren anzeigen (2 mm, kurz)</label>
         <label><input id="loadOverlayToggle" type="checkbox" checked> Last-Heat-Overlay anzeigen</label>
         <label><input id="portsToggle" type="checkbox" checked> Ports anzeigen</label>
+        <label><input id="portLabelsToggle" type="checkbox"> Port-Beschriftung anzeigen</label>
         <label><input id="cablesToggle" type="checkbox" checked> Kabel anzeigen</label>
+        <label><input id="cableLabelsToggle" type="checkbox"> Kabel-Beschriftung anzeigen</label>
         <label><input id="cableRearAwareToggle" type="checkbox" checked> Kabel rear-aware Routing</label>
         <label><input id="comMarkerToggle" type="checkbox" checked> Last-Schwerpunktmarker anzeigen</label>
       </div>
@@ -383,6 +385,7 @@
       },
       devices: [
         {
+          uuid: "dev-core-switch",
           name: "Core Switch",
           placement: { x: 0, y: 0, z: 0 },
           size: { x: 445, y: 44, z: 320 },
@@ -391,11 +394,14 @@
           ports: [
             { uuid: "port-sw-p1", name: "P1", placement: { x: 26, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
             { uuid: "port-sw-p2", name: "P2", placement: { x: 42, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
-            { uuid: "port-sw-p3", name: "P3", placement: { x: 58, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" }
+            { uuid: "port-sw-p3", name: "P3", placement: { x: 58, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
+            { uuid: "port-sw-sfp1", name: "SFP1", side: "rear", placement: { x: 330, y: 10, z: 8 }, size: { x: 14, y: 14, z: 10 }, type: "fiber" },
+            { uuid: "port-sw-sfp2", name: "SFP2", side: "rear", placement: { x: 350, y: 10, z: 8 }, size: { x: 14, y: 14, z: 10 }, type: "fiber" }
           ],
           color: "#38bdf8"
         },
         {
+          uuid: "dev-patchpanel",
           name: "Patchpanel 24p",
           placement: { x: 0, y: 44, z: 0 },
           size: { x: 445, y: 44, z: 140 },
@@ -403,11 +409,14 @@
           weightKg: 3.1,
           ports: [
             { uuid: "port-pp-p1", name: "PP1", placement: { x: 32, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "cat7" },
-            { uuid: "port-pp-p2", name: "PP2", placement: { x: 50, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "cat7" }
+            { uuid: "port-pp-p2", name: "PP2", placement: { x: 50, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "cat7" },
+            { uuid: "port-pp-f1", name: "FIB1", side: "rear", placement: { x: 300, y: 10, z: 8 }, size: { x: 14, y: 14, z: 10 }, type: "fiber" },
+            { uuid: "port-pp-f2", name: "FIB2", side: "rear", placement: { x: 320, y: 10, z: 8 }, size: { x: 14, y: 14, z: 10 }, type: "fiber" }
           ],
           color: "#a78bfa"
         },
         {
+          uuid: "dev-firewall",
           name: "Firewall",
           placement: { x: 0, y: 132, z: 0 },
           size: { x: 445, y: 88, z: 260 },
@@ -415,7 +424,9 @@
           weightKg: 12.4,
           ports: [
             { uuid: "port-fw-wan", name: "WAN", placement: { x: 26, y: 16, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
-            { uuid: "port-fw-lan", name: "LAN", placement: { x: 44, y: 16, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" }
+            { uuid: "port-fw-lan", name: "LAN", placement: { x: 44, y: 16, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
+            { uuid: "port-fw-pwr1", name: "PWR1", side: "rear", placement: { x: 365, y: 18, z: 12 }, size: { x: 16, y: 16, z: 12 }, type: "power" },
+            { uuid: "port-fw-pwr2", name: "PWR2", side: "rear", placement: { x: 390, y: 18, z: 12 }, size: { x: 16, y: 16, z: 12 }, type: "power" }
           ],
           color: "#f59e0b"
         }
@@ -447,6 +458,39 @@
           length: 2.6,
           crossover: true,
           speed: 1000
+        },
+        {
+          uuid: "conn-4",
+          device_port_source: "port-sw-sfp1",
+          device_port_destination: "port-pp-f1",
+          type: "Fiber",
+          length: 3.2,
+          crossover: false,
+          speed: 10000,
+          item_group: "fiber-bundle-a",
+          color: 0xff00ff
+        },
+        {
+          uuid: "conn-5",
+          device_port_source: "port-sw-sfp2",
+          device_port_destination: "port-pp-f2",
+          type: "Fiber",
+          length: 3.2,
+          crossover: false,
+          speed: 10000,
+          item_group: "fiber-bundle-a",
+          color: 0x00ff00
+        },
+        {
+          uuid: "conn-6",
+          device_port_source: "port-fw-pwr1",
+          device_port_destination: "port-fw-pwr2",
+          type: "Power",
+          length: 0.3,
+          crossover: false,
+          speed: 0,
+          item_group: "power-pdu-1",
+          color: 0xff0000
         }
       ]
     };
@@ -470,7 +514,9 @@
       showRackEars: true,
       showLoadOverlay: true,
       showPorts: true,
+      showPortLabels: false,
       showCables: true,
+      showCableLabels: false,
       cableRearAware: true,
       showComMarker: true,
       showRoomLayout: false,
@@ -511,7 +557,9 @@
     const rackEarsToggle = document.getElementById('rackEarsToggle');
     const loadOverlayToggle = document.getElementById('loadOverlayToggle');
     const portsToggle = document.getElementById('portsToggle');
+    const portLabelsToggle = document.getElementById('portLabelsToggle');
     const cablesToggle = document.getElementById('cablesToggle');
+    const cableLabelsToggle = document.getElementById('cableLabelsToggle');
     const cableRearAwareToggle = document.getElementById('cableRearAwareToggle');
     const comMarkerToggle = document.getElementById('comMarkerToggle');
     const loadSummaryEl = document.getElementById('loadSummary');
@@ -565,7 +613,9 @@
     state.showRackEars = !!rackEarsToggle.checked;
     state.showLoadOverlay = !!loadOverlayToggle.checked;
     state.showPorts = !!portsToggle.checked;
+    state.showPortLabels = !!portLabelsToggle.checked;
     state.showCables = !!cablesToggle.checked;
+    state.showCableLabels = !!cableLabelsToggle.checked;
     state.cableRearAware = !!cableRearAwareToggle.checked;
     state.showComMarker = !!comMarkerToggle.checked;
     state.showRoomLayout = !!roomModeToggle.checked;
@@ -860,6 +910,70 @@
       return Number.isFinite(n) ? n : fallback;
     }
 
+    function createTextLabelSprite(THREE, text, opts = {}) {
+      const label = String(text || '').trim();
+      if (!label) return null;
+
+      const fontPx = Math.max(24, Math.floor(ensureNum(opts.fontPx, 34)));
+      const padX = Math.max(8, Math.floor(ensureNum(opts.padX, 12)));
+      const padY = Math.max(6, Math.floor(ensureNum(opts.padY, 8)));
+      const width = Math.max(192, Math.min(1024, label.length * Math.floor(fontPx * 0.66) + padX * 2));
+      const height = Math.max(64, fontPx + padY * 2);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      const bg = opts.bg || 'rgba(7, 18, 38, 0.68)';
+      const fg = opts.fg || '#e2e8f0';
+      const border = opts.border || 'rgba(148, 163, 184, 0.72)';
+
+      ctx.fillStyle = bg;
+      ctx.strokeStyle = border;
+      ctx.lineWidth = 2;
+      const radius = 10;
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(width - radius, 0);
+      ctx.quadraticCurveTo(width, 0, width, radius);
+      ctx.lineTo(width, height - radius);
+      ctx.quadraticCurveTo(width, height, width - radius, height);
+      ctx.lineTo(radius, height);
+      ctx.quadraticCurveTo(0, height, 0, height - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = `600 ${fontPx}px Segoe UI, Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = fg;
+      ctx.fillText(label, width / 2, height / 2 + 1);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.renderOrder = 80;
+
+      const worldWidth = ensureNum(opts.worldWidth, 0.085);
+      const worldHeight = worldWidth * (height / width);
+      sprite.scale.set(worldWidth, worldHeight, 1);
+      return sprite;
+    }
+
     function getRackGeometryDefaults(rackGeom) {
       const outer = rackGeom?.outer || { x: 600, y: 2200, z: 1000 };
       const inner = rackGeom?.inner || { x: 550, y: 2100, z: 900 };
@@ -1097,19 +1211,121 @@
             uuid: rack.uuid,
             name: rack.name,
             geometry: rack.geometry,
-            devices
+            devices,
+            samplePortMap: null
           };
         });
       }
 
       const baseGeom = data?.rack?.geometry || defaultMockData.rack.geometry;
       const baseDevices = Array.isArray(data?.devices) ? data.devices : [];
-      return Array.from({ length: roomConfig.sampleRackCount }, (_, idx) => ({
-        uuid: `sample-${idx + 1}`,
-        name: `Sample Rack ${idx + 1}`,
-        geometry: JSON.parse(JSON.stringify(baseGeom)),
-        devices: JSON.parse(JSON.stringify(baseDevices))
-      }));
+      return Array.from({ length: roomConfig.sampleRackCount }, (_, idx) => {
+        const rackNo = idx + 1;
+        const rackId = `sample-${rackNo}`;
+        const portMap = new Map();
+        const devices = baseDevices.map((device, dIdx) => {
+          const devClone = JSON.parse(JSON.stringify(device));
+          const srcDevUuid = String(device?.uuid || `dev-${dIdx + 1}`);
+          devClone.uuid = `${srcDevUuid}::${rackId}`;
+          if (Array.isArray(devClone.ports)) {
+            devClone.ports = devClone.ports.map((port, pIdx) => {
+              const srcPortUuid = String(port?.uuid || `port-${dIdx + 1}-${pIdx + 1}`);
+              const nextPort = { ...port, uuid: `${srcPortUuid}::${rackId}` };
+              portMap.set(srcPortUuid, nextPort.uuid);
+              return nextPort;
+            });
+          }
+          return devClone;
+        });
+
+        return {
+          uuid: rackId,
+          name: `Sample Rack ${rackNo}`,
+          geometry: JSON.parse(JSON.stringify(baseGeom)),
+          devices,
+          samplePortMap: portMap
+        };
+      });
+    }
+
+    function getConnectionsForRoomLayout(racks, baseConnections, hasLiveRacks, racksWithAnchors = null, portAnchors = null) {
+      const inputConnections = Array.isArray(baseConnections) ? baseConnections : [];
+      if (hasLiveRacks) return inputConnections;
+      if (!Array.isArray(racks) || racks.length === 0) return [];
+      const renderedRackSet = racksWithAnchors instanceof Set ? racksWithAnchors : new Set();
+      const anchors = portAnchors instanceof Map ? portAnchors : new Map();
+
+      const roomConnections = [];
+
+      // Clone base connections per sample rack using per-rack port UUID maps.
+      racks.forEach((rack, idx) => {
+        const map = rack.samplePortMap instanceof Map ? rack.samplePortMap : null;
+        if (!map) return;
+        inputConnections.forEach((conn, cIdx) => {
+          const src = map.get(String(conn.sourcePortUuid || '').split('::')[0]);
+          const dst = map.get(String(conn.destinationPortUuid || '').split('::')[0]);
+          if (!src || !dst) return;
+          roomConnections.push({
+            ...conn,
+            uuid: `${conn.uuid || `conn-${cIdx + 1}`}::${rack.uuid}`,
+            sourcePortUuid: src,
+            destinationPortUuid: dst
+          });
+        });
+
+        // Synthetic inter-rack fiber trunks only when BOTH the connection ports are actually rendered in anchors.
+        if (idx < racks.length - 1) {
+          const nextRack = racks[idx + 1];
+          const nextMap = nextRack.samplePortMap instanceof Map ? nextRack.samplePortMap : null;
+          if (!nextMap) return;
+
+          // For SFP1 trunk: check that both source and destination port UUIDs exist in anchors
+          if (map.has('port-sw-sfp1') && nextMap.has('port-sw-sfp1')) {
+            const srcPortUuid = map.get('port-sw-sfp1');
+            const dstPortUuid = nextMap.get('port-sw-sfp1');
+            // Only create trunk if BOTH ports are in the anchor map (meaning they were rendered)
+            if (anchors.has(srcPortUuid) && anchors.has(dstPortUuid)) {
+              roomConnections.push({
+                uuid: `fiber-trunk-a-${idx + 1}-${idx + 2}`,
+                sourcePortUuid: srcPortUuid,
+                destinationPortUuid: dstPortUuid,
+                type: 'Fiber',
+                routeProfile: 'downward',
+                length: 8,
+                crossover: false,
+                speed: 40000,
+                itemGroup: `rack-trunk-${idx + 1}-${idx + 2}-a`,
+                color: 0xffff00,
+                raw: null
+              });
+            }
+          }
+
+          // For SFP2 trunk: check that both source and destination port UUIDs exist in anchors
+          if (map.has('port-sw-sfp2') && nextMap.has('port-sw-sfp2')) {
+            const srcPortUuid = map.get('port-sw-sfp2');
+            const dstPortUuid = nextMap.get('port-sw-sfp2');
+            // Only create trunk if BOTH ports are in the anchor map (meaning they were rendered)
+            if (anchors.has(srcPortUuid) && anchors.has(dstPortUuid)) {
+              roomConnections.push({
+                uuid: `fiber-trunk-b-${idx + 1}-${idx + 2}`,
+                sourcePortUuid: srcPortUuid,
+                destinationPortUuid: dstPortUuid,
+                type: 'Fiber',
+                routeProfile: 'downward',
+                length: 8,
+                crossover: false,
+                speed: 40000,
+                itemGroup: `rack-trunk-${idx + 1}-${idx + 2}-b`,
+                color: 0xcccc00,
+                raw: null
+              });
+            }
+          }
+        }
+      });
+
+      return roomConnections;
     }
 
     function syncRoomFocusRackOptions(data, roomConfig) {
@@ -1431,9 +1647,22 @@
       const fillPct = roomAreaMm2 > 0 ? (totalUsedAreaMm2 / roomAreaMm2) * 100 : 0;
       const hasLiveRacks = Array.isArray(state.liveRacks) && state.liveRacks.length > 0;
       const safety = analyzeRoomSafety(racks, positions, chunkedRackIds, roomConfig);
+      // Track racks that have port anchors (their devices were rendered).
+      const racksWithAnchors = new Set(
+        racks
+          .filter(rack => {
+            const rackDevices = Array.isArray(rack.devices) ? rack.devices : [];
+            const shouldRenderDevices = state.roomAutoNearby
+              ? autoNearbyRackIds?.has(rack.uuid)
+              : (!state.roomFocusDevicesOnly || rack.uuid === effectiveFocusRackId);
+            return shouldRenderDevices && rackDevices.length > 0;
+          })
+          .map(rack => rack.uuid)
+      );
+      const roomConnections = getConnectionsForRoomLayout(racks, connections, hasLiveRacks, racksWithAnchors, roomPortAnchors);
 
       if (state.showCables) {
-        const cables = createCableRoutingGroup(THREE, connections, roomPortAnchors, roomConfig.cableRenderLimit, {
+        const cables = createCableRoutingGroup(THREE, roomConnections, roomPortAnchors, roomConfig.cableRenderLimit, {
           rearAware: state.cableRearAware
         });
         renderedCableCount = cables.children.length;
@@ -1442,6 +1671,7 @@
 
       return {
         group: roomGroup,
+        cableConnections: roomConnections,
         summary: {
           active: true,
           rackCount,
@@ -1449,6 +1679,7 @@
           deviceCount: totalDevices,
           renderedDeviceCount,
           renderedCableCount,
+          cableTotalCount: roomConnections.length,
           deviceLoadingMode: state.roomAutoNearby
             ? `Auto-Near (${Math.min(roomConfig.nearbyRackCount, renderedRackCount)} Racks, sticky ${Math.min(state.roomNearbyStickyIds.size, Math.min(roomConfig.nearbyRackCount, renderedRackCount))}), Chunking ${state.roomChunking ? `on (${roomConfig.chunkCount} Chunks)` : 'off'}, Device-Limit ${roomConfig.deviceRenderLimit}, Cable-Limit ${roomConfig.cableRenderLimit}`
             : `${state.roomFocusDevicesOnly ? 'Nur Fokusrack' : 'Alle Racks'}, Chunking ${state.roomChunking ? `on (${roomConfig.chunkCount} Chunks)` : 'off'}, Device-Limit ${roomConfig.deviceRenderLimit}, Cable-Limit ${roomConfig.cableRenderLimit}`,
@@ -1687,11 +1918,14 @@
           if (!sourcePortUuid || !destinationPortUuid) return null;
 
           const cableType = String(row.type || row.connection_type || '').toLowerCase();
-          const color = cableType.includes('fiber') || cableType.includes('glas')
-            ? 0x22d3ee
-            : cableType.includes('cat') || cableType.includes('copper') || cableType.includes('kupfer')
-              ? 0xf59e0b
-              : 0x94a3b8;
+          // Use explicit color if defined, otherwise infer from type
+          const color = row.color !== undefined
+            ? row.color
+            : cableType.includes('fiber') || cableType.includes('glas')
+              ? 0x22d3ee
+              : cableType.includes('cat') || cableType.includes('copper') || cableType.includes('kupfer')
+                ? 0xf59e0b
+                : 0x94a3b8;
 
           return {
             uuid: String(row.uuid || row.connection_uuid || '').trim() || null,
@@ -1701,6 +1935,7 @@
             length: ensureNum(row.length || row.connection_length, NaN),
             crossover: !!(row.crossover || row.connection_crossover),
             speed: ensureNum(row.speed || row.connection_speed, NaN),
+            itemGroup: String(row.item_group || row.connection_item_group || '').trim() || null,
             color,
             raw: row
           };
@@ -2102,6 +2337,25 @@
           pEdge.renderOrder = 31;
           pMesh.add(pEdge);
           portsGroup.add(pMesh);
+
+          if (state.showPortLabels) {
+            const portLabelText = String(port.name || port.uuid || '').trim();
+            if (portLabelText) {
+              const label = createTextLabelSprite(THREE, portLabelText, {
+                worldWidth: 0.07,
+                fontPx: 28,
+                bg: 'rgba(15, 23, 42, 0.78)'
+              });
+              if (label) {
+                label.position.set(
+                  Math.max(-w / 2 + pw / 2, Math.min(w / 2 - pw / 2, px)),
+                  Math.max(-h / 2 + ph / 2, Math.min(h / 2 - ph / 2, py)) + Math.max(ph * 0.8, mm(10)),
+                  pz + (portSide === 'rear' ? mm(6) : -mm(6))
+                );
+                portsGroup.add(label);
+              }
+            }
+          }
         });
         group.add(portsGroup);
       }
@@ -2220,13 +2474,25 @@
       const limit = Math.max(1, Math.floor(ensureNum(cableLimit, 600)));
       const rearAware = !!options.rearAware;
       const cableRadius = mm(2.2);
+      const groupLaneMap = new Map();
       let rendered = 0;
+      let skipped = 0;
+      const skippedCables = [];
 
       for (const conn of connections) {
         if (rendered >= limit) break;
         const srcData = portAnchors.get(String(conn.sourcePortUuid || '').trim());
         const dstData = portAnchors.get(String(conn.destinationPortUuid || '').trim());
-        if (!srcData || !dstData || !srcData.position || !dstData.position) continue;
+        if (!srcData || !dstData || !srcData.position || !dstData.position) {
+          skipped += 1;
+          skippedCables.push({
+            uuid: conn.uuid,
+            sourcePortUuid: conn.sourcePortUuid,
+            destinationPortUuid: conn.destinationPortUuid,
+            reason: !srcData ? 'source port not in anchors' : !dstData ? 'dest port not in anchors' : 'missing position'
+          });
+          continue;
+        }
 
         const src = srcData.position;
         const dst = dstData.position;
@@ -2238,11 +2504,38 @@
         const dstOut = dst.clone().add(dstNormal.clone().multiplyScalar(exitLen));
 
         // Keep lane separation only on Y to avoid sideways cable drift.
-        const lane = (rendered % 7) - 3;
+        // Cables in the same bundle/itemGroup share a lane so bundles stay visually grouped.
+        const groupKey = String(conn.itemGroup || conn.type || `cable-${rendered}`).toLowerCase();
+        if (!groupLaneMap.has(groupKey)) {
+          groupLaneMap.set(groupKey, (groupLaneMap.size % 7) - 3);
+        }
+        const lane = groupLaneMap.get(groupKey);
         const laneY = Math.abs(lane) * mm(2.2);
 
         let curve;
-        if (dist < mm(35)) {
+        const routeProfile = String(conn.routeProfile || '').toLowerCase();
+        const isTrunkCable = String(conn.uuid || '').startsWith('fiber-trunk-');
+        const isDownwardRoute = routeProfile === 'downward' || (isTrunkCable && routeProfile !== 'overhead');
+
+        if (isDownwardRoute) {
+          // Force multi-rack trunks to exit downward before spanning horizontally.
+          // Route near rack/room floor so trunks pass through the rack bottom area.
+          const floorTrayY = mm(6) + laneY;
+          const trayY = Math.min(floorTrayY, Math.min(srcOut.y, dstOut.y) - mm(260));
+          const p1 = srcOut.clone();
+          p1.y = trayY;
+          const p2 = dstOut.clone();
+          p2.y = trayY;
+          curve = new THREE.CatmullRomCurve3([src, srcOut, p1, p2, dstOut, dst], false, 'centripetal');
+        } else if (routeProfile === 'overhead') {
+          // Keep explicit overhead support as fallback for future profiles.
+          const trayY = Math.max(srcOut.y, dstOut.y) + mm(260) + laneY;
+          const p1 = srcOut.clone();
+          p1.y = trayY;
+          const p2 = dstOut.clone();
+          p2.y = trayY;
+          curve = new THREE.CatmullRomCurve3([src, srcOut, p1, p2, dstOut, dst], false, 'centripetal');
+        } else if (dist < mm(35)) {
           curve = new THREE.LineCurve3(src, dst);
         } else {
           // Prefer a short forward bridge in Z (in front of ports) over large vertical arcs.
@@ -2271,7 +2564,10 @@
           curve = new THREE.CatmullRomCurve3([src, p1, p2, p3, p4, dst], false, 'centripetal');
         }
 
-        const geo = new THREE.TubeGeometry(curve, 24, cableRadius, 8, false);
+        const radius = conn.itemGroup && String(conn.type || '').toLowerCase().includes('fiber')
+          ? cableRadius * 1.18
+          : cableRadius;
+        const geo = new THREE.TubeGeometry(curve, 24, radius, 8, false);
         const mat = new THREE.MeshStandardMaterial({
           color: conn.color || 0x94a3b8,
           transparent: true,
@@ -2285,7 +2581,35 @@
         const cableMesh = new THREE.Mesh(geo, mat);
         cableMesh.renderOrder = 40;
         g.add(cableMesh);
+
+        if (state.showCableLabels) {
+          const cableLabelText = String(
+            conn.uuid
+            || conn.itemGroup
+            || conn.type
+            || `${String(conn.sourcePortUuid || '')} -> ${String(conn.destinationPortUuid || '')}`
+          ).trim();
+          if (cableLabelText) {
+            const label = createTextLabelSprite(THREE, cableLabelText, {
+              worldWidth: 0.13,
+              fontPx: 26,
+              bg: 'rgba(2, 6, 23, 0.86)',
+              border: 'rgba(34, 211, 238, 0.9)'
+            });
+            if (label) {
+              const mid = curve.getPoint(0.5);
+              label.position.copy(mid);
+              label.position.y += mm(12);
+              g.add(label);
+            }
+          }
+        }
+
         rendered += 1;
+      }
+
+      if (skipped > 0) {
+        console.log(`Cable Routing: rendered ${rendered}, skipped ${skipped} (limit ${limit})`, skippedCables);
       }
 
       return g;
@@ -2297,8 +2621,15 @@
       state.group.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose?.();
         if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose?.());
-          else obj.material.dispose?.();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => {
+              if (m?.map) m.map.dispose?.();
+              m.dispose?.();
+            });
+          } else {
+            if (obj.material?.map) obj.material.map.dispose?.();
+            obj.material.dispose?.();
+          }
         }
       });
       state.group = null;
@@ -2399,7 +2730,7 @@
           focusCameraOnRackInRoom(roomLayout.summary.focusedRackPosition, roomConfig);
         }
         renderRoomSummary(roomLayout.summary);
-        renderCableSummary(activeConnections, roomLayout.summary.renderedCableCount || 0);
+        renderCableSummary(roomLayout.cableConnections || [], roomLayout.summary.renderedCableCount || 0);
         setStatus(`Room-Modus: Fokus auf ${roomLayout.summary.focusLabel}, Geräte ${roomLayout.summary.renderedDeviceCount}/${roomLayout.summary.deviceCount}.`);
         return;
       }
@@ -2592,11 +2923,23 @@
       if (state.loaded) renderFromInput();
       setStatus(`Ports ${state.showPorts ? 'aktiv' : 'deaktiviert'}.`);
     });
+    portLabelsToggle.addEventListener('change', () => {
+      state.showPortLabels = portLabelsToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Port-Beschriftung ${state.showPortLabels ? 'aktiv' : 'deaktiviert'}.`);
+    });
     cablesToggle.addEventListener('change', () => {
       state.showCables = cablesToggle.checked;
       state.lastModelSignature = null;
       if (state.loaded) renderFromInput();
       setStatus(`Kabel ${state.showCables ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    cableLabelsToggle.addEventListener('change', () => {
+      state.showCableLabels = cableLabelsToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Kabel-Beschriftung ${state.showCableLabels ? 'aktiv' : 'deaktiviert'}.`);
     });
     cableRearAwareToggle.addEventListener('change', () => {
       state.cableRearAware = cableRearAwareToggle.checked;
