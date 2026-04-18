@@ -149,7 +149,8 @@ class API {
 
             // --- Gültigkeitsprüfung für den ERSTEN Tabellennamen ---
             $tableName1 = $matches[1];
-            if (!isset($dbTables[$tableName1])) {
+            $allowedCustomViews = ['portview'];
+            if (!isset($dbTables[$tableName1]) && !in_array($tableName1, $allowedCustomViews, true)) {
                 http_response_code(404);
                 echo json_encode(['error' => "Resource '$tableName1' not found"]);
                 return;

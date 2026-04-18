@@ -591,13 +591,15 @@
                     "resource": "device_port_details",
                     "displayFields": ["device_port_device_location_parent_location_metadata_caption", "device_port_device_location_metadata_caption", "device_port_device_metadata_caption", "device_port_metadata_caption"],
                     "dependencies": {
-                        "device_port_source": "device_port_source"
+                        "device": "device_source"
                     },
                     "required": false
                 },
                 "expected_device_port_source": {
                     "label": "Expected Device Port Source",
-                    "type": "text",
+                    "type": "searchDropdown",
+                    "resource": "device_port_details",
+                    "displayFields": ["device_port_device_location_parent_location_metadata_caption", "device_port_device_location_metadata_caption", "device_port_device_metadata_caption", "device_port_metadata_caption"],
                     "required": false
                 },
                 "device_destination": {
@@ -615,12 +617,19 @@
                     "resource": "device_port_details",
                     "displayFields": ["device_port_device_location_parent_location_metadata_caption", "device_port_device_location_metadata_caption", "device_port_device_metadata_caption", "device_port_metadata_caption"],
                     "dependencies": {
-                        "device_port_destination": "device_port_destination"
+                        "device": "device_destination"
                     },
                     "required": false
                 },
                 "expected_device_port_destination": {
                     "label": "Expected Device Port Destination",
+                    "type": "searchDropdown",
+                    "resource": "device_port_details",
+                    "displayFields": ["device_port_device_location_parent_location_metadata_caption", "device_port_device_location_metadata_caption", "device_port_device_metadata_caption", "device_port_metadata_caption"],
+                    "required": false
+                },
+                "cable_name": {
+                    "label": "Cable Name",
                     "type": "text",
                     "required": false
                 },
@@ -659,7 +668,7 @@
                 {
                     "table": "connection",
                     "sectionTitle": "Connection",
-                    "fields": ["device_port_source", "expected_device_port_source", "device_port_destination", "expected_device_port_destination", "type", "length", "crossover", "speed", "item_group"],
+                    "fields": ["device_port_source", "expected_device_port_source", "device_port_destination", "expected_device_port_destination", "cable_name", "type", "length", "crossover", "speed", "item_group"],
                     "useMetadataUUID": true
                 }
             ]

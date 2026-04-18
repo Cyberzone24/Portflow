@@ -360,6 +360,18 @@ class DatabaseAdapter {
         return array_column($results, 'column_name');
     }
 
+    private function isAllowedSqlViewDefinition(string $sql): bool {
+        return (bool)preg_match('/^CREATE\s+OR\s+REPLACE\s+VIEW\s+/i', ltrim($sql));
+    }
+
+    private function extractViewNameFromSql(string $sql): string {
+        if (preg_match('/^CREATE\s+OR\s+REPLACE\s+VIEW\s+"?([a-zA-Z0-9_]+)"?/i', ltrim($sql), $matches)) {
+            return (string)$matches[1];
+        }
+
+        return 'custom_sql_view';
+    }
+
     private function createOrReplaceViews(array $dbTables): void {
         $this->logger->log("Starting view creation...");
         $viewDefinitions = file(__DIR__ . '/db_views.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -369,6 +381,29 @@ class DatabaseAdapter {
                 $this->pdo->beginTransaction();
 
                 $trimmed_definition = trim($definition);
+                if ($trimmed_definition === '' || strpos($trimmed_definition, '#') === 0) {
+                    $this->pdo->commit();
+                    continue;
+                }
+
+                if (stripos($trimmed_definition, 'SQL:') === 0) {
+                    $sql = trim(substr($trimmed_definition, 4));
+                    if ($sql === '') {
+                        throw new \Exception('Empty SQL view definition');
+                    }
+
+                    if (!$this->isAllowedSqlViewDefinition($sql)) {
+                        throw new \Exception('Unsupported SQL definition. Only CREATE OR REPLACE VIEW is allowed.');
+                    }
+
+                    $viewName = $this->extractViewNameFromSql($sql);
+                    $this->db_query('DROP VIEW IF EXISTS "' . $viewName . '" CASCADE;');
+                    $this->db_query($sql);
+                    $this->logger->log("Successfully created or replaced SQL view: \"$viewName\"");
+                    $this->pdo->commit();
+                    continue;
+                }
+
                 $joins = explode(', ', $trimmed_definition);
                 $firstJoinParts = explode(' ', $joins[0]);
                 $baseTable = explode('.', $firstJoinParts[0])[0];

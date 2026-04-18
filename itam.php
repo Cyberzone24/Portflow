@@ -2116,7 +2116,7 @@ function generateField(name, config) {
     wrapper.className = 'pb-6 h-fit w-full max-w-lg relative';
     let field;
 
-    if (name.startsWith('expected_')) {
+    if (name.startsWith('expected_') && config.autoMirrorFromSource === true) {
         wrapper.classList.add('hidden');
 
         field = document.createElement('input');
@@ -2287,6 +2287,8 @@ async function submitForms(table) {
     const configResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/forms.json');
     const configData = await configResponse.json();
     const postOrder = configData.forms[table].postOrder;
+    const formConfig = configData.forms[table];
+    const editMode = itamFormState.mode === 'edit' && itamFormState.table === table;
 
     // Hilfsfunktion, um die UUIDs in die richtigen Felder einzutragen
     function injectUuids(postData, postConfig) {
@@ -2309,8 +2311,54 @@ async function submitForms(table) {
             if (value === null || value === undefined) {
                 return false;
             }
+            if (value === false) {
+                return false;
+            }
             return String(value).trim() !== '';
         });
+    }
+
+    function buildPostDataFromConfig(form, postConfig) {
+        const postData = {};
+        const fieldList = Array.isArray(postConfig.fields) ? postConfig.fields : [];
+
+        fieldList.forEach((fieldName) => {
+            const fieldConfig = (formConfig.fields && formConfig.fields[fieldName]) ? formConfig.fields[fieldName] : {};
+            const input = form.querySelector(`[name="${fieldName}"]`);
+            if (!input) {
+                return;
+            }
+
+            if (fieldConfig.type === 'boolean') {
+                if (input.checked) {
+                    postData[fieldName] = true;
+                } else if (editMode) {
+                    postData[fieldName] = false;
+                }
+                return;
+            }
+
+            const rawValue = input.value;
+            if (rawValue === null || rawValue === undefined) {
+                return;
+            }
+
+            const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+            if (value === '') {
+                postData[fieldName] = null;
+                return;
+            }
+
+            if (fieldConfig.type === 'number') {
+                const parsed = Number(value);
+                postData[fieldName] = Number.isNaN(parsed) ? null : parsed;
+                return;
+            }
+
+            postData[fieldName] = value;
+        });
+
+        return postData;
     }
 
     function extractUuidFromApiPayload(payload, rawBody = '') {
@@ -2345,9 +2393,7 @@ async function submitForms(table) {
         const form = forms.find(f => f.id === postConfig.table);
         if (!form) continue;
 
-        const formData = new FormData(form);
-        const postData = {};
-        formData.forEach((value, key) => { postData[key] = value; });
+        const postData = buildPostDataFromConfig(form, postConfig);
 
         if (postConfig.table === 'device') {
             const parsedCount = parseInt(postData.port_count || 0, 10) || 0;
@@ -2391,7 +2437,6 @@ async function submitForms(table) {
         // UUIDs aus vorherigen POSTs einfügen, falls benötigt
         injectUuids(postData, postConfig);
 
-        const editMode = itamFormState.mode === 'edit' && itamFormState.table === table;
         const targetUuid = editMode ? (itamFormState.uuids[postConfig.table] || '') : '';
         let httpMethod = editMode ? 'PATCH' : 'POST';
         let apiUrl = editMode

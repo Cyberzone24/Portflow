@@ -1,1514 +1,428 @@
 <?php
-    ini_set('display_errors', 1);
-    ini_set('display_startup_errors', 1);
-    error_reporting(E_ALL);
-
-    const APP_NAME = 'Portflow';
-
-    include_once __DIR__ . '/includes/core/session.php';
-    if (!in_array(__DIR__ . '/includes/core/session.php', get_included_files())) {
-        die('could not verify session');
-    }
-
-    // import database adapter
-    include_once __DIR__ . '/includes/core/db_adapter.php';
-    include_once __DIR__ . '/includes/core/auth.php';
-    include_once __DIR__ . '/includes/core/logger.php';
-    include_once __DIR__ . '/includes/core/automation.php';
-    include_once __DIR__ . '/includes/core/automation_store.php';
-    include_once __DIR__ . '/includes/core/pending_changes_queue.php';
-    use Portflow\Core\DatabaseAdapter;
-    use Portflow\Core\Auth;
-    use Portflow\Core\Logger;
-    use Portflow\Core\Automation;
-    use Portflow\Core\AutomationStore;
-    use Portflow\Core\PendingChangesQueue;
-
-    $db_adapter = new DatabaseAdapter();
-    $auth = new Auth();
-    $logger = new Logger();
-    $automation = new Automation();
-    $automationStore = new AutomationStore();
-    $queueManager = new PendingChangesQueue($db_adapter);
-
-    function getPortShortcutDefinitions(AutomationStore $automationStore): array {
-        $defaults = [
-            [
-                'id' => 'shutdown',
-                'label' => 'Shutdown Port',
-                'template_id' => 'shutdown_port',
-                'icon' => 'fa-solid fa-power-off',
-                'button_class' => 'text-orange-500 hover:text-orange-700',
-                'confirm' => 'Shutdown Port ausfuehren?'
-            ],
-            [
-                'id' => 'cleanup',
-                'label' => 'Cleanup Port',
-                'template_id' => 'cleanup_port',
-                'icon' => 'fa-solid fa-broom',
-                'button_class' => 'text-purple-500 hover:text-purple-700',
-                'confirm' => 'Cleanup Port ausfuehren?'
-            ]
-        ];
-
-        $overrides = $automationStore->getScriptOverrides();
-        $configured = $overrides['shortcuts']['portview'] ?? null;
-
-        if (!is_array($configured) || empty($configured)) {
-            return $defaults;
-        }
-
-        $normalized = [];
-        foreach ($configured as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $id = trim((string)($item['id'] ?? ''));
-            $templateId = trim((string)($item['template_id'] ?? ''));
-            if ($id === '' || $templateId === '') {
-                continue;
-            }
-
-            if (isset($item['enabled']) && $item['enabled'] === false) {
-                continue;
-            }
-
-            $normalized[] = [
-                'id' => $id,
-                'label' => trim((string)($item['label'] ?? $id)),
-                'template_id' => $templateId,
-                'icon' => trim((string)($item['icon'] ?? 'fa-solid fa-bolt')),
-                'button_class' => trim((string)($item['button_class'] ?? 'text-cyan-500 hover:text-cyan-700')),
-                'confirm' => trim((string)($item['confirm'] ?? ('Shortcut ausfuehren: ' . $id . '?')))
-            ];
-        }
-
-        if (empty($normalized)) {
-            return $defaults;
-        }
-
-        return $normalized;
-    }
-
-    $portShortcutDefinitions = getPortShortcutDefinitions($automationStore);
-    $portShortcutIndex = [];
-    foreach ($portShortcutDefinitions as $shortcutDef) {
-        $shortcutId = (string)($shortcutDef['id'] ?? '');
-        if ($shortcutId !== '') {
-            $portShortcutIndex[$shortcutId] = $shortcutDef;
-        }
-    }
-
-    $portDeviceLabels = [
-        '--' => '--',
-        'phone' => 'Telefon',
-        'notebook' => 'Laptop',
-        'switch' => 'Switch',
-        'zeroclient' => 'Zeroclient',
-        'thinclient' => 'Thinclient',
-        'desktop' => 'Desktop',
-        'access_point' => 'Access Point',
-        'printer' => 'Drucker',
-        'other' => 'Sonstige'
-    ];
-
-    function runPortShortcutSshCommands(array $connection, array $commands): array {
-        $host = trim((string)($connection['mgmt_ip'] ?? ''));
-        $port = (int)($connection['ssh_port'] ?? 22);
-        $username = trim((string)($connection['ssh_username'] ?? ''));
-        $password = (string)($connection['ssh_password'] ?? '');
-
-        if ($host === '' || $username === '') {
-            return [
-                'ok' => false,
-                'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: Host und Username fehlen.'
-            ];
-        }
-
-        $sshPath = trim((string)shell_exec('command -v ssh 2>/dev/null'));
-        if ($sshPath === '') {
-            return [
-                'ok' => false,
-                'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: ssh Binary wurde nicht gefunden.'
-            ];
-        }
-
-        $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
-        $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
-
-        $commandFile = tempnam(sys_get_temp_dir(), 'portflow-shortcut-');
-        if ($commandFile === false) {
-            return [
-                'ok' => false,
-                'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: Konnte keine temporaere Datei anlegen.'
-            ];
-        }
-
-        $commandLines = ['screen-length 0 temporary'];
-        foreach ($commands as $command) {
-            $command = trim((string)$command);
-            if ($command !== '') {
-                $commandLines[] = $command;
-            }
-        }
-        $commandLines[] = 'quit';
-
-        file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
-
-        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
-        if ($password !== '') {
-            $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
-        } else {
-            $sshOptions .= ' -o BatchMode=yes';
-        }
-
-        $target = escapeshellarg($username . '@' . $host);
-        $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
-
-        if ($password !== '') {
-            if ($sshpassPath === '') {
-                @unlink($commandFile);
-                return [
-                    'ok' => false,
-                    'output' => 'Shortcut-Ausfuehrung fehlgeschlagen: sshpass wurde nicht gefunden.'
-                ];
-            }
-            $sshCommand = $sshpassPath . ' -p ' . escapeshellarg($password) . ' ' . $sshCommand;
-        }
-
-        $fullCommand = $timeoutPath !== '' ? ($timeoutPath . ' 45s ' . $sshCommand) : $sshCommand;
-
-        $lines = [];
-        $exitCode = 1;
-        $startedAt = microtime(true);
-        exec($fullCommand . ' 2>&1', $lines, $exitCode);
-        $durationSec = microtime(true) - $startedAt;
-        @unlink($commandFile);
-
-        $outputText = "Exit Code: " . $exitCode . "\n";
-        $outputText .= "Duration: " . number_format($durationSec, 2, '.', '') . "s\n\n";
-        $outputText .= implode("\n", $lines);
-
-        return [
-            'ok' => ($exitCode === 0),
-            'output' => $outputText,
-            'exit_code' => $exitCode
-        ];
-    }
-
-    if (!isset($_GET['action'])) {
-        include_once __DIR__ . '/includes/header.php';
-        $shortcutCsrf = $auth->csrf();
-        $limit = isset($_COOKIE['table_limit']) ? $_COOKIE['table_limit'] : 100;
-        $page = isset($_GET['page']) ? $_GET['page'] : 1;
-        $offset = ($page - 1) * $limit;
-    } elseif ($_GET['action'] === 'get') {
-        $limit = $_GET['limit'];
-        $limit = isset($_COOKIE['table_limit']) ? $_COOKIE['table_limit'] : 100;
-        $page = isset($_GET['page']) ? $_GET['page'] : 1;
-        $offset = ($page - 1) * $limit;
-        $sort = isset($_GET['sort']) ? $_GET['sort'] : 'created';
-        $order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
-
-        if (empty($_GET['search'])) {
-            $results = $db_adapter->db_query("SELECT * FROM ports ORDER BY $sort $order LIMIT $limit OFFSET $offset");
-            $totalResults = $db_adapter->db_query("SELECT COUNT(*) FROM ports");
-        } else {
-            $search = $_GET['search'];
-            $results = $db_adapter->db_query("SELECT * FROM ports WHERE speed iLIKE '%$search%' OR device iLIKE '%$search%' OR status iLIKE '%$search%' OR room iLIKE '%$search%' OR port iLIKE '%$search%' OR hostname iLIKE '%$search%' OR vlan_tagged iLIKE '%$search%' OR vlan_untagged iLIKE '%$search%' OR mac iLIKE '%$search%' OR cable_number iLIKE '%$search%' OR panel iLIKE '%$search%' OR switch_name iLIKE '%$search%' OR switch_port iLIKE '%$search%' OR comment iLIKE '%$search%' OR tags iLIKE '%$search%' ORDER BY $sort $order LIMIT $limit OFFSET $offset");
-            $totalResults = $db_adapter->db_query("SELECT COUNT(*) FROM ports WHERE speed iLIKE '%$search%' OR device iLIKE '%$search%' OR status iLIKE '%$search%' OR room iLIKE '%$search%' OR port iLIKE '%$search%' OR hostname iLIKE '%$search%' OR vlan_tagged iLIKE '%$search%' OR vlan_untagged iLIKE '%$search%' OR mac iLIKE '%$search%' OR cable_number iLIKE '%$search%' OR panel iLIKE '%$search%' OR switch_name iLIKE '%$search%' OR switch_port iLIKE '%$search%' OR comment iLIKE '%$search%' OR tags iLIKE '%$search%'");
-        }
-
-        $data = array(
-            'results' => $results,
-            'devices' => $portDeviceLabels,
-            'totalResults' => $totalResults[0],
-            'limit' => $limit,
-            'currentPage' => $page
-        );
-        
-        echo json_encode($data);
-        die();
-    } elseif ($_GET['action'] === 'insert') {
-        $query = 'INSERT INTO ports (speed, device, status, room, port, hostname, vlan_tagged, vlan_untagged, mac, cable_number, panel, switch_name, switch_port, comment, created, last_changed, tags) VALUES (:speed, :device, :status, :room, :port, :hostname, :vlan_tagged, :vlan_untagged, :mac, :cable_number, :panel, :switch_name, :switch_port, :comment, :created, :last_changed, :tags)';
-        $params = [
-            'speed' => !empty($_POST['speed']) ? $_POST['speed'] : '--',
-            'device' => !empty($_POST['device']) ? $_POST['device'] : '--',
-            'status' => !empty($_POST['status']) ? $_POST['status'] : 'unpatched',
-            'room' => $_POST['room'],
-            'port' => $_POST['port'],
-            'hostname' => $_POST['hostname'],
-            'vlan_tagged' => $_POST['vlan_tagged'],
-            'vlan_untagged' => $_POST['vlan_untagged'],
-            'mac' => $_POST['mac'],
-            'cable_number' => $_POST['cable_number'],
-            'panel' => $_POST['panel'],
-            'switch_name' => $_POST['switch_name'],
-            'switch_port' => $_POST['switch_port'],
-            'comment' => $_POST['comment'],
-            'created' => 'NOW()',
-            'last_changed' => 'NOW()',
-            'tags' => strtolower($_POST['tags'])
-        ];
-        $results = $db_adapter->db_query($query, $params);
-    } elseif ($_GET['action'] === 'delete') {
-        $query = 'DELETE FROM ports WHERE uuid = :uuid';
-        $params = [
-            'uuid' => $_GET['uuid']
-        ];
-        $results = $db_adapter->db_query($query, $params);
-    } elseif ($_GET['action'] === 'update') {
-        $query = 'UPDATE ports SET speed = :speed, device = :device, status = :status, room = :room, port = :port, hostname = :hostname, vlan_tagged = :vlan_tagged, vlan_untagged = :vlan_untagged, mac = :mac, cable_number = :cable_number, panel = :panel, switch_name = :switch_name, switch_port = :switch_port, comment = :comment, tags = :tags, last_changed = :last_changed WHERE uuid = :uuid';
-        $params = [
-            'speed' => !empty($_POST['speed']) ? $_POST['speed'] : '--',
-            'device' => !empty($_POST['device']) ? $_POST['device'] : '--',
-            'status' => !empty($_POST['status']) ? $_POST['status'] : 'unpatched',
-            'room' => $_POST['room'],
-            'port' => $_POST['port'],
-            'hostname' => $_POST['hostname'],
-            'vlan_tagged' => $_POST['vlan_tagged'],
-            'vlan_untagged' => $_POST['vlan_untagged'],
-            'mac' => $_POST['mac'],
-            'cable_number' => $_POST['cable_number'],
-            'panel' => $_POST['panel'],
-            'switch_name' => $_POST['switch_name'],
-            'switch_port' => $_POST['switch_port'],
-            'comment' => $_POST['comment'],
-            'tags' => $_POST['tags'],
-            'last_changed' => 'NOW()',
-            'uuid' => $_GET['uuid']
-        ];
-        $results = $db_adapter->db_query($query, $params);
-    } elseif ($_GET['action'] === 'shortcut_execute') {
-        header('Content-Type: application/json');
-
-        if (!$auth->csrf_check()) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'CSRF-Token ungueltig.'
-            ]);
-            die();
-        }
-
-        if (!isset($_SESSION['uuid']) || !$auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'execute')) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Keine Berechtigung fuer Automation-Shortcuts.'
-            ]);
-            die();
-        }
-
-        $shortcutId = trim((string)($_POST['shortcut_id'] ?? ''));
-        $templateId = trim((string)($_POST['template_id'] ?? ''));
-        $portUuid = trim((string)($_POST['port_uuid'] ?? ''));
-        $mode = trim((string)($_POST['mode'] ?? 'execute'));
-
-        if (!in_array($mode, ['execute', 'queue'], true)) {
-            $mode = 'execute';
-        }
-
-        if ($shortcutId !== '' && isset($portShortcutIndex[$shortcutId])) {
-            $templateId = trim((string)($portShortcutIndex[$shortcutId]['template_id'] ?? ''));
-        }
-
-        $allowedTemplates = array_values(array_unique(array_filter(array_map(
-            static fn($def): string => trim((string)($def['template_id'] ?? '')),
-            $portShortcutDefinitions
-        ), static fn($value): bool => $value !== '')));
-
-        if ($templateId === '' || $portUuid === '' || !in_array($templateId, $allowedTemplates, true)) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Ungueltige Shortcut-Anfrage.'
-            ]);
-            die();
-        }
-
-        $portRows = $db_adapter->db_query('SELECT * FROM ports WHERE uuid = :uuid', ['uuid' => $portUuid]);
-        if (empty($portRows)) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Port-Eintrag nicht gefunden.'
-            ]);
-            die();
-        }
-
-        $portRow = $portRows[0];
-        $switchName = trim((string)($portRow['switch_name'] ?? ''));
-        $switchPort = trim((string)($portRow['switch_port'] ?? ''));
-        if ($switchName === '' || $switchPort === '') {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Switch-Name oder Switch-Port fehlt im Port-Eintrag.'
-            ]);
-            die();
-        }
-
-        $settings = $automationStore->getSettings();
-        $inventoryRaw = trim((string)($settings['switch_inventory_json'] ?? ''));
-        if ($inventoryRaw === '') {
-            $inventoryRaw = '{"switches": []}';
-        }
-        $inventoryDecoded = json_decode($inventoryRaw, true);
-        $switchEntry = null;
-        foreach ((array)($inventoryDecoded['switches'] ?? []) as $entry) {
-            if (!is_array($entry)) {
-                continue;
-            }
-            if (trim((string)($entry['name'] ?? '')) === $switchName) {
-                $switchEntry = $entry;
-                break;
-            }
-        }
-
-        if (!is_array($switchEntry)) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Switch nicht im Inventar gefunden: ' . $switchName
-            ]);
-            die();
-        }
-
-        $profiles = $automation->getProfiles();
-        $profileKeys = array_keys($profiles);
-        $profileId = trim((string)($switchEntry['profile'] ?? ($profileKeys[0] ?? '')));
-        if ($profileId === '' || !isset($profiles[$profileId])) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Kein gueltiges Profil fuer den Switch gefunden.'
-            ]);
-            die();
-        }
-
-        $rendered = $automation->renderTemplate($templateId, $profileId, [
-            'interface' => $switchPort
-        ]);
-
-        $commands = (array)($rendered['commands'] ?? []);
-        if (empty($commands)) {
-            echo json_encode([
-                'ok' => false,
-                'message' => 'Template erzeugt keine ausfuehrbaren Befehle.'
-            ]);
-            die();
-        }
-
-        if ($mode === 'queue') {
-            $queueUuid = $queueManager->addPendingChange(
-                (string)$_SESSION['uuid'],
-                $switchName,
-                $profileId,
-                'shortcut:' . $templateId,
-                $commands,
-                [
-                    'interface' => $switchPort,
-                    'shortcut_id' => $shortcutId,
-                    'port_uuid' => $portUuid
-                ]
-            );
-
-            $logger->log(
-                'port shortcut queued user=' . (string)$_SESSION['uuid']
-                . ' template=' . $templateId
-                . ' switch=' . $switchName
-                . ' interface=' . $switchPort
-                . ' queue_uuid=' . $queueUuid,
-                1
-            );
-
-            echo json_encode([
-                'ok' => true,
-                'message' => 'Shortcut in Warteschlange gespeichert: ' . $templateId . ' auf ' . $switchName . ' / ' . $switchPort,
-                'output' => 'Queue-UUID: ' . $queueUuid,
-                'warnings' => (array)($rendered['warnings'] ?? [])
-            ]);
-            die();
-        }
-
-        $connection = [
-            'mgmt_ip' => (string)($switchEntry['mgmt_ip'] ?? ''),
-            'ssh_port' => (int)($settings['ssh_port'] ?? 22),
-            'ssh_username' => (string)($settings['ssh_username'] ?? ''),
-            'ssh_password' => (string)($settings['ssh_password'] ?? '')
-        ];
-
-        $result = runPortShortcutSshCommands($connection, $commands);
-        $logger->log(
-            'port shortcut execute user=' . (string)$_SESSION['uuid']
-            . ' template=' . $templateId
-            . ' switch=' . $switchName
-            . ' interface=' . $switchPort
-            . ' exit=' . (string)($result['exit_code'] ?? 1),
-            !empty($result['ok']) ? 1 : 3
-        );
-
-        echo json_encode([
-            'ok' => !empty($result['ok']),
-            'message' => !empty($result['ok'])
-                ? ('Shortcut erfolgreich: ' . $templateId . ' auf ' . $switchName . ' / ' . $switchPort)
-                : ('Shortcut fehlgeschlagen: ' . $templateId . ' auf ' . $switchName . ' / ' . $switchPort),
-            'output' => (string)($result['output'] ?? ''),
-            'warnings' => (array)($rendered['warnings'] ?? [])
-        ]);
-        die();
-    } elseif ($_GET['action'] === 'import') {
-        // Define the valid column names
-        $validColumnNames = ['speed', 'device', 'status', 'room', 'port', 'hostname', 'vlan_tagged', 'vlan_untagged', 'mac', 'cable_number', 'panel', 'switch_name', 'switch_port', 'comment', 'created', 'last_changed', 'tags'];
-
-        $overrideFromCSV = true; // Set this to true or false as per your requirement
-        $supplementFromCSV = true; // Set this to true or false as per your requirement
-
-        $csv = array();
-
-        if (isset($_FILES['file']) && $_FILES['file']['error'] == 0) {
-            // Ihr Code zum Verarbeiten der hochgeladenen Datei
-        } else {
-            // Fehlerbehandlung
-            echo json_encode("Es gab einen Fehler beim Hochladen der Datei.");
-        }
-
-        // check there are no errors
-        if ($_FILES['file']['error'] == 0) {
-            $name = $_FILES['file']['name'];
-            $fileNameParts = explode('.', $_FILES['file']['name']);
-            $ext = strtolower(end($fileNameParts));
-            $type = $_FILES['file']['type'];
-            $tmpName = $_FILES['file']['tmp_name'];
-
-            // check the file is a csv
-            if ($ext === 'csv') {
-                if (($handle = fopen($tmpName, 'r')) !== FALSE) {
-                    // necessary if a large csv file
-                    set_time_limit(0);
-
-                    $row = 0;
-
-                    // Get the column names from the first row
-                    $columnNames = fgetcsv($handle, 1000, ';');
-
-                    while (($data = fgetcsv($handle, 1000, ';')) !== FALSE) {
-                        // Combine the column names with the data
-                        $data = array_combine($columnNames, $data);
-
-                        // number of fields in the csv
-                        $col_count = count($data);
-
-                        // get the values from the csv
-                        if (isset($data[0])) {
-                            $csv[$row]['col1'] = $data[0];
-                            $csv[$row]['col2'] = isset($data[1]) ? $data[1] : null;
-                        } else {
-                            // Handle the case where $data[0] is not set
-                            $csv[$row]['col1'] = null; // or some other default value
-                        }
-                        // inc the row
-                        $row++;
-                    }
-                    fclose($handle);
-                }
-            }
-        }
-
-        $tmpName = $_FILES['file']['tmp_name'];
-        $csvAsArray = array_map(function($v){return str_getcsv($v, ";");}, file($tmpName));
-
-        // Get the column names from the first row
-        $columnNames = array_shift($csvAsArray);
-
-        foreach ($csvAsArray as $csvArray) {
-            // Ensure $columnNames and $csvArray have the same number of elements
-            $length = min(count($columnNames), count($csvArray));
-            $columnNames = array_slice($columnNames, 0, $length);
-            $csvArray = array_slice($csvArray, 0, $length);
-
-            // Combine the column names with the data
-            $data = array_combine($columnNames, $csvArray);
-
-            // Filter out empty values
-            $data = array_filter($data, function($value) { return $value !== ''; });
-
-            // Set 'NOW()' for 'created' and 'last_changed' if not set
-            if (!isset($data['created']) || $data['created'] === '') {
-                $data['created'] = 'NOW()';
-            }
-            if (!isset($data['last_changed']) || $data['last_changed'] === '') {
-                $data['last_changed'] = 'NOW()';
-            }
-
-            // Check if a record with the same (switch_name and switch_port) or (room and port) already exists
-            $selectQuery = 'SELECT * FROM ports WHERE (switch_name = :switch_name AND switch_port = :switch_port) OR (room = :room AND port = :port)';
-            $selectParams = [
-                'switch_name' => $data['switch_name'],
-                'switch_port' => $data['switch_port'],
-                'room' => $data['room'],
-                'port' => $data['port']
-            ];
-            $existingRecord = $db_adapter->db_query($selectQuery, $selectParams);
-
-            if ($existingRecord) {
-                if (isset($existingRecord[0]['created']) || !empty($existingRecord[0]['created'])) {
-                    $data['created'] = $existingRecord['created'];
-                }
-            }
-
-            if ($existingRecord && $overrideFromCSV) {
-                if ($supplementFromCSV) {
-                    // Replace the existing data with the new data
-                    $data = array_replace($existingRecord[0], $data);                
-                }
-
-                $keys = array_filter(array_keys($data), function($key) use ($validColumnNames) {
-                    return in_array($key, $validColumnNames) && !is_numeric($key);
-                });
-
-                // Update the existing record
-                $query = 'UPDATE ports SET ' . implode(', ', array_map(function($key) { return "$key = :$key"; }, $keys)) . ' WHERE uuid = :uuid';
-            } else {
-                // Ensure all valid columns are in $data
-                foreach ($validColumnNames as $columnName) {
-                    if (!array_key_exists($columnName, $data)) {
-                        $data[$columnName] = '';
-                    }
-                }
-
-                // Convert all empty values in $data to empty strings
-                $data = array_map(function($value) {
-                    return $value === '' ? '' : $value;
-                }, $data);
-
-                // Insert a new record
-                $keys = array_keys($data);
-                $query = "INSERT INTO ports (".implode(",", $keys).") VALUES (:".implode(", :", $keys).")";
-            }
-
-            // Execute the SQL statement
-            $results = $db_adapter->db_query($query, $data);
-        }
-    }
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+const APP_NAME = 'Portflow';
+
+include_once __DIR__ . '/includes/core/session.php';
+if (!in_array(__DIR__ . '/includes/core/session.php', get_included_files(), true)) {
+    die('could not verify session');
+}
+
+include_once __DIR__ . '/includes/header.php';
+$limit = isset($_COOKIE['table_limit']) ? (int)$_COOKIE['table_limit'] : 100;
+if (!in_array($limit, [50, 100, 500, 1000], true)) {
+    $limit = 100;
+}
 ?>
-<div class="h-full relative overflow-x-clip bg-gray-100 rounded-xl shadow-md m-4 mt-0 p-4">
-    <div class="flex justify-between mb-4">
-        <p id="count"></p>
-        <div class="flex flex-row">
-            <form id="searchForm" class="flex flex-row" enctype="multipart/form-data">
-                <input type="text" name="search" placeholder="Suchen ..." class="rounded-full px-4 py-2 shadow-md">
-                <div class="h-10 w-10 ml-2 rounded-full bg-blue-500 hover:bg-blue-700 flex justify-center shadow-md">
-                    <button type="submit" class="text-2xl text-white"><i class="fa-solid fa-magnifying-glass"></i></button>
-                </div>
-            </form>
-            <div class="h-10 w-10 ml-4 rounded-full bg-cyan-500 hover:bg-cyan-700 flex justify-center shadow-md">
-                <button form="" onclick="import_export()" class="import_export_button text-2xl text-white"><i class="fa-solid fa-file-import"></i></button>
-            </div>
-            <div class="h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md">
-                <button form="" onclick="spawn_new_entry()" class="new_entry_button text-2xl text-white"><i class="fa-solid fa-plus"></i></button>
-            </div>
+
+<div class="m-4 mt-0 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Port View</h1>
+            <p class="text-sm text-slate-500">Verdichtete Portansicht mit Ketten-Aggregation.</p>
         </div>
+        <form id="searchForm" class="flex min-w-[18rem] flex-1 items-center justify-end gap-2">
+            <input
+                type="text"
+                name="search"
+                placeholder="Suchen ..."
+                class="w-full max-w-md rounded-full border border-slate-300 px-4 py-2 shadow-sm focus:border-blue-500 focus:outline-none"
+            >
+            <button
+                type="submit"
+                class="h-10 w-10 rounded-full bg-blue-500 text-white shadow-md transition hover:bg-blue-700"
+                title="Suche"
+            >
+                <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+        </form>
     </div>
-    <div id="import_export"></div>
-    <div class="flex justify-between my-4">
-        <div id="pagination" class="flex flex-row"></div>
-        <div class="flex flex-row">
-            <p class="mr-4">Anzahl:</p>
-            <select id="table_limit_1" name="limit" class="bg-transparent" onchange="setTableLimit(this.value)">
-                <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
-                <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
-                <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
-                <option value="1000" <?php if ($limit == 1000) echo 'selected'; ?>>1000</option>
+
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-4">
+            <p id="count" class="text-sm font-semibold text-slate-700">Ketten: 0</p>
+            <p id="resultSummary" class="text-sm text-slate-500">Zeige 0-0 von 0</p>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+            <label for="table_limit_1" class="text-slate-600">Anzahl:</label>
+            <select id="table_limit_1" name="limit" class="rounded-full border border-slate-300 px-3 py-1">
+                <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
+                <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
+                <option value="500" <?php if ($limit === 500) echo 'selected'; ?>>500</option>
+                <option value="1000" <?php if ($limit === 1000) echo 'selected'; ?>>1000</option>
             </select>
         </div>
     </div>
-    <table class="static rounded-lg w-full text-sm text-left mb-4 text-gray-500 shadow-md">
-        <thead class="text-gray-800">
-            <tr class="border-b bg-gray-200">
-                <th scope="col" class="p-2" data-sort="status">
-                    Status <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="room">
-                    Raum <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="port">
-                    Dosenport <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="hostname">
-                    Hostname <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="vlan_untagged">
-                    VLAN <span class="sort-icon"></span><br><span class="text-xs">(untagged)</span>
-                </th>
-                <th scope="col" class="p-2" data-sort="vlan_tagged">
-                    VLAN <span class="sort-icon"></span><br><span class="text-xs">(tagged)</span>
-                </th>
-                <th scope="col" class="p-2" data-sort="mac">
-                    MAC-Adresse <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="cable_number">
-                    Kabelnummer <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="panel">
-                    Panel <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="switch_name">
-                    Switch <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="switch_port">
-                    Switchport <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="comment">
-                    Kommentar <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2" data-sort="tags">
-                    Tags <span class="sort-icon"></span>
-                </th>
-                <th scope="col" class="p-2">
-                    Aktionen
-                </th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-    <div class="flex justify-between mt-4 mb-8">
-        <div id="pagination_bottom" class="flex flex-row">
-        </div>
-        <div class="flex flex-row">
-            <p class="mr-4">Anzahl:</p>
-            <select id="table_limit_2" name="limit" class="bg-transparent" onchange="setTableLimit(this.value)">
-                <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
-                <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
-                <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
-                <option value="1000" <?php if ($limit == 1000) echo 'selected'; ?>>1000</option>
-            </select>
-        </div>
+
+    <div id="pagination" class="mb-3 flex flex-wrap items-center gap-2 text-sm"></div>
+
+    <div class="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
+        <table class="w-full min-w-[1800px] text-left text-sm text-slate-600">
+            <thead class="bg-slate-200 text-slate-900">
+                <tr>
+                    <th scope="col" class="p-2">Status</th>
+                    <th scope="col" class="p-2">Switch</th>
+                    <th scope="col" class="p-2">Switch-Port</th>
+                    <th scope="col" class="p-2">Patchpanel</th>
+                    <th scope="col" class="p-2">PP-Port</th>
+                    <th scope="col" class="p-2">Kabel</th>
+                    <th scope="col" class="p-2">Raum</th>
+                    <th scope="col" class="p-2">Wallplate</th>
+                    <th scope="col" class="p-2">WP-Port</th>
+                    <th scope="col" class="p-2">Endgerät</th>
+                    <th scope="col" class="p-2">EP-Port</th>
+                    <th scope="col" class="p-2">Hostname</th>
+                    <th scope="col" class="p-2">MAC</th>
+                    <th scope="col" class="p-2">VLAN (tagged)</th>
+                    <th scope="col" class="p-2">VLAN (untagged)</th>
+                </tr>
+            </thead>
+            <tbody id="portviewTableBody"></tbody>
+        </table>
     </div>
+
+    <div class="mt-3 flex items-center justify-end gap-2 text-sm">
+        <label for="table_limit_2" class="text-slate-600">Anzahl:</label>
+        <select id="table_limit_2" name="limit" class="rounded-full border border-slate-300 px-3 py-1">
+            <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
+            <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
+            <option value="500" <?php if ($limit === 500) echo 'selected'; ?>>500</option>
+            <option value="1000" <?php if ($limit === 1000) echo 'selected'; ?>>1000</option>
+        </select>
+    </div>
+
+    <div id="pagination_bottom" class="mt-3 flex flex-wrap items-center gap-2 text-sm"></div>
 </div>
+
 <script>
-    const SHORTCUT_CSRF = '<?php echo isset($shortcutCsrf) ? htmlspecialchars($shortcutCsrf, ENT_QUOTES, 'UTF-8') : ''; ?>';
-    const PORT_SHORTCUTS = <?php echo json_encode($portShortcutDefinitions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+(function () {
+    let currentSort = 'src_device_caption';
+    let currentOrder = 'ASC';
+    let currentQuery = '';
+    let currentLimit = parseInt(document.getElementById('table_limit_1').value, 10) || 100;
+    let currentPage = 1;
 
-    // sort table
-    $(document).ready(function() {
-        var currentSort = '';
-        var currentOrder = '';
-        var query = '';
-        var limit = 100;
-        var page = 1;
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
-        // Update query, limit, and page when loadTable is called
-        var originalLoadTable = loadTable;
-        loadTable = function(newQuery, newLimit, newPage, sort, order) {
-            if (newQuery !== undefined) query = newQuery;
-            if (newLimit !== undefined) limit = newLimit;
-            if (newPage !== undefined) page = newPage;
-            originalLoadTable(query, limit, page, sort, order);
+    function statusClass(statusRaw) {
+        const value = String(statusRaw ?? '').trim().toLowerCase();
+        if (value === '0' || value === 'active') return 'text-green-500';
+        if (value === '2' || value === 'inactive' || value === 'deactivated') return 'text-amber-500';
+        if (value === '4' || value === 'offline' || value === 'unpatched') return 'text-red-500';
+        if (value === '6' || value === 'unused') return 'text-slate-500';
+        return 'text-blue-500';
+    }
+
+    function deviceIcon(deviceType) {
+        const type = String(deviceType ?? '').trim().toLowerCase();
+        if (type.includes('phone')) {
+            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.86 19.86 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.89.33 1.76.63 2.58a2 2 0 0 1-.45 2.11L8 9.71a16 16 0 0 0 6.29 6.29l1.3-1.29a2 2 0 0 1 2.11-.45c.82.3 1.69.51 2.58.63A2 2 0 0 1 22 16.92z"/></svg>';
+        }
+        if (type.includes('laptop') || type.includes('notebook')) {
+            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>';
+        }
+        if (type.includes('computer') || type.includes('pc') || type.includes('desktop')) {
+            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/><path d="M12 18v2"/></svg>';
+        }
+        if (type.includes('printer')) {
+            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V4h12v5"/><rect x="6" y="14" width="12" height="6" rx="2"/><path d="M6 11H5a2 2 0 0 0-2 2v2h18v-2a2 2 0 0 0-2-2h-1"/></svg>';
+        }
+        if (type.includes('tv') || type.includes('monitor')) {
+            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/></svg>';
+        }
+        return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
+    }
+
+    function speedLabel(speedRaw) {
+        const value = String(speedRaw ?? '').trim();
+        const map = {
+            '100': '100 Mbit/s',
+            '1000': '1 Gbit/s',
+            '2500': '2.5 Gbit/s',
+            '10000': '10 Gbit/s',
+            '25000': '25 Gbit/s',
+            '40000': '40 Gbit/s',
+            '100000': '100 Gbit/s'
+        };
+        if (!value) return '--';
+        return map[value] || (value + ' Mbit/s');
+    }
+
+    function buildRowForChain(chain) {
+        let switchConn = null;
+        let coreConn = null;
+        let endpointConn = null;
+
+        for (let conn of chain) {
+            const srcType = String(conn.src_device_type || '').toLowerCase();
+            const dstType = String(conn.dst_device_type || '').toLowerCase();
+
+            if ((srcType === 'switch' && dstType === 'patchpanel') || (srcType === 'patchpanel' && dstType === 'switch')) {
+                switchConn = conn;
+            } else if ((srcType === 'patchpanel' && dstType === 'net_outlet') || (srcType === 'net_outlet' && dstType === 'patchpanel')) {
+                coreConn = conn;
+            } else if (!['switch', 'patchpanel', 'net_outlet'].includes(srcType) || !['switch', 'patchpanel', 'net_outlet'].includes(dstType)) {
+                endpointConn = conn;
+            }
+        }
+
+        const switchSideIsSrc = switchConn && String(switchConn.src_device_type || '').toLowerCase() === 'switch';
+        const coreSideIsSrc = coreConn && String(coreConn.src_device_type || '').toLowerCase() === 'patchpanel';
+        const endpointSideIsSrc = endpointConn && !['switch', 'patchpanel', 'net_outlet'].includes(String(endpointConn.src_device_type || '').toLowerCase());
+
+        const switchCaption = switchConn ? (switchSideIsSrc ? switchConn.src_device_caption : switchConn.dst_device_caption) : '--';
+        const switchPortCaption = switchConn ? (switchSideIsSrc ? switchConn.src_port_caption : switchConn.dst_port_caption) : '--';
+        const switchPortStatus = switchConn ? (switchSideIsSrc ? switchConn.src_port_status : switchConn.dst_port_status) : '';
+        const switchVlanTagged = switchConn ? (switchSideIsSrc ? switchConn.src_vlan_tagged : switchConn.dst_vlan_tagged) : '';
+        const switchVlanUntagged = switchConn ? (switchSideIsSrc ? switchConn.src_vlan_untagged : switchConn.dst_vlan_untagged) : '';
+
+        const patchpanelCaption = coreConn ? (coreSideIsSrc ? coreConn.src_device_caption : coreConn.dst_device_caption) : '--';
+        const patchpanelPortCaption = coreConn ? (coreSideIsSrc ? coreConn.src_port_caption : coreConn.dst_port_caption) : '--';
+        const roomCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_location_caption : coreConn.src_location_caption) : '--';
+        const wallplateCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_device_caption : coreConn.src_device_caption) : '--';
+        const wallplatePortCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_port_caption : coreConn.src_port_caption) : '--';
+
+        const endpointCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_caption : endpointConn.dst_device_caption) : '--';
+        const endpointType = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_type : endpointConn.dst_device_type) : '';
+        const endpointPortCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_caption : endpointConn.dst_port_caption) : '--';
+        const endpointHostname = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_hostname : endpointConn.dst_port_hostname) : '--';
+        const endpointMac = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_mac : endpointConn.dst_port_mac) : '--';
+
+        const cableName = (switchConn && switchConn.cable_name) || (coreConn && coreConn.cable_name) || (endpointConn && endpointConn.cable_name) || '--';
+        const connectionSpeed = (switchConn && switchConn.connection_speed) || (coreConn && coreConn.connection_speed) || (endpointConn && endpointConn.connection_speed) || '';
+        const speedLabelText = speedLabel(connectionSpeed);
+        const statusValue = switchPortStatus || '';
+        const iconClass = deviceIcon(endpointType);
+        const vlanTaggedText = switchVlanTagged ? String(switchVlanTagged) : '--';
+        const vlanUntaggedText = switchVlanUntagged ? String(switchVlanUntagged) : '--';
+        const statusCell = `<span class="inline-flex items-center gap-2 ${statusClass(statusValue)}">${deviceIcon(endpointType)}<span class="text-slate-700">${escapeHtml(speedLabelText)}</span></span>`;
+
+        return `
+            <tr class="border-t border-slate-200 hover:bg-slate-50">
+                <td class="p-2 font-medium">${statusCell}</td>
+                <td class="p-2">${escapeHtml(switchCaption)}</td>
+                <td class="p-2">${escapeHtml(switchPortCaption)}</td>
+                <td class="p-2">${escapeHtml(patchpanelCaption)}</td>
+                <td class="p-2">${escapeHtml(patchpanelPortCaption)}</td>
+                <td class="p-2">${escapeHtml(cableName)}</td>
+                <td class="p-2">${escapeHtml(roomCaption)}</td>
+                <td class="p-2">${escapeHtml(wallplateCaption)}</td>
+                <td class="p-2">${escapeHtml(wallplatePortCaption)}</td>
+                <td class="p-2">${escapeHtml(endpointCaption)}</td>
+                <td class="p-2">${escapeHtml(endpointPortCaption)}</td>
+                <td class="p-2">${escapeHtml(endpointHostname)}</td>
+                <td class="p-2">${escapeHtml(endpointMac)}</td>
+                <td class="p-2 text-xs">${escapeHtml(vlanTaggedText)}</td>
+                <td class="p-2 text-xs">${escapeHtml(vlanUntaggedText)}</td>
+            </tr>
+        `;
+    }
+
+    function renderPagination(totalCount) {
+        const totalPages = Math.ceil(totalCount / currentLimit);
+        if (totalPages <= 1) return;
+
+        const container = document.getElementById('pagination');
+        const containerBottom = document.getElementById('pagination_bottom');
+        let html = '';
+
+        const groupSize = 10;
+        const currentGroup = Math.floor((currentPage - 1) / groupSize);
+        const groupStart = currentGroup * groupSize + 1;
+        const groupEnd = Math.min(groupStart + groupSize - 1, totalPages);
+
+        if (currentGroup > 0) {
+            html += `<button class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupStart - 1})">← Prev</button>`;
+        }
+
+        for (let i = groupStart; i <= groupEnd; i++) {
+            const isActive = i === currentPage;
+            html += `<button class="rounded ${isActive ? 'bg-blue-500 text-white' : 'border border-slate-300 hover:bg-slate-100'} px-2 py-1" onclick="window.portViewApp.goToPage(${i})">${i}</button>`;
+        }
+
+        if (groupEnd < totalPages) {
+            html += `<button class="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupEnd + 1})">Next →</button>`;
+        }
+
+        container.innerHTML = html;
+        containerBottom.innerHTML = html;
+    }
+
+    function buildChains(results) {
+        const chains = [];
+        const usedUuids = new Set();
+
+        const deviceTypeOf = (conn, side) => String(conn?.[side + '_device_type'] ?? '');
+        const portUuidOf = (conn, side) => {
+            const value = conn?.[side + '_port_uuid'] ?? null;
+            return value !== null && value !== '' ? String(value) : null;
         };
 
-        $('th[data-sort]').click(function() {
-            var sort = $(this).data('sort');
-            if (currentSort == sort) {
-                currentOrder = (currentOrder == 'ASC') ? 'DESC' : 'ASC';
-            } else {
-                currentSort = sort;
-                currentOrder = 'ASC';
+        const isCoreChain = (conn) => {
+            const srcType = deviceTypeOf(conn, 'src');
+            const dstType = deviceTypeOf(conn, 'dst');
+            return (srcType === 'patchpanel' && dstType === 'net_outlet') || (srcType === 'net_outlet' && dstType === 'patchpanel');
+        };
+
+        for (const conn of results) {
+            if (!isCoreChain(conn) || usedUuids.has(conn.connection_uuid)) {
+                continue;
             }
 
-            loadTable(undefined, undefined, undefined, sort, currentOrder);
+            const chain = [];
+            const patchpanelPortUuid = deviceTypeOf(conn, 'src') === 'patchpanel'
+                ? portUuidOf(conn, 'src')
+                : portUuidOf(conn, 'dst');
+            const wallplatePortUuid = deviceTypeOf(conn, 'src') === 'net_outlet'
+                ? portUuidOf(conn, 'src')
+                : portUuidOf(conn, 'dst');
 
-            // Remove all existing arrows
-            $('.sort-icon').text('');
+            let switchConn = null;
+            let endpointConn = null;
 
-            // Add arrow to the current cell
-            $(this).find('.sort-icon').text(currentOrder == 'ASC' ? '↑' : '↓');
+            for (const candidate of results) {
+                if (usedUuids.has(candidate.connection_uuid)) {
+                    continue;
+                }
+
+                const candidateSrcType = deviceTypeOf(candidate, 'src');
+                const candidateDstType = deviceTypeOf(candidate, 'dst');
+                const candidateSrcPort = portUuidOf(candidate, 'src');
+                const candidateDstPort = portUuidOf(candidate, 'dst');
+
+                if (
+                    switchConn === null
+                    && patchpanelPortUuid !== null
+                    && ((candidateSrcPort === patchpanelPortUuid && candidateDstType === 'switch')
+                        || (candidateDstPort === patchpanelPortUuid && candidateSrcType === 'switch'))
+                ) {
+                    switchConn = candidate;
+                    continue;
+                }
+
+                if (
+                    endpointConn === null
+                    && wallplatePortUuid !== null
+                    && ((candidateSrcPort === wallplatePortUuid && !['patchpanel', 'net_outlet', 'switch'].includes(candidateDstType))
+                        || (candidateDstPort === wallplatePortUuid && !['patchpanel', 'net_outlet', 'switch'].includes(candidateSrcType)))
+                ) {
+                    endpointConn = candidate;
+                }
+            }
+
+            if (switchConn !== null) {
+                chain.push(switchConn);
+                usedUuids.add(switchConn.connection_uuid);
+            }
+
+            chain.push(conn);
+            usedUuids.add(conn.connection_uuid);
+
+            if (endpointConn !== null) {
+                chain.push(endpointConn);
+                usedUuids.add(endpointConn.connection_uuid);
+            }
+
+            chains.push(chain);
+        }
+
+        for (const conn of results) {
+            if (usedUuids.has(conn.connection_uuid)) {
+                continue;
+            }
+
+            chains.push([conn]);
+            usedUuids.add(conn.connection_uuid);
+        }
+
+        return chains;
+    }
+
+    function loadTable() {
+        const params = new URLSearchParams({
+            table: 'portview',
+            limit: '5000',
+            page: '1'
         });
-    });
-    // set table limit
-    function setTableLimit(limit) {
-        document.cookie = `table_limit=${limit}; SameSite=Lax`;
-        loadTable('', limit);
-    }
-    document.getElementById('table_limit_1').addEventListener('change', function() {
-        document.getElementById('table_limit_2').value = this.value;
-        setTableLimit(this.value);
-    });
-    document.getElementById('table_limit_2').addEventListener('change', function() {
-        document.getElementById('table_limit_1').value = this.value;
-        setTableLimit(this.value);
-    });
-    // generate pagination
-    function generatePagination(totalPages, currentPage, query, limit) {
-        var pagesPerGroup = 10;
-        var pageGroup = Math.floor((currentPage - 1) / pagesPerGroup);
 
-        // Leeren Sie das vorhandene Div
-        $('#pagination, #pagination_bottom').empty();
-
-        // Fügen Sie den Text 'Seite: ' hinzu
-        $('#pagination').append('<div class="mr-2">Seite: </div>');
-
-        // Fügen Sie eine Schaltfläche hinzu, um zur vorherigen Gruppe von Seiten zu navigieren
-        var prevButton = $('<div class="mr-2 cursor-pointer">&larr;</div>');
-        if (pageGroup > 0) {
-            prevButton.click(function() {
-                generatePagination(totalPages, (pageGroup - 1) * pagesPerGroup + 1, query, limit);
-            });
-        } else {
-            prevButton.css('visibility', 'hidden');
-        }
-        $('#pagination').append(prevButton);
-
-        // Durchlaufen Sie die Seiten in der aktuellen Gruppe
-        for (var i = pageGroup * pagesPerGroup + 1; i <= Math.min((pageGroup + 1) * pagesPerGroup, totalPages); i++) {
-            // Erstellen Sie ein neues div für jede Seitenzahl
-            var pageDiv = $('<div class="mr-2 cursor-pointer"></div>');
-            pageDiv.text(i);
-
-            // Wenn es die aktuelle Seite ist, fügen Sie eine Klasse hinzu, um sie hervorzuheben
-            if (i == currentPage) {
-                pageDiv.addClass('current-page text-blue-500');
-            }
-
-            // Fügen Sie einen Klick-Event-Handler hinzu, der die Funktion loadTable aufruft
-            pageDiv.click(function() {
-                loadTable(query, limit, $(this).text());
-            });
-
-            // Fügen Sie die Seitenzahl zur Paginierungsleiste hinzu
-            $('#pagination').append(pageDiv);
+        if (currentQuery.trim() !== '') {
+            params.set('search', currentQuery.trim());
         }
 
-        // Fügen Sie eine Schaltfläche hinzu, um zur nächsten Gruppe von Seiten zu navigieren
-        var nextButton = $('<div class="mr-2 cursor-pointer">&rarr;</div>');
-        if ((pageGroup + 1) * pagesPerGroup < totalPages) {
-            nextButton.click(function() {
-                generatePagination(totalPages, (pageGroup + 1) * pagesPerGroup + 1, query, limit);
-            });
-        } else {
-            nextButton.css('visibility', 'hidden');
-        }
-        $('#pagination').append(nextButton);
+        fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?' + params.toString())
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('portviewTableBody');
+                tbody.innerHTML = '';
 
-        // Clone the pagination to 'pagination_bottom'
-        $('#pagination_bottom').html($('#pagination').clone(true));
+                const items = Array.isArray(data.items) ? data.items : [];
+                const allChains = buildChains(items);
+                const totalCount = allChains.length;
+                const start = (currentPage - 1) * currentLimit;
+                const chains = allChains.slice(start, start + currentLimit);
+
+                if (chains.length > 0) {
+                    chains.forEach(chain => {
+                        tbody.innerHTML += buildRowForChain(chain);
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="15" class="p-4 text-center text-slate-500">Keine Einträge gefunden</td></tr>';
+                }
+
+                const startIdx = (currentPage - 1) * currentLimit + 1;
+                const endIdx = Math.min(currentPage * currentLimit, totalCount);
+                document.getElementById('count').textContent = `Ketten: ${totalCount}`;
+                document.getElementById('resultSummary').textContent = `Zeige ${totalCount === 0 ? 0 : startIdx}-${endIdx} von ${totalCount}`;
+
+                renderPagination(totalCount);
+            })
+            .catch(err => console.error('Error loading table:', err));
     }
-    // load table
-    function loadTable(query = '', limit = 100, page = 1, sort = 'created', order = 'DESC') {
-        var url = '?action=get&search=' + encodeURIComponent(query) + '&limit=' + limit + '&page=' + page + '&sort=' + sort + '&order=' + order;
-        $.ajax({
-            url: url,
-            type: 'GET',
-            dataType: 'json',
-            success: function(data) {
-                var tableBody = $('.static tbody');
-                tableBody.empty();
-                var results = data.results;
-                var devices = data.devices;
-                var totalResults = parseInt(data.totalResults.count);
-                var totalPages = Math.ceil(totalResults / data.limit);
-                var currentPage = data.currentPage;
 
-                // assign totalResults to the #count
-                $('#count').text('Datensätze: ' + totalResults);
-
-                results.forEach(function(row) {
-                    var tr = $('<tr class="hover:bg-gray-200">');
-
-                    // generate tags with randomized colors
-                    var tags = "";
-                    if (row['tags']) {
-                        var tagColors = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
-                        row['tags'].split(',').forEach(function(tag) {
-                            tag = tag.trim();
-                            var tagHash = tag.split('').reduce((prevHash, currVal) => ((prevHash << 5) - prevHash) + currVal.charCodeAt(0), 0);
-                            var tagColor = tagColors[Math.abs(tagHash) % tagColors.length];
-                            tags += "<span class='py-1 px-2 rounded-full text-white " + tagColor + " mr-2 mb-2' style='line-height: 2;'>#" + tag + "</span> ";
-                        });
-                    }
-
-                    // generate status info
-                    var status = "";
-                    switch (row['status']) {
-                        case 'active':
-                            status = 'text-green-500';
-                            break;
-                        case 'inactive':
-                            status = 'text-yellow-500';
-                            break;
-                        case 'unpatched':
-                            status = 'text-red-500';
-                            break;
-                        default:
-                            status = 'text-blue-500';
-                    }
-
-                    var device = devices[row['device']] || devices['other'];
-
-                    // generate speed info
-                    var speed = "";
-                    switch (row['speed']) {
-                        case '100':
-                            speed = '100 Mbit/s';
-                            break;
-                        case '1000':
-                            speed = '1 Gbit/s';
-                            break;
-                        case '2500':
-                            speed = '2.5 Gbit/s';
-                            break;
-                        case '10000':
-                            speed = '10 Gbit/s';
-                            break;
-                        case '25000':
-                            speed = '25 Gbit/s';
-                            break;
-                        case '40000':
-                            speed = '40 Gbit/s';
-                            break;
-                        case '100000':
-                            speed = '100 Gbit/s';
-                            break;
-                        default:
-                            speed = '--';
-                    }
-
-                    let createdDate = new Date(row.created);
-                    let formattedCreatedDate = createdDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr, ' + createdDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-                    let lastChangedDate = new Date(row.last_changed);
-                    let formattedLastChangedDate = lastChangedDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr, ' + lastChangedDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-                    // Add the generated info to the table row
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto whitespace-nowrap" title="Status: ' + row.status + '\nGerät: ' + row.device + '\nGeschwindigkeit: ' + speed + '"><span class="' + status + ' text-xl">' + device + '</span> ' + speed + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.room + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.port + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.hostname + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.vlan_untagged + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.vlan_tagged + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.mac + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.cable_number + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.panel + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.switch_name + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.switch_port + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + row.comment + '</td>');
-                    tr.append('<td class="p-2 border-b max-w-lg overflow-auto">' + tags + '</td>');
-                    var actionsHtml = "<td class='p-2 border-b text-xl max-w-xl overflow-auto whitespace-nowrap'>"
-                        + "<button onclick=\"info_entry('i" + formattedCreatedDate + "', '" + formattedLastChangedDate + "', '" + row.status + "', '" + row.device + "', '" + speed + "', '" + row.speed + "')\" class='px-2 mr-2 text-blue-500 hover:text-blue-700' title='Info'><i class='fa-solid fa-info'></i></button>"
-                        + "<button onclick='edit_entry(\"u" + row.uuid + "\", this)' class='px-2 mr-2 text-yellow-500 hover:text-yellow-700' title='Bearbeiten'><i class='fa-regular fa-pen-to-square'></i></button>";
-
-                    if (Array.isArray(PORT_SHORTCUTS)) {
-                        PORT_SHORTCUTS.forEach(function(shortcut) {
-                            if (!shortcut || !shortcut.id) {
-                                return;
-                            }
-                            var title = shortcut.label ? ('Shortcut: ' + shortcut.label) : ('Shortcut: ' + shortcut.id);
-                            var iconClass = shortcut.icon || 'fa-solid fa-bolt';
-                            var buttonClass = shortcut.button_class || 'text-cyan-500 hover:text-cyan-700';
-                            actionsHtml += "<button onclick='execute_shortcut(\"u" + row.uuid + "\", \"" + shortcut.id + "\", this)' class='px-2 mr-2 " + buttonClass + "' title='" + title + "'><i class='" + iconClass + "'></i></button>";
-                            actionsHtml += "<button onclick='queue_shortcut(\"u" + row.uuid + "\", \"" + shortcut.id + "\", this)' class='px-2 mr-2 text-slate-500 hover:text-slate-700' title='Shortcut in Warteschlange'><i class='fa-regular fa-clock'></i></button>";
-                        });
-                    }
-
-                    actionsHtml += "<button onclick='delete_entry(\"u" + row.uuid + "\", this)' class='px-2 text-red-500 hover:text-red-700' title='Loeschen'><i class='fa-regular fa-trash-can'></i></button></td>";
-                    tr.append(actionsHtml);
-                    tableBody.append(tr);
-                });
-                generatePagination(totalPages, currentPage, query, limit);
-            },
-            error: function(jqXHR, textStatus, errorThrown) {
-                console.log('Error:', jqXHR.responseText);
-            }
-        });
-    }
-    $(document).ready(function() {
+    // Event handlers
+    document.getElementById('searchForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        currentQuery = document.querySelector('input[name="search"]').value;
+        currentPage = 1;
         loadTable();
     });
-    // search
-    $(document).ready(function() {
-        $('#searchForm').on('submit', function(event) {
-            event.preventDefault();
-            var query = $(this).find('input[name="search"]').val();
-            loadTable(query);
-        });
+
+    document.getElementById('table_limit_1').addEventListener('change', (e) => {
+        currentLimit = parseInt(e.target.value, 10);
+        document.getElementById('table_limit_2').value = currentLimit;
+        document.cookie = `table_limit=${currentLimit}; path=/`;
+        currentPage = 1;
+        loadTable();
     });
-    // import/export
-    var isImportingExporting = false;
-    function import_export() {
-        if (isImportingExporting) {
-            return;
-        }
-        isImportingExporting = true;
 
-        // Get the import_export div
-        var importExportDiv = document.getElementById('import_export');
-        importExportDiv.className = "width-full p-4 bg-white rounded-3xl shadow-md";
-
-        // Create the title
-        var title = document.createElement('p');
-        title.className = "font-lg pb-4 text-center";
-        title.textContent = "Import/Export Assistent";
-        importExportDiv.appendChild(title);
-
-        // Create the flex container
-        var flexContainer = document.createElement('div');
-        flexContainer.className = "flex justify-between";
-        importExportDiv.appendChild(flexContainer);
-
-        // Create the action select element
-        var actionDiv = document.createElement('div');
-        actionDiv.className = "flex flex-row items-center";
-        actionDiv.innerHTML = `
-            <p class="mr-2">Aktion: </p>
-            <select id="action" class="rounded-full px-4 py-2 bg-gray-200">
-                <option value="import" selected>Import</option>
-                <option value="export">Export</option>
-            </select>
-        `;
-        flexContainer.appendChild(actionDiv);
-
-        // Create the file input element
-        var fileDiv = document.createElement('div');
-        fileDiv.id = 'fileDiv';
-        fileDiv.className = "flex flex-row items-center";
-        fileDiv.innerHTML = `
-            <p class="mr-2">Datei: </p>
-            <label for="file" class="rounded-full px-4 py-2 bg-gray-200">Durchsuchen...</label>
-            <input type="file" id="file" name="file" style="display: none;" accept=".csv, .json, .sql">
-        `;
-        flexContainer.appendChild(fileDiv);
-
-        // Create the format select element
-        var formatDiv = document.createElement('div');
-        formatDiv.className = "flex flex-row items-center";
-        formatDiv.innerHTML = `
-            <p class="mr-2">Format: </p>
-            <select id="format" class="rounded-full px-4 py-2 bg-gray-200">
-                <option value="csv" selected>CSV</option>
-                <option value="json">JSON</option>
-                <option value="sql">SQL</option>
-            </select>
-        `;
-        flexContainer.appendChild(formatDiv);
-
-        // Create the execute and cancel buttons
-        var buttonDiv = document.createElement('div');
-        buttonDiv.className = "flex flex-row items-center";
-        buttonDiv.innerHTML = `
-            <div class='text-xl flex items-center'>
-                <div class='h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md'>
-                    <button id='execute' type='button' onclick='new_entry(this)' class='text-2xl text-white'><i class="fa-solid fa-download"></i></button>
-                </div>
-                <div class='h-10 w-10 ml-4 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md'>
-                    <button id='cancel' type='button' onclick='cancel_new_entry(this)' class='text-2xl text-white'><i class='fa-solid fa-xmark'></i></button>
-                </div>
-            </div>
-        `;
-        flexContainer.appendChild(buttonDiv);
-
-        // Add event listeners
-        document.getElementById('action').addEventListener('change', function() {
-            if (this.value === 'export') {
-                flexContainer.removeChild(fileDiv);
-                document.getElementById('execute').innerHTML = '<i class="fa-regular fa-floppy-disk"></i>';
-            } else {
-                flexContainer.insertBefore(fileDiv, formatDiv);
-                document.getElementById('execute').innerHTML = '<i class="fa-solid fa-download"></i>';
-            }
-        });
-
-        document.getElementById('execute').addEventListener('click', function() {
-            isImportingExporting = false;
-            var action = document.getElementById('action').value;
-            var format = document.getElementById('format').value;
-            var file = document.getElementById('file') ? document.getElementById('file').files[0] : null;
-
-            var formData = new FormData();
-            if (file) {
-                formData.append('file', file);
-            }
-
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', '?action=' + action + '&format=' + format, true);
-
-            // Create a progress element
-            var progress = document.createElement('progress');
-            progress.max = 100;
-            progress.value = 0;
-            importExportDiv.appendChild(progress);
-
-            // Update the progress element when the upload progress changes
-            xhr.upload.addEventListener('progress', function(e) {
-                if (e.lengthComputable) {
-                    progress.value = (e.loaded / e.total) * 100;
-                }
-            });
-
-            xhr.onload = function () {
-                if (xhr.status === 200) {
-                    alert('Erfolgreich!');
-                    loadTable();
-                } else {
-                    alert('Fehler!');
-                }
-                // Remove the progress element when the upload is complete
-                importExportDiv.removeChild(progress);
-            };
-            xhr.send(formData);
-        });
-
-        document.getElementById('cancel').addEventListener('click', function() {
-            isImportingExporting = false;
-            importExportDiv.innerHTML = '';
-            importExportDiv.className = '';
-        });
-    }
-    // info row
-    function info_entry(created, last_changed, status, device, speed) {
-        created = created.substring(1);
-
-        // Close existing popup if it exists
-        var existingPopup = document.getElementById('infoPopup');
-        if (existingPopup) {
-            document.body.removeChild(existingPopup);
-        }
-
-        // create popup, hide and add content
-        var popup = document.createElement('div');
-        popup.id = 'infoPopup';
-        popup.style.display = 'none';
-        popup.innerHTML = `
-            <h2 class="text-2xl font-bold">Information</h2>
-            <p>Created: ${created}</p>
-            <p>Last Changed: ${last_changed}</p>
-            <p>Status: ${status}</p>
-            <p>Gerät: ${device}</p>
-            <p>Geschwindigkeit: ${speed}</p>
-            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full" onclick="info_close(this)">Close</button>
-        `;
-        document.body.appendChild(popup);
-
-        // add css
-        popup.classList.add(
-            'block', 
-            'fixed', 
-            'transform', 
-            '-translate-x-1/2', 
-            '-translate-y-1/2', 
-            'top-1/2', 
-            'left-1/2', 
-            'p-8', 
-            'bg-gray-300', 
-            'rounded-lg'
-        );
-        popup.style.display = 'block';
-    }
-    function info_close(button) {
-        var popup = event.target.closest('#infoPopup');
-        if (popup) {
-            document.body.removeChild(popup);
-        }
-    }
-    // auto-select dropdown menu items -> spawn new entry
-    document.addEventListener('DOMContentLoaded', (event) => {
-        document.body.addEventListener('change', function(e) {
-            if (e.target.name === 'status') {
-                const statusSelect = document.querySelector('select[name="status"]');
-                const speedSelect = document.querySelector('select[name="speed"]');
-                const deviceSelect = document.querySelector('select[name="device"]');
-
-                if (e.target.value === 'unpatched') {
-                    speedSelect.value = '--';
-                    deviceSelect.value = '--';
-                } else {
-                    speedSelect.value = '1000';
-                }
-            }
-        });
+    document.getElementById('table_limit_2').addEventListener('change', (e) => {
+        currentLimit = parseInt(e.target.value, 10);
+        document.getElementById('table_limit_1').value = currentLimit;
+        document.cookie = `table_limit=${currentLimit}; path=/`;
+        currentPage = 1;
+        loadTable();
     });
-    // spawn new entry
-    var isAddingNewEntry = false;
-    function spawn_new_entry() {
-        if (isAddingNewEntry) {
-            return;
+
+    // Export global functions for pagination
+    window.portViewApp = {
+        goToPage: (page) => {
+            currentPage = page;
+            loadTable();
         }
-        isAddingNewEntry = true;
+    };
 
-        var tableHeaderWidth = document.querySelector('table thead').offsetWidth;
-
-        const tbody = document.querySelector("tbody");
-        const newRow = `
-            <tr class='new_entry_row'>
-                <td class='w-full border-b' colspan="14">
-                    <form class='new_entry flex items-center' enctype="multipart/form-data">
-                        <div class='flex-grow flex flex-col'>
-                            <select name='status' class='w-full py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent'>
-                                <option value='' disabled selected>Status</option>
-                                <optgroup>
-                                    <option value='active'>aktiv</option>
-                                    <option value='inactive'>inaktiv</option>
-                                    <option value='unpatched'>ungepatcht</option>
-                                    <option value='other'>Sonstige</option>
-                                </optgroup>
-                            </select>
-                            <select name='speed' class='w-full py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent'>
-                                <option value='' disabled selected>Geschwindigkeit</option>
-                                <optgroup>
-                                    <option value='--'>--</option>
-                                    <option value='100'>100 MBit/s</option>
-                                    <option value='1000'>1 GBit/s</option>
-                                    <option value='2500'>2.5 GBit/s</option>
-                                    <option value='10000'>10 GBit/s</option>
-                                    <option value='25000'>25 GBit/s</option>
-                                    <option value='40000'>40 GBit/s</option>
-                                    <option value='100000'>100 Gbit/s</option>
-                                </optgroup>
-                            </select>
-                            <select name='device' class='w-full py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent'>
-                                <option value='' disabled selected>Gerät</option>
-                                <optgroup>
-                                    <option value='--'>--</option>
-                                    <option value='phone'>Telefon</option>
-                                    <option value='notebook'>Laptop</option>
-                                    <option value='switch'>Switch</option>
-                                    <option value='zeroclient'>Zeroclient</option>
-                                    <option value='thinclient'>Thinclient</option>
-                                    <option value='desktop'>Desktop</option>
-                                    <option value='access_point'>Access Point</option>
-                                    <option value='printer'>Drucker</option>
-                                    <option value='other'>Sonstige</option>
-                                </optgroup>
-                            </select>
-                        </div>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='room' placeholder='Raum'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='port' placeholder='Dosenport'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' name='hostname' placeholder='Hostname'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='vlan_untagged' placeholder='VLAN (untagged)'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='vlan_tagged' placeholder='VLAN (tagged)'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='mac' placeholder='MAC'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='cable_number' placeholder='Kabelnummer'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='panel' placeholder='Panel'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='switch_name' placeholder='Switch'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='switch_port' placeholder='Switchport'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='comment' placeholder='Kommentar'>
-                        <input class='mr-2 py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' type='text' name='tags' placeholder='Tags'>
-                        <div class='text-xl flex items-center'>
-                            <div class='h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md'>
-                                <button type='button' onclick='new_entry(this)' class='text-2xl text-white'><i class='fa-regular fa-floppy-disk'></i></button>
-                            </div>
-                            <div class='h-10 w-10 ml-4 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md'>
-                                <button type='button' onclick='cancel_new_entry(this)' class='text-2xl text-white'><i class='fa-solid fa-xmark'></i></button>
-                            </div>
-                        </div>
-                    </form>
-                </td>
-            </tr>`;
-            tbody.insertAdjacentHTML('afterbegin', newRow);
-        var formRow = document.querySelector('.new_entry');
-        formRow.style.width = tableHeaderWidth + 'px';
-
-        var tableHeaders = Array.from(document.querySelectorAll('table thead th'));
-        var formElements = Array.from(document.querySelectorAll('.new_entry > *'));
-
-        formElements.forEach((element, index) => {
-            if (tableHeaders[index]) {
-                element.style.width = tableHeaders[index].offsetWidth + 'px';
-            }
-        });
-    }
-    function cancel_new_entry(button) {
-        var row = button.closest('.new_entry_row');
-        if (row) {
-            row.remove();
-            isAddingNewEntry = false;
-        } else {
-            console.error('Kein Element mit der Klasse .new-entry-row gefunden');
-        }
-    }
-    // post data
-    function new_entry(button) {
-        var form = $(button).closest('form');
-        $.ajax({
-            type: 'POST',
-            url: '?action=insert',
-            data: form.serialize(),
-            success: function(response) {
-                loadTable();
-            },
-            error: function(jqXHR, textStatus, errorThrown) {
-                console.error(textStatus, errorThrown);
-            }
-        });
-    }
-    // edit entry
-    var isEditingEntry = false;
-    function edit_entry(uuid, button) {
-        if (isEditingEntry) {
-            return;
-        }
-        isEditingEntry = true;
-
-        var tableHeaderWidth = document.querySelector('table thead').offsetWidth;
-        uuid = uuid.substring(1);
-        var row = $(button).closest('tr');
-
-        if (row && row.length > 0) {
-            var cells = Array.from(row[0].children);
-            if (cells) {
-                // Ignorieren Sie den ersten und letzten Wert
-                cells = cells.slice(1, -1);
-                var values = cells.map(cell => cell.textContent);
-
-                // Extrahieren Sie die Werte aus dem info_entry-Button
-                var infoButton = row[0].querySelector('button[onclick^="info_entry"]');
-                if (infoButton) {
-                    var infoValues = infoButton.getAttribute('onclick');
-                    infoValues = infoValues.substring(11, infoValues.length - 2).split("', '");
-                    // Ignorieren Sie die ersten beiden Werte
-                    infoValues = infoValues.slice(2);
-                    values = values.concat(infoValues);
-                }
-
-                var status = values[12] || '';
-                var speed = values[15] || '';
-                var device = values[13] || '';
-                var room = values[0] || '';
-                var port = values[1] || '';
-                var hostname = values[2] || '';
-                var vlan_untagged = values[3] || '';
-                var vlan_tagged = values[4] || '';
-                var mac = values[5] || '';
-                var cable_number = values[6] || '';
-                var panel = values[7] || '';
-                var switch_name = values[8] || '';
-                var switch_port = values[9] || '';
-                var comment = values[10] || '';
-                var tags = values[11] || '';
-            }
-        }
-
-        const newRow = `
-            <tr class='edit_entry_row'>
-                <td class='w-full border-b' colspan="14">
-                    <form class='edit_entry flex items-center' enctype="multipart/form-data">
-                        <div class='flex-grow flex flex-col'>
-                            <select name='status' class='w-full py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent'>
-                                <option disabled>Status</option>
-                                <optgroup>
-                                    <option value='active'>aktiv</option>
-                                    <option value='inactive'>inaktiv</option>
-                                    <option value='unpatched'>ungepatcht</option>
-                                    <option value='other'>Sonstige</option>
-                                </optgroup>
-                            </select>
-                            <select name='speed' class='w-full py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent'>
-                                <option disabled>Geschwindigkeit</option>
-                                <optgroup>
-                                    <option value='--'>--</option>
-                                    <option value='100'>100 MBit/s</option>
-                                    <option value='1000'>1 GBit/s</option>
-                                    <option value='2500'>2.5 GBit/s</option>
-                                    <option value='10000'>10 GBit/s</option>
-                                    <option value='25000'>25 GBit/s</option>
-                                    <option value='40000'>40 GBit/s</option>
-                                    <option value='100000'>100 Gbit/s</option>
-                                </optgroup>
-                            </select>
-                            <select name='device' class='w-full py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent'>
-                                <option disabled>Gerät</option>
-                                <optgroup>
-                                    <option value='--'>--</option>
-                                    <option value='phone'>Telefon</option>
-                                    <option value='notebook'>Laptop</option>
-                                    <option value='switch'>Switch</option>
-                                    <option value='zeroclient'>Zeroclient</option>
-                                    <option value='thinclient'>Thinclient</option>
-                                    <option value='desktop'>Desktop</option>
-                                    <option value='access_point'>Access Point</option>
-                                    <option value='printer'>Drucker</option>
-                                    <option value='other'>Sonstige</option>
-                                </optgroup>
-                            </select>
-                        </div>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + room + `' type='text' name='room' placeholder='Raum'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + port + `' type='text' name='port' placeholder='Dosenport'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + hostname + `' name='hostname' placeholder='Hostname'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + vlan_untagged + `' type='text' name='vlan_untagged' placeholder='VLAN (untagged)'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + vlan_tagged + `' type='text' name='vlan_tagged' placeholder='VLAN (tagged)'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + mac + `' type='text' name='mac' placeholder='MAC'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + cable_number + `' type='text' name='cable_number' placeholder='Kabelnummer'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + panel + `' type='text' name='panel' placeholder='Panel'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + switch_name + `' type='text' name='switch_name' placeholder='Switch'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + switch_port + `' type='text' name='switch_port' placeholder='Switchport'>
-                        <input class='py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + comment + `' type='text' name='comment' placeholder='Kommentar'>
-                        <input class='mr-2 py-1 px-2 border-solid border-2 boder-gray-400 rounded bg-transparent' value='` + tags + `' type='text' name='tags' placeholder='Tags'>                  
-                        <div class='text-xl flex items-center'>
-                            <div class='h-10 w-10 ml-4 rounded-full bg-green-500 hover:bg-green-700 flex justify-center shadow-md'>
-                                <button type='button' onclick='save_edit_entry("u` + uuid + `", this)' class='text-2xl text-white'><i class='fa-regular fa-floppy-disk'></i></button>
-                            </div>
-                            <div class='h-10 w-10 ml-4 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md'>
-                                <button type='button' onclick='cancel_edit_entry(this)' class='text-2xl text-white'><i class='fa-solid fa-xmark'></i></button>
-                            </div>
-                        </div>
-                    </form>
-                </td>
-            </tr>`;
-        row[0].insertAdjacentHTML('afterend', newRow);
-        row[0].style.display = 'none';
-
-        var formRow = document.querySelector('.edit_entry');
-        formRow.style.width = tableHeaderWidth + 'px';
-
-        var tableHeaders = Array.from(document.querySelectorAll('table thead th'));
-        var formElements = Array.from(document.querySelectorAll('.edit_entry > *'));
-
-        formElements.forEach((element, index) => {
-            // Verschieben Sie den Index um eine Position zurück
-            var shiftedIndex = index - 1;
-
-            // Überprüfen Sie, ob ein Wert an der verschobenen Position existiert
-            if (values[shiftedIndex]) {
-                // Wenn das aktuelle Element das Tags-Element ist, entfernen Sie die Hashtags
-                if (element.name === 'tags') {
-                    element.value = values[shiftedIndex].split(' ').map(tag => tag.replace('#', '')).join(', ').trim();
-                    if (element.value.endsWith(',')) {
-                        element.value = element.value.slice(0, -1);
-                    }
-                } else {
-                    element.value = values[shiftedIndex];
-                }
-            }
-            if (tableHeaders[index]) {
-                element.style.width = tableHeaders[index].offsetWidth + 'px';
-            }
-        });
-
-        // Definieren Sie die setSelectedValue Funktion innerhalb der edit_entry Funktion
-        function setSelectedValue(selectName, value) {
-            var selectElement = document.querySelector("select[name='" + selectName + "']");
-            for (var i = 0; i < selectElement.options.length; i++) {
-                if (selectElement.options[i].value == value) {
-                    selectElement.options[i].selected = true;
-                    break;
-                }
-            }
-        }
-
-        // Verwenden Sie die setSelectedValue Funktion, um die ausgewählten Werte für die <select>-Elemente zu setzen
-        setSelectedValue('status', status);
-        setSelectedValue('speed', speed);
-        setSelectedValue('device', device);
-    }
-
-    function cancel_edit_entry(button) {
-        var row = button.closest('.edit_entry_row');
-        if (row) {
-            row.previousElementSibling.style.display = '';
-            row.remove();
-            isEditingEntry = false;
-        } else {
-            console.error('Kein Element mit der Klasse .edit-entry-row gefunden');
-        }
-    }
-
-    // post data
-    function save_edit_entry(uuid, button) {
-        var form = $(button).closest('form');
-        uuid = uuid.substring(1);
-        $.ajax({
-            type: 'POST',
-            url: '?action=update' + '&uuid=' + uuid,
-            data: form.serialize(),
-            success: function(response) {
-                loadTable();
-                isEditingEntry = false;
-            },
-            error: function(jqXHR, textStatus, errorThrown) {
-                console.error(textStatus, errorThrown);
-            }
-        });
-    }
-
-    function execute_shortcut(uuid, shortcutId, button) {
-        run_shortcut(uuid, shortcutId, button, 'execute');
-    }
-
-    function queue_shortcut(uuid, shortcutId, button) {
-        run_shortcut(uuid, shortcutId, button, 'queue');
-    }
-
-    function run_shortcut(uuid, shortcutId, button, mode) {
-        uuid = (uuid || '').toString().substring(1);
-        if (uuid === '' || shortcutId === '') {
-            alert('Shortcut konnte nicht gestartet werden: Ungueltige Parameter.');
-            return;
-        }
-
-        var shortcut = (Array.isArray(PORT_SHORTCUTS) ? PORT_SHORTCUTS.find(function(item) {
-            return item && item.id === shortcutId;
-        }) : null) || null;
-
-        var row = $(button).closest('tr');
-        var switchName = row.find('td').eq(9).text().trim();
-        var switchPort = row.find('td').eq(10).text().trim();
-        var label = shortcut && shortcut.label ? shortcut.label : shortcutId;
-        var confirmText = shortcut && shortcut.confirm ? shortcut.confirm : ('Shortcut ausfuehren: ' + label + '?');
-        var actionText = mode === 'queue' ? 'In Warteschlange speichern' : 'Sofort ausfuehren';
-
-        if (!confirm(confirmText + '\n\nModus: ' + actionText + '\nAktion: ' + label + '\nSwitch: ' + switchName + '\nPort: ' + switchPort)) {
-            return;
-        }
-
-        $.ajax({
-            type: 'POST',
-            url: '?action=shortcut_execute',
-            dataType: 'json',
-            data: {
-                csrf: SHORTCUT_CSRF,
-                shortcut_id: shortcutId,
-                port_uuid: uuid,
-                mode: mode
-            },
-            success: function(response) {
-                if (!response || !response.ok) {
-                    alert('Shortcut fehlgeschlagen.\n\n' + (response && response.message ? response.message : 'Unbekannter Fehler.'));
-                    return;
-                }
-
-                var message = response.message || (mode === 'queue' ? 'Shortcut in Warteschlange gespeichert.' : 'Shortcut erfolgreich ausgefuehrt.');
-                if (response.warnings && response.warnings.length) {
-                    message += '\n\nWarnungen:\n- ' + response.warnings.join('\n- ');
-                }
-                if (response.output) {
-                    message += '\n\nAusgabe:\n' + response.output;
-                }
-                alert(message);
-            },
-            error: function(jqXHR) {
-                alert('Shortcut fehlgeschlagen.\n\n' + (jqXHR.responseText || 'Keine Details verfuegbar.'));
-            }
-        });
-    }
-
-    // delete entry
-    function delete_entry(uuid, button) {
-        uuid = uuid.substring(1);
-        var row = $(button).closest('tr');
-        var confirmButton = $('<button class="confirm bg-green-500 text-white px-2 py-1 mt-2 mr-4 rounded-full">Ja</button>');
-        var cancelButton = $('<button class="cancel bg-red-500 text-white px-2 py-1 mt-2 rounded-full">Nein</button>');
-        var popup = $('<div class="absolute bg-white p-2 rounded-md max-w-xl mr-4" style="top: ' + ($(button).offset().top + parseInt($(button).css('line-height'))) + 'px; left: ' + ($(button).offset().left - 100) + 'px;">Sicher, dass dieser Eintrag gelöscht werden soll?<br></div>');
-        popup.append(confirmButton);
-        popup.append(cancelButton);
-        $('body').append(popup);
-        popup.show();
-
-        popup.find('.confirm').click(function() {
-            $.get('?action=delete' + '&uuid=' + uuid, function(data) {
-                row.remove();
-            });
-            popup.hide();
-        });
-
-        popup.find('.cancel').click(function() {
-            popup.hide();
-        });
-    }
+    // Initial load
+    loadTable();
+})();
 </script>
 <?php
     include_once 'includes/footer.php';
