@@ -22,7 +22,8 @@
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       color: var(--text);
       background: radial-gradient(circle at 10% 10%, #dbeafe 0%, #eef2f7 48%, #f8fafc 100%);
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
 
     .layout {
@@ -30,7 +31,7 @@
       grid-template-columns: 380px minmax(0, 1fr);
       gap: 12px;
       padding: 12px;
-      min-height: 100vh;
+      height: 100vh;
     }
 
     .panel {
@@ -39,6 +40,7 @@
       border-radius: 14px;
       padding: 12px;
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+      overflow-y: auto;
     }
 
     .panel h1 {
@@ -157,7 +159,7 @@
 
     .viewport {
       position: relative;
-      min-height: calc(100vh - 24px);
+      height: 100%;
       border: 1px solid var(--line);
       border-radius: 14px;
       overflow: hidden;
@@ -167,7 +169,6 @@
     #sceneHost {
       width: 100%;
       height: 100%;
-      min-height: calc(100vh - 24px);
     }
 
     .status {
@@ -218,6 +219,11 @@
     @media (max-width: 1100px) {
       .layout {
         grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+      }
+      .panel {
+        max-height: 42vh;
       }
       .viewport,
       #sceneHost {
@@ -263,6 +269,38 @@
         <label><input id="sceneCacheToggle" type="checkbox" checked> Scene-Cache (skip unchanged)</label>
         <label><input id="pauseHiddenToggle" type="checkbox" checked> Pause bei inaktivem Tab</label>
         <label><input id="rackEarsToggle" type="checkbox" checked> Rackohren anzeigen (2 mm, kurz)</label>
+        <label><input id="loadOverlayToggle" type="checkbox" checked> Last-Heat-Overlay anzeigen</label>
+        <label><input id="portsToggle" type="checkbox" checked> Ports anzeigen</label>
+        <label><input id="cablesToggle" type="checkbox" checked> Kabel anzeigen</label>
+        <label><input id="cableRearAwareToggle" type="checkbox" checked> Kabel rear-aware Routing</label>
+        <label><input id="comMarkerToggle" type="checkbox" checked> Last-Schwerpunktmarker anzeigen</label>
+      </div>
+
+      <div class="section-label">Phase 7 - Room Layout</div>
+      <div class="toggle-row">
+        <label><input id="roomModeToggle" type="checkbox"> Room-Modus (mehrere Racks)</label>
+        <label><input id="roomAutoNearbyToggle" type="checkbox" checked> Auto: nahe Racks zur Kamera laden</label>
+        <label><input id="roomChunkingToggle" type="checkbox" checked> Chunking aktiv</label>
+        <label><input id="roomFocusDevicesToggle" type="checkbox" checked> Nur fokussiertes Rack mit Geräten</label>
+      </div>
+      <div class="row">
+        <select id="roomFocusRackSelect">
+          <option value="">Rack-Fokus: automatisch</option>
+        </select>
+        <button id="roomFocusRackBtn" class="secondary">Rack fokussieren</button>
+      </div>
+      <div class="form-grid">
+        <div><label for="roomWidth">room.width (mm)</label><input id="roomWidth" type="number" step="10" value="6000"></div>
+        <div><label for="roomDepth">room.depth (mm)</label><input id="roomDepth" type="number" step="10" value="4000"></div>
+        <div><label for="roomAisle">aisle (mm)</label><input id="roomAisle" type="number" step="10" value="1200"></div>
+        <div><label for="roomNearbyCount">nearby.racks</label><input id="roomNearbyCount" type="number" step="1" min="1" value="5"></div>
+        <div><label for="roomChunkSize">chunk.size (mm)</label><input id="roomChunkSize" type="number" step="100" min="500" value="10000"></div>
+        <div><label for="roomChunkCount">chunk.count</label><input id="roomChunkCount" type="number" step="1" min="1" value="6"></div>
+        <div><label for="roomRackRenderLimit">rack.render.limit</label><input id="roomRackRenderLimit" type="number" step="1" min="1" value="240"></div>
+        <div><label for="roomDeviceRenderLimit">device.render.limit</label><input id="roomDeviceRenderLimit" type="number" step="1" min="1" value="450"></div>
+        <div><label for="roomCableRenderLimit">cable.render.limit</label><input id="roomCableRenderLimit" type="number" step="1" min="1" value="600"></div>
+        <div><label for="roomMinClearance">min.clearance (mm)</label><input id="roomMinClearance" type="number" step="50" min="100" value="1000"></div>
+        <div><label for="roomSampleCount">sample.racks</label><input id="roomSampleCount" type="number" step="1" min="1" value="12"></div>
       </div>
 
       <div class="section-label">Rack Outer (mm)</div>
@@ -302,11 +340,27 @@
         <div><label for="deviceSizeZ">size.z</label><input id="deviceSizeZ" type="number" step="0.1"></div>
       </div>
 
+      <div class="section-label">Port bearbeiten</div>
+      <div class="row">
+        <select id="portEditorSelect"></select>
+        <select id="portSideField">
+          <option value="front">front</option>
+          <option value="rear">rear</option>
+        </select>
+        <button id="applyPortBtn" class="secondary">Port-Seite übernehmen</button>
+      </div>
+
       <div class="section-label">Geladene DB-Daten / Abgleich</div>
       <pre id="debugOutput" class="debug-output">Noch keine Rack-Daten geladen.</pre>
 
       <div class="section-label">Phase 5 - Rack Load</div>
       <div id="loadSummary" class="load-summary">Noch keine Lastdaten berechnet.</div>
+
+      <div class="section-label">Phase 7 - Room Summary</div>
+      <div id="roomSummary" class="load-summary">Room-Modus ist deaktiviert.</div>
+
+      <div class="section-label">Cable Summary</div>
+      <div id="cableSummary" class="load-summary">Noch keine Kabeldaten berechnet.</div>
 
       <div id="status" class="status">Bereit. Noch kein 3D geladen.</div>
     </aside>
@@ -334,6 +388,11 @@
           size: { x: 445, y: 44, z: 320 },
           rotation: { x: 0, y: 0, z: 0 },
           weightKg: 8.5,
+          ports: [
+            { uuid: "port-sw-p1", name: "P1", placement: { x: 26, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
+            { uuid: "port-sw-p2", name: "P2", placement: { x: 42, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
+            { uuid: "port-sw-p3", name: "P3", placement: { x: 58, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" }
+          ],
           color: "#38bdf8"
         },
         {
@@ -342,6 +401,10 @@
           size: { x: 445, y: 44, z: 140 },
           rotation: { x: 0, y: 0, z: 0 },
           weightKg: 3.1,
+          ports: [
+            { uuid: "port-pp-p1", name: "PP1", placement: { x: 32, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "cat7" },
+            { uuid: "port-pp-p2", name: "PP2", placement: { x: 50, y: 10, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "cat7" }
+          ],
           color: "#a78bfa"
         },
         {
@@ -350,7 +413,40 @@
           size: { x: 445, y: 88, z: 260 },
           rotation: { x: 0, y: 0, z: 0 },
           weightKg: 12.4,
+          ports: [
+            { uuid: "port-fw-wan", name: "WAN", placement: { x: 26, y: 16, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" },
+            { uuid: "port-fw-lan", name: "LAN", placement: { x: 44, y: 16, z: 2 }, size: { x: 12, y: 12, z: 10 }, type: "rj45" }
+          ],
           color: "#f59e0b"
+        }
+      ],
+      connections: [
+        {
+          uuid: "conn-1",
+          device_port_source: "port-sw-p1",
+          device_port_destination: "port-pp-p1",
+          type: "CAT7",
+          length: 1.8,
+          crossover: false,
+          speed: 1000
+        },
+        {
+          uuid: "conn-2",
+          device_port_source: "port-sw-p2",
+          device_port_destination: "port-fw-wan",
+          type: "Copper",
+          length: 2.2,
+          crossover: false,
+          speed: 1000
+        },
+        {
+          uuid: "conn-3",
+          device_port_source: "port-sw-p3",
+          device_port_destination: "port-fw-lan",
+          type: "Copper",
+          length: 2.6,
+          crossover: true,
+          speed: 1000
         }
       ]
     };
@@ -367,10 +463,28 @@
       raf: null,
       liveRacks: [],
       liveDevices: [],
+      livePorts: [],
       autoPreview: true,
       useSceneCache: true,
       pauseWhenHidden: true,
       showRackEars: true,
+      showLoadOverlay: true,
+      showPorts: true,
+      showCables: true,
+      cableRearAware: true,
+      showComMarker: true,
+      showRoomLayout: false,
+      roomAutoNearby: true,
+      roomChunking: true,
+      roomNearbyCount: 5,
+      roomFocusDevicesOnly: true,
+      roomFocusedRackId: '',
+      roomCameraInitialized: false,
+      roomLastAutoRefreshAt: 0,
+      roomNearbyStickyIds: new Set(),
+      roomNearbyStickyMargin: 3,
+      liveDevicesByRack: new Map(),
+      liveConnections: [],
       renderDebounceMs: 180,
       renderTimer: null,
       loopRunning: false,
@@ -388,11 +502,38 @@
     const syncFormBtn = document.getElementById('syncFormBtn');
     const applyFormBtn = document.getElementById('applyFormBtn');
     const deviceEditorSelect = document.getElementById('deviceEditorSelect');
+    const portEditorSelect = document.getElementById('portEditorSelect');
+    const portSideField = document.getElementById('portSideField');
+    const applyPortBtn = document.getElementById('applyPortBtn');
     const autoPreviewToggle = document.getElementById('autoPreviewToggle');
     const sceneCacheToggle = document.getElementById('sceneCacheToggle');
     const pauseHiddenToggle = document.getElementById('pauseHiddenToggle');
     const rackEarsToggle = document.getElementById('rackEarsToggle');
+    const loadOverlayToggle = document.getElementById('loadOverlayToggle');
+    const portsToggle = document.getElementById('portsToggle');
+    const cablesToggle = document.getElementById('cablesToggle');
+    const cableRearAwareToggle = document.getElementById('cableRearAwareToggle');
+    const comMarkerToggle = document.getElementById('comMarkerToggle');
     const loadSummaryEl = document.getElementById('loadSummary');
+    const cableSummaryEl = document.getElementById('cableSummary');
+    const roomModeToggle = document.getElementById('roomModeToggle');
+    const roomAutoNearbyToggle = document.getElementById('roomAutoNearbyToggle');
+    const roomChunkingToggle = document.getElementById('roomChunkingToggle');
+    const roomFocusDevicesToggle = document.getElementById('roomFocusDevicesToggle');
+    const roomFocusRackSelect = document.getElementById('roomFocusRackSelect');
+    const roomFocusRackBtn = document.getElementById('roomFocusRackBtn');
+    const roomWidthEl = document.getElementById('roomWidth');
+    const roomDepthEl = document.getElementById('roomDepth');
+    const roomAisleEl = document.getElementById('roomAisle');
+    const roomNearbyCountEl = document.getElementById('roomNearbyCount');
+    const roomChunkSizeEl = document.getElementById('roomChunkSize');
+    const roomChunkCountEl = document.getElementById('roomChunkCount');
+    const roomRackRenderLimitEl = document.getElementById('roomRackRenderLimit');
+    const roomDeviceRenderLimitEl = document.getElementById('roomDeviceRenderLimit');
+    const roomCableRenderLimitEl = document.getElementById('roomCableRenderLimit');
+    const roomMinClearanceEl = document.getElementById('roomMinClearance');
+    const roomSampleCountEl = document.getElementById('roomSampleCount');
+    const roomSummaryEl = document.getElementById('roomSummary');
 
     const formFields = {
       outerX: document.getElementById('outerX'),
@@ -417,6 +558,22 @@
 
     inputEl.value = JSON.stringify(defaultMockData, null, 2);
 
+    // Keep runtime flags aligned with actual toggle state (important when browser restores form values).
+    state.autoPreview = !!autoPreviewToggle.checked;
+    state.useSceneCache = !!sceneCacheToggle.checked;
+    state.pauseWhenHidden = !!pauseHiddenToggle.checked;
+    state.showRackEars = !!rackEarsToggle.checked;
+    state.showLoadOverlay = !!loadOverlayToggle.checked;
+    state.showPorts = !!portsToggle.checked;
+    state.showCables = !!cablesToggle.checked;
+    state.cableRearAware = !!cableRearAwareToggle.checked;
+    state.showComMarker = !!comMarkerToggle.checked;
+    state.showRoomLayout = !!roomModeToggle.checked;
+    state.roomAutoNearby = !!roomAutoNearbyToggle.checked;
+    state.roomChunking = !!roomChunkingToggle.checked;
+    state.roomNearbyCount = Math.max(1, Math.floor(ensureNum(roomNearbyCountEl.value, 5)));
+    state.roomFocusDevicesOnly = !!roomFocusDevicesToggle.checked;
+
     function setStatus(msg, isError = false) {
       statusEl.textContent = msg;
       statusEl.classList.toggle('error', !!isError);
@@ -437,6 +594,98 @@
       } catch {
         return String(Date.now());
       }
+    }
+
+    function getRoomConfig() {
+      const widthMm = Math.max(1500, ensureNum(roomWidthEl.value, 6000));
+      const depthMm = Math.max(1500, ensureNum(roomDepthEl.value, 4000));
+      const aisleMm = Math.max(500, ensureNum(roomAisleEl.value, 1200));
+      const nearbyRackCount = Math.max(1, Math.floor(ensureNum(roomNearbyCountEl.value, 5)));
+      const chunkSizeMm = Math.max(500, ensureNum(roomChunkSizeEl.value, 10000));
+      const chunkCount = Math.max(1, Math.floor(ensureNum(roomChunkCountEl.value, 6)));
+      const rackRenderLimit = Math.max(1, Math.floor(ensureNum(roomRackRenderLimitEl.value, 240)));
+      const deviceRenderLimit = Math.max(1, Math.floor(ensureNum(roomDeviceRenderLimitEl.value, 450)));
+      const cableRenderLimit = Math.max(1, Math.floor(ensureNum(roomCableRenderLimitEl.value, 600)));
+      const minClearanceMm = Math.max(100, ensureNum(roomMinClearanceEl.value, 1000));
+      const sampleRackCount = Math.max(1, Math.floor(ensureNum(roomSampleCountEl.value, 12)));
+      return { widthMm, depthMm, aisleMm, nearbyRackCount, chunkSizeMm, chunkCount, rackRenderLimit, deviceRenderLimit, cableRenderLimit, minClearanceMm, sampleRackCount };
+    }
+
+    function renderRoomSummary(summary) {
+      if (!summary || !summary.active) {
+        roomSummaryEl.classList.remove('warn', 'error');
+        roomSummaryEl.textContent = 'Room-Modus ist deaktiviert.';
+        return;
+      }
+
+      roomSummaryEl.classList.remove('warn', 'error');
+      if (summary.fillPct > 80 || summary.clearanceViolations > 0) roomSummaryEl.classList.add('warn');
+      if (summary.fillPct > 95 || summary.collisions > 0) roomSummaryEl.classList.add('error');
+
+      const perfClass = summary.renderedRackCount <= 60 && summary.renderedDeviceCount <= 500
+        ? 'gut'
+        : summary.renderedRackCount <= 180 && summary.renderedDeviceCount <= 1200
+          ? 'mittel (LOD/Filter empfohlen)'
+          : 'kritisch (Chunking/LOD erforderlich)';
+
+      roomSummaryEl.textContent = [
+        `Racks gerendert: ${summary.renderedRackCount} / ${summary.rackCount}`,
+        `Geraete gerendert: ${summary.renderedDeviceCount} / ${summary.deviceCount}`,
+        `Kabel gerendert: ${summary.renderedCableCount || 0}`,
+        `Lademodus: ${summary.deviceLoadingMode}`,
+        `Safety: min ${summary.minClearanceMm.toFixed(0)} mm, Ist ${summary.actualMinClearanceMm.toFixed(0)} mm, Kollisionen ${summary.collisions}, Verstöße ${summary.clearanceViolations}`,
+        `Fokus: ${summary.focusLabel}`,
+        `Quelle: ${summary.source}`,
+        `Grundflaeche belegt: ${summary.usedAreaM2.toFixed(2)} m² / ${summary.roomAreaM2.toFixed(2)} m² (${summary.fillPct.toFixed(1)} %)` ,
+        `Aisle Ziel: ${summary.aisleMm.toFixed(0)} mm`,
+        `Performance-Einschaetzung: ${perfClass}`
+      ].join(' | ');
+    }
+
+    function renderCableSummary(connections, renderedCount = 0) {
+      const all = Array.isArray(connections) ? connections : [];
+      if (all.length === 0) {
+        cableSummaryEl.classList.remove('warn', 'error');
+        cableSummaryEl.textContent = 'Keine Kabelverbindungen vorhanden.';
+        return;
+      }
+
+      let copper = 0;
+      let fiber = 0;
+      let other = 0;
+      let crossoverCount = 0;
+      const speeds = [];
+
+      for (const c of all) {
+        const t = String(c.type || '').toLowerCase();
+        if (t.includes('fiber') || t.includes('glas') || t.includes('sfp')) fiber += 1;
+        else if (t.includes('cat') || t.includes('copper') || t.includes('kupfer') || t.includes('rj45')) copper += 1;
+        else other += 1;
+
+        if (c.crossover) crossoverCount += 1;
+        const s = ensureNum(c.speed, NaN);
+        if (Number.isFinite(s) && s > 0) speeds.push(s);
+      }
+
+      const minSpeed = speeds.length > 0 ? Math.min(...speeds) : null;
+      const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : null;
+
+      cableSummaryEl.classList.remove('warn', 'error');
+      if (renderedCount < all.length) cableSummaryEl.classList.add('warn');
+
+      const speedText = (minSpeed !== null && maxSpeed !== null)
+        ? `${minSpeed.toFixed(0)}-${maxSpeed.toFixed(0)}`
+        : 'n/a';
+
+      cableSummaryEl.textContent = [
+        `Kabel gerendert: ${renderedCount}/${all.length}`,
+        `Copper/CAT: ${copper}`,
+        `Fiber: ${fiber}`,
+        `Other: ${other}`,
+        `Crossover: ${crossoverCount}`,
+        `Speed: ${speedText}`,
+        `Routing: ${state.cableRearAware ? 'rear-aware' : 'direct'}`
+      ].join(' | ');
     }
 
     function scheduleRenderFromInput() {
@@ -470,6 +719,55 @@
       deviceEditorSelect.value = String(Math.min(prev, Math.max(0, devices.length - 1)));
     }
 
+    function syncPortEditorOptions(model) {
+      const devices = Array.isArray(model.devices) ? model.devices : [];
+      const dIdx = Math.min(Number(deviceEditorSelect.value || 0), Math.max(0, devices.length - 1));
+      const ports = Array.isArray(devices[dIdx]?.ports) ? devices[dIdx].ports : [];
+      const prev = Number(portEditorSelect.value || 0);
+      portEditorSelect.innerHTML = '';
+      ports.forEach((p, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = `${i + 1}: ${p.name || 'Port'} (${p.side || 'front'})`;
+        portEditorSelect.appendChild(opt);
+      });
+      if (ports.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '0';
+        opt.textContent = 'Keine Ports';
+        portEditorSelect.appendChild(opt);
+      }
+      portEditorSelect.value = String(Math.min(prev, Math.max(0, ports.length - 1)));
+      syncPortFieldsFromModel(model);
+    }
+
+    function syncPortFieldsFromModel(model) {
+      const devices = Array.isArray(model.devices) ? model.devices : [];
+      const dIdx = Math.min(Number(deviceEditorSelect.value || 0), Math.max(0, devices.length - 1));
+      const ports = Array.isArray(devices[dIdx]?.ports) ? devices[dIdx].ports : [];
+      const pIdx = Math.min(Number(portEditorSelect.value || 0), Math.max(0, ports.length - 1));
+      const port = ports[pIdx] || { side: 'front' };
+      portSideField.value = String(port.side || 'front').toLowerCase() === 'rear' ? 'rear' : 'front';
+    }
+
+    function applyPortFieldsToModel() {
+      const model = modelFromInputOrDefault();
+      const devices = Array.isArray(model.devices) ? model.devices : [];
+      const dIdx = Math.min(Number(deviceEditorSelect.value || 0), Math.max(0, devices.length - 1));
+      const ports = Array.isArray(devices[dIdx]?.ports) ? devices[dIdx].ports : [];
+      const pIdx = Math.min(Number(portEditorSelect.value || 0), Math.max(0, ports.length - 1));
+      if (!ports[pIdx]) {
+        setStatus('Keine Portdaten für dieses Gerät vorhanden.', true);
+        return;
+      }
+      ports[pIdx].side = portSideField.value === 'rear' ? 'rear' : 'front';
+      inputEl.value = JSON.stringify(model, null, 2);
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      syncPortEditorOptions(model);
+      setStatus('Port-Seite übernommen.');
+    }
+
     function syncFormFromModel(model) {
       const rackGeom = model?.rack?.geometry || {};
       const outer = rackGeom.outer || { x: 600, y: 2200, z: 1000 };
@@ -491,6 +789,7 @@
 
       syncDeviceEditorOptions(model);
       syncDeviceFieldsFromModel(model);
+      syncPortEditorOptions(model);
     }
 
     function syncDeviceFieldsFromModel(model) {
@@ -662,6 +961,7 @@
 
     function summarizeRackLoad(data) {
       const devices = Array.isArray(data?.devices) ? data.devices : [];
+      const innerHeightMm = ensureNum(data?.rack?.geometry?.inner?.y, 0);
       const weights = devices.map((d) => {
         const raw = ensureNum(d.weightKg ?? d.weight_kg, NaN);
         return Number.isFinite(raw) && raw >= 0 ? raw : inferWeightFromType(d);
@@ -669,7 +969,502 @@
       const totalKg = weights.reduce((s, w) => s + w, 0);
       const limitKg = ensureNum(data?.rack?.loadLimitKg ?? data?.rack?.load_limit_kg ?? data?.rack?.geometry?.loadLimitKg, 0);
       const utilizationPct = limitKg > 0 ? (totalKg / limitKg) * 100 : null;
-      return { totalKg, limitKg, utilizationPct, deviceCount: devices.length };
+
+      let weightedY = 0;
+      for (let i = 0; i < devices.length; i += 1) {
+        const dev = devices[i] || {};
+        const placementY = ensureNum(dev?.placement?.y, 0);
+        const sizeY = ensureNum(dev?.size?.y, 0);
+        const centerY = placementY + sizeY / 2;
+        weightedY += centerY * weights[i];
+      }
+      const centerOfMassY = totalKg > 0 ? weightedY / totalKg : null;
+
+      const segmentCount = 5;
+      const segHeight = innerHeightMm > 0 ? innerHeightMm / segmentCount : 0;
+      const segments = Array.from({ length: segmentCount }, (_, i) => ({
+        idx: i,
+        from: segHeight * i,
+        to: segHeight * (i + 1),
+        kg: 0
+      }));
+
+      if (segHeight > 0) {
+        for (let i = 0; i < devices.length; i += 1) {
+          const dev = devices[i] || {};
+          const centerY = ensureNum(dev?.placement?.y, 0) + ensureNum(dev?.size?.y, 0) / 2;
+          const segIdx = Math.max(0, Math.min(segmentCount - 1, Math.floor(centerY / segHeight)));
+          segments[segIdx].kg += weights[i];
+        }
+      }
+
+      return {
+        totalKg,
+        limitKg,
+        utilizationPct,
+        deviceCount: devices.length,
+        centerOfMassY,
+        innerHeightMm,
+        segments
+      };
+    }
+
+    function createLoadOverlayMesh(THREE, rackGeom, loadData) {
+      const { inner } = getRackGeometryDefaults(rackGeom);
+      const offsets = getRackOffsets(rackGeom);
+      const overlayGroup = new THREE.Group();
+
+      const innerW = mm(ensureNum(inner.x, 0));
+      const innerH = mm(ensureNum(inner.y, 0));
+      const innerD = mm(ensureNum(inner.z, 0));
+      if (!(innerW > 0 && innerH > 0 && innerD > 0)) return overlayGroup;
+
+      const segs = Array.isArray(loadData?.segments) ? loadData.segments : [];
+      if (segs.length === 0) return overlayGroup;
+
+      const maxKg = Math.max(...segs.map((s) => ensureNum(s.kg, 0)), 0.0001);
+      const segHeight = innerH / segs.length;
+      const innerMinY = offsets.innerCenterOffset.y - innerH / 2;
+
+      for (let i = 0; i < segs.length; i += 1) {
+        const segKg = ensureNum(segs[i].kg, 0);
+        const ratio = Math.min(1, Math.max(0, segKg / maxKg));
+
+        const color = new THREE.Color().setHSL((1 - ratio) * 0.35, 0.82, 0.5);
+        const mat = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.1 + ratio * 0.22,
+          depthWrite: false
+        });
+
+        const segGeo = new THREE.BoxGeometry(innerW * 0.98, segHeight * 0.92, innerD * 0.98);
+        const segMesh = new THREE.Mesh(segGeo, mat);
+        segMesh.position.set(
+          offsets.innerCenterOffset.x,
+          innerMinY + segHeight * i + segHeight / 2,
+          offsets.innerCenterOffset.z
+        );
+        overlayGroup.add(segMesh);
+      }
+
+      return overlayGroup;
+    }
+
+    function createCenterOfMassMarker(THREE, rackGeom, loadData) {
+      const markerGroup = new THREE.Group();
+      if (!Number.isFinite(loadData?.centerOfMassY)) return markerGroup;
+
+      const { inner } = getRackGeometryDefaults(rackGeom);
+      const offsets = getRackOffsets(rackGeom);
+      const innerW = mm(ensureNum(inner.x, 0));
+      const innerH = mm(ensureNum(inner.y, 0));
+      if (!(innerW > 0 && innerH > 0)) return markerGroup;
+
+      const innerMinY = offsets.innerCenterOffset.y - innerH / 2;
+      const markerY = innerMinY + mm(ensureNum(loadData.centerOfMassY, 0));
+
+      const lineGeo = new THREE.BoxGeometry(innerW * 0.92, mm(6), mm(6));
+      const lineMat = new THREE.MeshStandardMaterial({
+        color: 0xf43f5e,
+        emissive: 0x3f0010,
+        metalness: 0.2,
+        roughness: 0.35
+      });
+      const lineMesh = new THREE.Mesh(lineGeo, lineMat);
+      lineMesh.position.set(offsets.innerCenterOffset.x, markerY, offsets.innerCenterOffset.z);
+
+      const dotGeo = new THREE.SphereGeometry(mm(9), 12, 12);
+      const dotMat = new THREE.MeshStandardMaterial({
+        color: 0xfb7185,
+        emissive: 0x3f0010,
+        metalness: 0.15,
+        roughness: 0.3
+      });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(lineMesh.position);
+
+      markerGroup.add(lineMesh);
+      markerGroup.add(dot);
+      return markerGroup;
+    }
+
+    function getRoomRacksForLayout(data, roomConfig) {
+      if (Array.isArray(state.liveRacks) && state.liveRacks.length > 0) {
+        return state.liveRacks.map((rack) => {
+          const devices = getDevicesForRackUuid(rack.uuid);
+          return {
+            uuid: rack.uuid,
+            name: rack.name,
+            geometry: rack.geometry,
+            devices
+          };
+        });
+      }
+
+      const baseGeom = data?.rack?.geometry || defaultMockData.rack.geometry;
+      const baseDevices = Array.isArray(data?.devices) ? data.devices : [];
+      return Array.from({ length: roomConfig.sampleRackCount }, (_, idx) => ({
+        uuid: `sample-${idx + 1}`,
+        name: `Sample Rack ${idx + 1}`,
+        geometry: JSON.parse(JSON.stringify(baseGeom)),
+        devices: JSON.parse(JSON.stringify(baseDevices))
+      }));
+    }
+
+    function syncRoomFocusRackOptions(data, roomConfig) {
+      const racks = getRoomRacksForLayout(data, roomConfig);
+      const prev = state.roomFocusedRackId;
+      roomFocusRackSelect.innerHTML = '<option value="">Rack-Fokus: automatisch</option>';
+
+      racks.forEach((rack, idx) => {
+        const opt = document.createElement('option');
+        opt.value = String(rack.uuid);
+        opt.textContent = `${idx + 1}: ${rack.name}`;
+        roomFocusRackSelect.appendChild(opt);
+      });
+
+      if (racks.length === 0) {
+        state.roomFocusedRackId = '';
+        roomFocusRackSelect.value = '';
+        roomFocusRackSelect.disabled = true;
+        roomFocusRackBtn.disabled = true;
+        return;
+      }
+
+      const hasPrev = racks.some((r) => r.uuid === prev);
+      state.roomFocusedRackId = hasPrev ? prev : racks[0].uuid;
+      roomFocusRackSelect.value = state.roomFocusedRackId;
+      roomFocusRackSelect.disabled = false;
+      roomFocusRackBtn.disabled = false;
+    }
+
+    function getNearbyRackIdSet(racks, positions, count, allowedRackIds = null) {
+      if (!Array.isArray(racks) || racks.length === 0) return new Set();
+      const cameraPos = state.camera?.position || { x: 0, z: 0 };
+      const allowedSet = allowedRackIds instanceof Set ? allowedRackIds : null;
+      const filtered = allowedSet
+        ? racks.map((rack, idx) => ({ rack, idx })).filter((x) => allowedSet.has(x.rack.uuid))
+        : racks.map((rack, idx) => ({ rack, idx }));
+
+      if (filtered.length === 0) return new Set();
+      const maxCount = Math.max(1, Math.min(filtered.length, Math.floor(ensureNum(count, 5))));
+
+      const ranked = filtered.map(({ rack, idx }) => {
+        const p = positions[idx] || { xMm: 0, zMm: 0 };
+        const rx = mm(p.xMm);
+        const rz = mm(p.zMm);
+        const dx = cameraPos.x - rx;
+        const dz = cameraPos.z - rz;
+        return {
+          uuid: rack.uuid,
+          distanceSq: dx * dx + dz * dz
+        };
+      }).sort((a, b) => a.distanceSq - b.distanceSq);
+
+      const idealIds = ranked.slice(0, maxCount).map((r) => r.uuid);
+      const idealSet = new Set(idealIds);
+
+      // Sticky selection: keep some previously selected nearby racks if they remain close.
+      // This reduces visible thrashing when the camera moves around chunk boundaries.
+      const stickyMargin = Math.max(1, Math.floor(ensureNum(state.roomNearbyStickyMargin, 3)));
+      const stickyWindowSize = Math.min(ranked.length, maxCount + stickyMargin);
+      const stickyWindow = new Set(ranked.slice(0, stickyWindowSize).map((r) => r.uuid));
+      const previousSticky = state.roomNearbyStickyIds instanceof Set ? state.roomNearbyStickyIds : new Set();
+
+      const kept = [];
+      for (const id of previousSticky) {
+        if (stickyWindow.has(id)) kept.push(id);
+        if (kept.length >= maxCount) break;
+      }
+
+      const merged = [...kept];
+      for (const id of idealIds) {
+        if (merged.includes(id)) continue;
+        merged.push(id);
+        if (merged.length >= maxCount) break;
+      }
+
+      const result = new Set(merged);
+      state.roomNearbyStickyIds = result;
+      return result.size > 0 ? result : idealSet;
+    }
+
+    function getChunkedRackIdSet(racks, positions, roomConfig, forceIncludeRackIds = []) {
+      if (!Array.isArray(racks) || racks.length === 0) return new Set();
+      if (!state.roomChunking) {
+        const cameraPos = state.camera?.position || { x: 0, z: 0 };
+        const rackRenderLimit = Math.max(1, Math.floor(ensureNum(roomConfig.rackRenderLimit, 240)));
+        const ranked = racks.map((rack, idx) => {
+          const p = positions[idx] || { xMm: 0, zMm: 0 };
+          const rx = mm(p.xMm);
+          const rz = mm(p.zMm);
+          const dx = cameraPos.x - rx;
+          const dz = cameraPos.z - rz;
+          return { uuid: rack.uuid, distanceSq: dx * dx + dz * dz };
+        }).sort((a, b) => a.distanceSq - b.distanceSq);
+
+        const selected = new Set(ranked.slice(0, rackRenderLimit).map((r) => r.uuid));
+        for (const rackId of forceIncludeRackIds) {
+          if (rackId) selected.add(rackId);
+        }
+        return selected;
+      }
+
+      const chunkSizeMm = Math.max(500, ensureNum(roomConfig.chunkSizeMm, 10000));
+      const chunkCount = Math.max(1, Math.floor(ensureNum(roomConfig.chunkCount, 6)));
+      const rackRenderLimit = Math.max(1, Math.floor(ensureNum(roomConfig.rackRenderLimit, 240)));
+
+      const chunks = new Map();
+      for (let i = 0; i < racks.length; i += 1) {
+        const pos = positions[i] || { xMm: 0, zMm: 0 };
+        const cx = Math.floor(pos.xMm / chunkSizeMm);
+        const cz = Math.floor(pos.zMm / chunkSizeMm);
+        const key = `${cx}:${cz}`;
+        if (!chunks.has(key)) chunks.set(key, { cx, cz, indexes: [] });
+        chunks.get(key).indexes.push(i);
+      }
+
+      const camXmm = ensureNum(state.camera?.position?.x, 0) * 1000;
+      const camZmm = ensureNum(state.camera?.position?.z, 0) * 1000;
+      const camCx = Math.floor(camXmm / chunkSizeMm);
+      const camCz = Math.floor(camZmm / chunkSizeMm);
+
+      const sortedChunks = Array.from(chunks.values())
+        .map((chunk) => ({
+          ...chunk,
+          distance: Math.abs(chunk.cx - camCx) + Math.abs(chunk.cz - camCz)
+        }))
+        .sort((a, b) => a.distance - b.distance);
+
+      const selected = new Set();
+      for (let i = 0; i < sortedChunks.length && i < chunkCount; i += 1) {
+        for (const idx of sortedChunks[i].indexes) {
+          selected.add(racks[idx].uuid);
+          if (selected.size >= rackRenderLimit) break;
+        }
+        if (selected.size >= rackRenderLimit) break;
+      }
+
+      for (const rackId of forceIncludeRackIds) {
+        if (rackId) selected.add(rackId);
+      }
+
+      return selected;
+    }
+
+    function analyzeRoomSafety(racks, positions, renderedRackIds, roomConfig) {
+      const boxes = [];
+      const renderedSet = renderedRackIds instanceof Set ? renderedRackIds : new Set();
+      for (let i = 0; i < racks.length; i += 1) {
+        const rack = racks[i];
+        if (!renderedSet.has(rack.uuid)) continue;
+        const pos = positions[i] || { xMm: 0, zMm: 0 };
+        const outer = rack.geometry?.outer || { x: 600, z: 1000 };
+        boxes.push({
+          id: rack.uuid,
+          cx: ensureNum(pos.xMm, 0),
+          cz: ensureNum(pos.zMm, 0),
+          w: Math.max(1, ensureNum(outer.x, 600)),
+          d: Math.max(1, ensureNum(outer.z, 1000))
+        });
+      }
+
+      let collisions = 0;
+      let minClearanceMm = Number.POSITIVE_INFINITY;
+      let clearanceViolations = 0;
+      const required = Math.max(100, ensureNum(roomConfig.minClearanceMm, 1000));
+
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i];
+          const b = boxes[j];
+          const dx = Math.abs(a.cx - b.cx);
+          const dz = Math.abs(a.cz - b.cz);
+          const gapX = Math.max(0, dx - (a.w + b.w) / 2);
+          const gapZ = Math.max(0, dz - (a.d + b.d) / 2);
+          const clearance = Math.sqrt(gapX * gapX + gapZ * gapZ);
+
+          if (gapX === 0 && gapZ === 0) collisions += 1;
+          if (clearance < minClearanceMm) minClearanceMm = clearance;
+          if (clearance < required) clearanceViolations += 1;
+        }
+      }
+
+      if (!Number.isFinite(minClearanceMm)) minClearanceMm = 0;
+      return {
+        collisions,
+        clearanceViolations,
+        minClearanceMm,
+        requiredMinClearanceMm: required
+      };
+    }
+
+    function createRoomLayoutGroup(THREE, roomConfig, data, connections = []) {
+      const roomGroup = new THREE.Group();
+      const racks = getRoomRacksForLayout(data, roomConfig);
+      const rackCount = racks.length;
+      const roomW = mm(roomConfig.widthMm);
+      const roomD = mm(roomConfig.depthMm);
+
+      const floorGeo = new THREE.PlaneGeometry(roomW, roomD);
+      const floorMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        roughness: 0.96,
+        metalness: 0.04,
+        side: THREE.DoubleSide
+      });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = 0;
+      roomGroup.add(floor);
+
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x334155 });
+      const roomEdges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(roomW, mm(10), roomD)), lineMat);
+      roomEdges.position.y = mm(5);
+      roomGroup.add(roomEdges);
+
+      const positions = [];
+      let totalUsedAreaMm2 = 0;
+      let totalDevices = 0;
+      let renderedRackCount = 0;
+      let renderedDeviceCount = 0;
+      let renderedCableCount = 0;
+      let focusRackName = 'automatisch';
+      let focusedRackPosition = null;
+      const roomPortAnchors = new Map();
+
+      const reqFocus = String(state.roomFocusedRackId || '').trim();
+      const hasReqFocus = reqFocus && racks.some((r) => r.uuid === reqFocus);
+      const effectiveFocusRackId = hasReqFocus ? reqFocus : (racks[0]?.uuid || '');
+
+      if (rackCount > 0) {
+        const sampleOuter = racks[0]?.geometry?.outer || { x: 600, y: 2200, z: 1000 };
+        const rackWmm = Math.max(300, ensureNum(sampleOuter.x, 600));
+        const rackDmm = Math.max(300, ensureNum(sampleOuter.z, 1000));
+        const stepX = rackWmm + roomConfig.aisleMm;
+        const stepZ = rackDmm + roomConfig.aisleMm;
+        const cols = Math.max(1, Math.floor((roomConfig.widthMm + roomConfig.aisleMm) / stepX));
+
+        for (let i = 0; i < rackCount; i += 1) {
+          const row = Math.floor(i / cols);
+          const col = i % cols;
+
+          const xMm = -roomConfig.widthMm / 2 + roomConfig.aisleMm / 2 + rackWmm / 2 + col * stepX;
+          const zMm = -roomConfig.depthMm / 2 + roomConfig.aisleMm / 2 + rackDmm / 2 + row * stepZ;
+
+          positions.push({ xMm, zMm });
+        }
+      }
+
+      const chunkedRackIds = getChunkedRackIdSet(racks, positions, roomConfig, [effectiveFocusRackId]);
+
+      const autoNearbyRackIds = state.roomAutoNearby
+        ? getNearbyRackIdSet(racks, positions, roomConfig.nearbyRackCount, chunkedRackIds)
+        : null;
+
+      let remainingDeviceBudget = Math.max(1, Math.floor(ensureNum(roomConfig.deviceRenderLimit, 450)));
+
+      for (let i = 0; i < rackCount; i += 1) {
+        const rack = racks[i];
+        const rackGeom = rack.geometry;
+        const rackOuter = rackGeom?.outer || { x: 600, y: 2200, z: 1000 };
+        const shouldRenderRack = chunkedRackIds.has(rack.uuid);
+        if (!shouldRenderRack) {
+          const rackDevicesSkipped = Array.isArray(rack.devices) ? rack.devices : [];
+          totalDevices += rackDevicesSkipped.length;
+          totalUsedAreaMm2 += ensureNum(rackOuter.x, 600) * ensureNum(rackOuter.z, 1000);
+          continue;
+        }
+
+        const rackGroup = new THREE.Group();
+        const isFocusedRack = rack.uuid === effectiveFocusRackId;
+        rackGroup.add(createRackMesh(THREE, rackGeom));
+        rackGroup.position.set(mm(positions[i].xMm), mm(ensureNum(rackOuter.y, 2200)) / 2, mm(positions[i].zMm));
+        renderedRackCount += 1;
+
+        const rackDevices = Array.isArray(rack.devices) ? rack.devices : [];
+        const shouldRenderDevices = state.roomAutoNearby
+          ? autoNearbyRackIds.has(rack.uuid)
+          : (!state.roomFocusDevicesOnly || isFocusedRack);
+        if (shouldRenderDevices && remainingDeviceBudget > 0) {
+          const toRender = rackDevices.slice(0, remainingDeviceBudget);
+          toRender.forEach((dev) => rackGroup.add(createDeviceMesh(THREE, dev, rackGeom)));
+          const rackOffset = new THREE.Vector3(
+            mm(positions[i].xMm),
+            mm(ensureNum(rackOuter.y, 2200)) / 2,
+            mm(positions[i].zMm)
+          );
+          const anchors = buildPortAnchorIndex(THREE, toRender, rackGeom, rackOffset);
+          for (const [portId, anchor] of anchors.entries()) roomPortAnchors.set(portId, anchor);
+          renderedDeviceCount += toRender.length;
+          remainingDeviceBudget -= toRender.length;
+        }
+
+        if (isFocusedRack) {
+          focusRackName = rack.name;
+          focusedRackPosition = {
+            x: mm(positions[i].xMm),
+            y: mm(ensureNum(rackOuter.y, 2200)) / 2,
+            z: mm(positions[i].zMm)
+          };
+
+          const focusOutlineGeo = new THREE.BoxGeometry(
+            mm(ensureNum(rackOuter.x, 600)) * 1.07,
+            mm(ensureNum(rackOuter.y, 2200)) * 1.02,
+            mm(ensureNum(rackOuter.z, 1000)) * 1.07
+          );
+          const focusOutline = new THREE.LineSegments(
+            new THREE.EdgesGeometry(focusOutlineGeo),
+            new THREE.LineBasicMaterial({ color: 0xf59e0b })
+          );
+          rackGroup.add(focusOutline);
+        }
+
+        roomGroup.add(rackGroup);
+
+        totalUsedAreaMm2 += ensureNum(rackOuter.x, 600) * ensureNum(rackOuter.z, 1000);
+        totalDevices += rackDevices.length;
+      }
+
+      const roomAreaMm2 = roomConfig.widthMm * roomConfig.depthMm;
+      const fillPct = roomAreaMm2 > 0 ? (totalUsedAreaMm2 / roomAreaMm2) * 100 : 0;
+      const hasLiveRacks = Array.isArray(state.liveRacks) && state.liveRacks.length > 0;
+      const safety = analyzeRoomSafety(racks, positions, chunkedRackIds, roomConfig);
+
+      if (state.showCables) {
+        const cables = createCableRoutingGroup(THREE, connections, roomPortAnchors, roomConfig.cableRenderLimit, {
+          rearAware: state.cableRearAware
+        });
+        renderedCableCount = cables.children.length;
+        roomGroup.add(cables);
+      }
+
+      return {
+        group: roomGroup,
+        summary: {
+          active: true,
+          rackCount,
+          renderedRackCount,
+          deviceCount: totalDevices,
+          renderedDeviceCount,
+          renderedCableCount,
+          deviceLoadingMode: state.roomAutoNearby
+            ? `Auto-Near (${Math.min(roomConfig.nearbyRackCount, renderedRackCount)} Racks, sticky ${Math.min(state.roomNearbyStickyIds.size, Math.min(roomConfig.nearbyRackCount, renderedRackCount))}), Chunking ${state.roomChunking ? `on (${roomConfig.chunkCount} Chunks)` : 'off'}, Device-Limit ${roomConfig.deviceRenderLimit}, Cable-Limit ${roomConfig.cableRenderLimit}`
+            : `${state.roomFocusDevicesOnly ? 'Nur Fokusrack' : 'Alle Racks'}, Chunking ${state.roomChunking ? `on (${roomConfig.chunkCount} Chunks)` : 'off'}, Device-Limit ${roomConfig.deviceRenderLimit}, Cable-Limit ${roomConfig.cableRenderLimit}`,
+          focusLabel: focusRackName,
+          focusedRackPosition,
+          source: hasLiveRacks ? 'DB' : 'Sample aus Mockup JSON',
+          usedAreaM2: totalUsedAreaMm2 / 1_000_000,
+          roomAreaM2: roomAreaMm2 / 1_000_000,
+          fillPct,
+          collisions: safety.collisions,
+          clearanceViolations: safety.clearanceViolations,
+          actualMinClearanceMm: safety.minClearanceMm,
+          minClearanceMm: safety.requiredMinClearanceMm,
+          aisleMm: roomConfig.aisleMm
+        }
+      };
     }
 
     function renderLoadSummary(data) {
@@ -685,13 +1480,21 @@
         parts.push('Rack-Limit: nicht gesetzt');
       }
 
+      if (sum.centerOfMassY !== null) {
+        parts.push(`Schwerpunkt Y: ${sum.centerOfMassY.toFixed(1)} mm`);
+      }
+
+      const segLines = sum.segments
+        .map((s) => `${s.idx + 1}: ${s.from.toFixed(0)}-${s.to.toFixed(0)} mm => ${s.kg.toFixed(1)} kg`)
+        .join(' | ');
+
       loadSummaryEl.classList.remove('warn', 'error');
       if (sum.utilizationPct !== null) {
         if (sum.utilizationPct > 100) loadSummaryEl.classList.add('error');
         else if (sum.utilizationPct > 85) loadSummaryEl.classList.add('warn');
       }
 
-      loadSummaryEl.textContent = parts.join(' | ');
+      loadSummaryEl.textContent = `${parts.join(' | ')}\nSegmentlast (unten->oben): ${segLines}`;
     }
 
     function renderDebugOutput(rack, devices) {
@@ -705,6 +1508,16 @@
       const deviceIssues = devices.flatMap((dev) => validateDevicePlacement(dev, rack.geometry));
       const allIssues = [...rackIssues, ...deviceIssues];
 
+      const portStats = devices.reduce((acc, d) => {
+        const ports = Array.isArray(d.ports) ? d.ports : [];
+        for (const p of ports) {
+          const side = String(p.side || '').toLowerCase() === 'rear' ? 'rear' : 'front';
+          acc[side] += 1;
+          acc.total += 1;
+        }
+        return acc;
+      }, { total: 0, front: 0, rear: 0 });
+
       const rackReport = {
         coordinateSystem: 'Y-up',
         validation: {
@@ -712,6 +1525,11 @@
           devicePlacements: deviceIssues.length === 0 ? 'OK' : deviceIssues,
           hasIssues: allIssues.length > 0
         },
+        load: summarizeRackLoad({
+          rack: { geometry: rack.geometry },
+          devices
+        }),
+        ports: portStats,
         rack: {
           uuid: rack.uuid,
           name: rack.name,
@@ -726,10 +1544,12 @@
         },
         devices: devices.map((device, idx) => ({
           name: device.name,
+          uuid: device.uuid || null,
           placement: device.placement,
           size: device.size,
           rotation: device.rotation,
           weightKg: device.weightKg ?? null,
+          ports: Array.isArray(device.ports) ? device.ports.length : 0,
           color: device.color,
           mounting: device.mounting || null,
           index: idx
@@ -771,6 +1591,14 @@
       if (t.includes('patch')) return '#a78bfa';
       if (t.includes('server')) return '#22c55e';
       return '#60a5fa';
+    }
+
+    function inferPortColor(typeRaw) {
+      const t = String(typeRaw || '').toLowerCase();
+      if (t.includes('fiber') || t.includes('sfp')) return '#22d3ee';
+      if (t.includes('rj45') || t.includes('ethernet')) return '#f59e0b';
+      if (t.includes('power')) return '#ef4444';
+      return '#93c5fd';
     }
 
     async function fetchApiTable(table, limit = 500) {
@@ -817,7 +1645,70 @@
         .filter(Boolean);
     }
 
-    function normalizeDevicesForRack(deviceRows, rackUuid) {
+    function normalizePortsForDevice(portRows, deviceUuid) {
+      if (!deviceUuid) return [];
+      return portRows
+        .filter((row) => String(row.device || row.device_port_device || '').trim() === deviceUuid)
+        .map((row, idx) => {
+          const placement = toVector3Mm(row.position || row.device_port_position, { x: 20 + idx * 16, y: 10, z: 2 });
+          const size = toVector3Mm(row.size || row.device_port_size, { x: 12, y: 12, z: 10 });
+          const sideRaw = String(row.side || row.device_port_side || '').trim().toLowerCase();
+          const side = (sideRaw === 'rear' || sideRaw === 'back' || sideRaw === 'hinten') ? 'rear' : 'front';
+          return {
+            uuid: String(row.uuid || row.device_port_uuid || '').trim() || null,
+            name: String(row.caption || row.metadata_caption || row.device_port_metadata_caption || `Port ${idx + 1}`),
+            placement,
+            size,
+            side,
+            type: String(row.type || row.device_port_type || ''),
+            color: inferPortColor(row.type || row.device_port_type),
+            raw: row
+          };
+        });
+    }
+
+    function normalizeConnections(rows) {
+      return rows
+        .map((row) => {
+          const sourcePortUuid = String(
+            row.device_port_source
+            || row.connection_device_port_source
+            || row.expected_device_port_source
+            || row.connection_expected_device_port_source
+            || ''
+          ).trim();
+          const destinationPortUuid = String(
+            row.device_port_destination
+            || row.connection_device_port_destination
+            || row.expected_device_port_destination
+            || row.connection_expected_device_port_destination
+            || ''
+          ).trim();
+          if (!sourcePortUuid || !destinationPortUuid) return null;
+
+          const cableType = String(row.type || row.connection_type || '').toLowerCase();
+          const color = cableType.includes('fiber') || cableType.includes('glas')
+            ? 0x22d3ee
+            : cableType.includes('cat') || cableType.includes('copper') || cableType.includes('kupfer')
+              ? 0xf59e0b
+              : 0x94a3b8;
+
+          return {
+            uuid: String(row.uuid || row.connection_uuid || '').trim() || null,
+            sourcePortUuid,
+            destinationPortUuid,
+            type: String(row.type || row.connection_type || ''),
+            length: ensureNum(row.length || row.connection_length, NaN),
+            crossover: !!(row.crossover || row.connection_crossover),
+            speed: ensureNum(row.speed || row.connection_speed, NaN),
+            color,
+            raw: row
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function normalizeDevicesForRack(deviceRows, portRows, rackUuid) {
       return deviceRows
         .filter((row) => String(row.location || row.device_location || '').trim() === rackUuid)
         .map((row) => {
@@ -826,13 +1717,17 @@
           const rotation = toVector3Mm(row.rotation || row.device_rotation, { x: 0, y: 0, z: 0 });
           const name = String(row.caption || row.metadata_caption || row.device_metadata_caption || row.hostname || row.serial || row.uuid || 'Device');
           const mounting = parseJsonSafe(row.mounting || row.device_mounting, null);
+          const deviceUuid = String(row.uuid || row.device_uuid || '').trim();
+          const ports = normalizePortsForDevice(portRows, deviceUuid);
 
           return {
             name,
+            uuid: deviceUuid || null,
             placement,
             size,
             rotation,
             weightKg: ensureNum(row.weight_kg ?? row.weight ?? row.device_weight_kg, NaN),
+            ports,
             color: inferDeviceColor(row.type || row.device_type),
             mounting: mounting && typeof mounting === 'object' ? mounting : null,
             raw: row
@@ -840,10 +1735,79 @@
         });
     }
 
+    function buildLiveDevicesByRack(deviceRows, portRows) {
+      const portsByDevice = new Map();
+      const portIndexByDevice = new Map();
+
+      for (const row of portRows) {
+        const deviceUuid = String(row.device || row.device_port_device || '').trim();
+        if (!deviceUuid) continue;
+
+        const idx = portIndexByDevice.get(deviceUuid) || 0;
+        portIndexByDevice.set(deviceUuid, idx + 1);
+
+        const placement = toVector3Mm(row.position || row.device_port_position, { x: 20 + idx * 16, y: 10, z: 2 });
+        const size = toVector3Mm(row.size || row.device_port_size, { x: 12, y: 12, z: 10 });
+        const sideRaw = String(row.side || row.device_port_side || '').trim().toLowerCase();
+        const side = (sideRaw === 'rear' || sideRaw === 'back' || sideRaw === 'hinten') ? 'rear' : 'front';
+        const port = {
+          uuid: String(row.uuid || row.device_port_uuid || '').trim() || null,
+          name: String(row.caption || row.metadata_caption || row.device_port_metadata_caption || `Port ${idx + 1}`),
+          placement,
+          size,
+          side,
+          type: String(row.type || row.device_port_type || ''),
+          color: inferPortColor(row.type || row.device_port_type),
+          raw: row
+        };
+
+        if (!portsByDevice.has(deviceUuid)) portsByDevice.set(deviceUuid, []);
+        portsByDevice.get(deviceUuid).push(port);
+      }
+
+      const devicesByRack = new Map();
+      for (const row of deviceRows) {
+        const rackUuid = String(row.location || row.device_location || '').trim();
+        if (!rackUuid) continue;
+
+        const placement = toVector3Mm(row.position || row.device_position, { x: 0, y: 0, z: 0 });
+        const size = toVector3Mm(row.size || row.device_size, { x: 445, y: 44, z: 300 });
+        const rotation = toVector3Mm(row.rotation || row.device_rotation, { x: 0, y: 0, z: 0 });
+        const name = String(row.caption || row.metadata_caption || row.device_metadata_caption || row.hostname || row.serial || row.uuid || 'Device');
+        const mounting = parseJsonSafe(row.mounting || row.device_mounting, null);
+        const deviceUuid = String(row.uuid || row.device_uuid || '').trim();
+
+        const device = {
+          name,
+          uuid: deviceUuid || null,
+          placement,
+          size,
+          rotation,
+          weightKg: ensureNum(row.weight_kg ?? row.weight ?? row.device_weight_kg, NaN),
+          ports: deviceUuid ? (portsByDevice.get(deviceUuid) || []) : [],
+          color: inferDeviceColor(row.type || row.device_type),
+          mounting: mounting && typeof mounting === 'object' ? mounting : null,
+          raw: row
+        };
+
+        if (!devicesByRack.has(rackUuid)) devicesByRack.set(rackUuid, []);
+        devicesByRack.get(rackUuid).push(device);
+      }
+
+      return devicesByRack;
+    }
+
+    function getDevicesForRackUuid(rackUuid) {
+      if (state.liveDevicesByRack instanceof Map && state.liveDevicesByRack.size > 0) {
+        return state.liveDevicesByRack.get(rackUuid) || [];
+      }
+      return normalizeDevicesForRack(state.liveDevices, state.livePorts, rackUuid);
+    }
+
     function applyRackSelection(rackUuid) {
       const rack = state.liveRacks.find((r) => r.uuid === rackUuid);
       if (!rack) return;
-      const devices = normalizeDevicesForRack(state.liveDevices, rack.uuid);
+      const devices = getDevicesForRackUuid(rack.uuid);
       const model = {
         rack: {
           name: rack.name,
@@ -874,13 +1838,18 @@
       rackSelect.disabled = true;
       setStatus('Lade Rack- und Gerätedaten aus DB ...');
       try {
-        const [locations, devices] = await Promise.all([
+        const [locations, devices, ports, connections] = await Promise.all([
           fetchApiTable('location', 1000),
-          fetchApiTable('device', 2000)
+          fetchApiTable('device', 2000),
+          fetchApiTable('device_port', 6000),
+          fetchApiTable('connection', 8000)
         ]);
 
         state.liveRacks = normalizeRackRows(locations);
         state.liveDevices = devices;
+        state.livePorts = ports;
+        state.liveConnections = normalizeConnections(connections);
+        state.liveDevicesByRack = buildLiveDevicesByRack(devices, ports);
 
         rackSelect.innerHTML = '<option value="">Rack wählen ...</option>';
         state.liveRacks.forEach((rack) => {
@@ -897,7 +1866,9 @@
         }
 
         rackSelect.value = state.liveRacks[0].uuid;
+        state.roomFocusedRackId = state.liveRacks[0].uuid;
         applyRackSelection(rackSelect.value);
+        setStatus(`DB geladen: ${state.liveRacks.length} Racks, ${state.liveDevices.length} Geräte, ${state.livePorts.length} Ports, ${state.liveConnections.length} Verbindungen.`);
       } catch (e) {
         setStatus('DB-Laden fehlgeschlagen: ' + e.message, true);
       } finally {
@@ -1053,7 +2024,271 @@
         group.add(rightEar);
       }
 
+      if (state.showPorts && Array.isArray(device.ports) && device.ports.length > 0) {
+        const portsGroup = new THREE.Group();
+        device.ports.forEach((port) => {
+          const pSize = port.size || { x: 12, y: 12, z: 10 };
+          const pw = Math.max(mm(8), mm(ensureNum(pSize.x, 12)));
+          const ph = Math.max(mm(8), mm(ensureNum(pSize.y, 12)));
+          const pd = Math.max(mm(6), mm(ensureNum(pSize.z, 10)));
+
+          const pPlace = port.placement || { x: 20, y: 10, z: 2 };
+          const pXmm = ensureNum(pPlace.x, 0);
+          const pYmm = ensureNum(pPlace.y, 0);
+          const pZmm = ensureNum(pPlace.z, 2);
+
+          // Auto mode for port coordinate space:
+          // 1) device-local (preferred): x/y/z are offsets inside the device front volume.
+          // 2) rack-root/global fallback: convert from rack-style coords to device-local.
+          const looksDeviceLocal = (
+            pXmm >= -5 && pXmm <= ensureNum(size.x, 445) + 5
+            && pYmm >= -5 && pYmm <= ensureNum(size.y, 44) + 5
+            && pZmm >= -5 && pZmm <= ensureNum(size.z, 300) + 5
+          );
+
+          let px;
+          let py;
+          let pz;
+          const portSide = String(port.side || '').toLowerCase() === 'rear' ? 'rear' : 'front';
+
+          if (looksDeviceLocal) {
+            // Device has base yaw 180deg, so X must be mirrored to keep x=0 at left.
+            px = w / 2 - mm(pXmm) - pw / 2;
+            py = -h / 2 + mm(pYmm) + ph / 2;
+            // Side-aware depth origin:
+            // - front: z=0 at device front, increasing into chassis
+            // - rear: z=0 at device rear, increasing into chassis
+            pz = portSide === 'rear'
+              ? d / 2 - mm(pZmm) - pd / 2
+              : -d / 2 + mm(pZmm) + pd / 2;
+          } else {
+            // Convert rack/global-style coordinates into device-local coordinates.
+            // Device placement semantics: x=centered, y=bottom-origin, z=front-origin.
+            const localXmm = pXmm - ensureNum(placement.x, 0);
+            const localYmm = (pYmm - ensureNum(placement.y, 0)) + (ensureNum(pSize.y, 12) - ensureNum(size.y, 44)) / 2;
+            const localZmm = pZmm - ensureNum(placement.z, 0);
+
+            // Convert centered X to left-origin X inside device, then mirror for base yaw.
+            const localXLeftMm = localXmm + ensureNum(size.x, 445) / 2;
+
+            px = w / 2 - mm(localXLeftMm) - pw / 2;
+            py = mm(localYmm);
+            pz = portSide === 'rear'
+              ? d / 2 - mm(localZmm) - pd / 2
+              : -d / 2 + mm(localZmm) + pd / 2;
+          }
+
+          const pGeo = new THREE.BoxGeometry(pw, ph, pd);
+          const pMat = new THREE.MeshStandardMaterial({
+            color: port.color || 0x93c5fd,
+            emissive: 0x1f2937,
+            emissiveIntensity: 0.35,
+            roughness: 0.3,
+            metalness: 0.55
+          });
+          const pMesh = new THREE.Mesh(pGeo, pMat);
+          pMesh.renderOrder = 30;
+          pMat.depthTest = false;
+          pMesh.position.set(
+            Math.max(-w / 2 + pw / 2, Math.min(w / 2 - pw / 2, px)),
+            Math.max(-h / 2 + ph / 2, Math.min(h / 2 - ph / 2, py)),
+            pz
+          );
+
+          const pEdge = new THREE.LineSegments(
+            new THREE.EdgesGeometry(pGeo),
+            new THREE.LineBasicMaterial({ color: 0xe2e8f0 })
+          );
+          pEdge.renderOrder = 31;
+          pMesh.add(pEdge);
+          portsGroup.add(pMesh);
+        });
+        group.add(portsGroup);
+      }
+
       return group;
+    }
+
+    function getDevicePortAnchor(THREE, device, port, rackGeom, rackOffset = null) {
+      const size = device.size || { x: 445, y: 44, z: 300 };
+      const placement = device.placement || { x: 0, y: 0, z: 0 };
+      const rotation = device.rotation || { x: 0, y: 0, z: 0 };
+      const { inner } = getRackGeometryDefaults(rackGeom);
+      const offsets = getRackOffsets(rackGeom);
+
+      const w = mm(ensureNum(size.x, 445));
+      const h = mm(ensureNum(size.y, 44));
+      const d = mm(ensureNum(size.z, 300));
+
+      const innerHalfY = mm(ensureNum(inner.y, 2100)) / 2;
+      const innerHalfZ = mm(ensureNum(inner.z, 900)) / 2;
+      const innerMinY = offsets.innerCenterOffset.y - innerHalfY;
+      const innerMaxZ = offsets.innerCenterOffset.z + innerHalfZ;
+
+      const devicePos = new THREE.Vector3(
+        offsets.innerCenterOffset.x + mm(ensureNum(placement.x, 0)),
+        innerMinY + mm(ensureNum(placement.y, 0)) + (h / 2),
+        innerMaxZ - mm(ensureNum(placement.z, 0)) - (d / 2)
+      );
+
+      const pSize = port.size || { x: 12, y: 12, z: 10 };
+      const pw = Math.max(mm(8), mm(ensureNum(pSize.x, 12)));
+      const ph = Math.max(mm(8), mm(ensureNum(pSize.y, 12)));
+      const pd = Math.max(mm(6), mm(ensureNum(pSize.z, 10)));
+      const pPlace = port.placement || { x: 20, y: 10, z: 2 };
+      const pXmm = ensureNum(pPlace.x, 0);
+      const pYmm = ensureNum(pPlace.y, 0);
+      const pZmm = ensureNum(pPlace.z, 2);
+
+      const looksDeviceLocal = (
+        pXmm >= -5 && pXmm <= ensureNum(size.x, 445) + 5
+        && pYmm >= -5 && pYmm <= ensureNum(size.y, 44) + 5
+        && pZmm >= -5 && pZmm <= ensureNum(size.z, 300) + 5
+      );
+
+      let px;
+      let py;
+      let pz;
+      const portSide = String(port.side || '').toLowerCase() === 'rear' ? 'rear' : 'front';
+
+      if (looksDeviceLocal) {
+        px = w / 2 - mm(pXmm) - pw / 2;
+        py = -h / 2 + mm(pYmm) + ph / 2;
+        pz = portSide === 'rear'
+          ? d / 2 - mm(pZmm) - pd / 2
+          : -d / 2 + mm(pZmm) + pd / 2;
+      } else {
+        const localXmm = pXmm - ensureNum(placement.x, 0);
+        const localYmm = (pYmm - ensureNum(placement.y, 0)) + (ensureNum(pSize.y, 12) - ensureNum(size.y, 44)) / 2;
+        const localZmm = pZmm - ensureNum(placement.z, 0);
+        const localXLeftMm = localXmm + ensureNum(size.x, 445) / 2;
+
+        px = w / 2 - mm(localXLeftMm) - pw / 2;
+        py = mm(localYmm);
+        pz = portSide === 'rear'
+          ? d / 2 - mm(localZmm) - pd / 2
+          : -d / 2 + mm(localZmm) + pd / 2;
+      }
+
+      const portLocal = new THREE.Vector3(
+        Math.max(-w / 2 + pw / 2, Math.min(w / 2 - pw / 2, px)),
+        Math.max(-h / 2 + ph / 2, Math.min(h / 2 - ph / 2, py)),
+        pz
+      );
+
+      const baseYawDeg = 180;
+      const euler = new THREE.Euler(
+        THREE.MathUtils.degToRad(ensureNum(rotation.x, 0)),
+        THREE.MathUtils.degToRad(baseYawDeg + ensureNum(rotation.y, 0)),
+        THREE.MathUtils.degToRad(ensureNum(rotation.z, 0)),
+        'XYZ'
+      );
+      portLocal.applyEuler(euler);
+
+      const world = devicePos.clone().add(portLocal);
+      if (rackOffset) world.add(rackOffset);
+
+      const localNormal = new THREE.Vector3(0, 0, portSide === 'rear' ? 1 : -1);
+      localNormal.applyEuler(euler);
+
+      return {
+        position: world,
+        side: portSide,
+        normal: localNormal.normalize()
+      };
+    }
+
+    function buildPortAnchorIndex(THREE, devices, rackGeom, rackOffset = null) {
+      const map = new Map();
+      for (const device of (Array.isArray(devices) ? devices : [])) {
+        const ports = Array.isArray(device?.ports) ? device.ports : [];
+        for (const port of ports) {
+          const id = String(port?.uuid || '').trim();
+          if (!id) continue;
+          const anchor = getDevicePortAnchor(THREE, device, port, rackGeom, rackOffset);
+          map.set(id, anchor);
+        }
+      }
+      return map;
+    }
+
+    function createCableRoutingGroup(THREE, connections, portAnchors, cableLimit = 600, options = {}) {
+      const g = new THREE.Group();
+      if (!Array.isArray(connections) || connections.length === 0) return g;
+      if (!(portAnchors instanceof Map) || portAnchors.size === 0) return g;
+
+      const limit = Math.max(1, Math.floor(ensureNum(cableLimit, 600)));
+      const rearAware = !!options.rearAware;
+      const cableRadius = mm(2.2);
+      let rendered = 0;
+
+      for (const conn of connections) {
+        if (rendered >= limit) break;
+        const srcData = portAnchors.get(String(conn.sourcePortUuid || '').trim());
+        const dstData = portAnchors.get(String(conn.destinationPortUuid || '').trim());
+        if (!srcData || !dstData || !srcData.position || !dstData.position) continue;
+
+        const src = srcData.position;
+        const dst = dstData.position;
+        const dist = src.distanceTo(dst);
+        const srcNormal = (srcData.normal || new THREE.Vector3(0, 0, -1)).clone().normalize();
+        const dstNormal = (dstData.normal || new THREE.Vector3(0, 0, -1)).clone().normalize();
+        const exitLen = rearAware ? 0.03 : 0.014;
+        const srcOut = src.clone().add(srcNormal.clone().multiplyScalar(exitLen));
+        const dstOut = dst.clone().add(dstNormal.clone().multiplyScalar(exitLen));
+
+        // Keep lane separation only on Y to avoid sideways cable drift.
+        const lane = (rendered % 7) - 3;
+        const laneY = Math.abs(lane) * mm(2.2);
+
+        let curve;
+        if (dist < mm(35)) {
+          curve = new THREE.LineCurve3(src, dst);
+        } else {
+          // Prefer a short forward bridge in Z (in front of ports) over large vertical arcs.
+          const avgNormal = srcNormal.clone().add(dstNormal);
+          const forwardSign = avgNormal.z <= 0 ? -1 : 1;
+          const frontPush = Math.min(0.12, 0.02 + dist * 0.05);
+          const busZ = forwardSign < 0
+            ? Math.min(srcOut.z, dstOut.z) - frontPush
+            : Math.max(srcOut.z, dstOut.z) + frontPush;
+
+          const p1 = srcOut.clone();
+          p1.y += laneY;
+
+          const p2 = srcOut.clone();
+          p2.y += laneY;
+          p2.z = busZ;
+
+          const p3 = dstOut.clone();
+          p3.y += laneY;
+          p3.z = busZ;
+
+          const p4 = dstOut.clone();
+          p4.y += laneY;
+
+          // Centripetal avoids overshoot and keeps the route close to the intended shortest path.
+          curve = new THREE.CatmullRomCurve3([src, p1, p2, p3, p4, dst], false, 'centripetal');
+        }
+
+        const geo = new THREE.TubeGeometry(curve, 24, cableRadius, 8, false);
+        const mat = new THREE.MeshStandardMaterial({
+          color: conn.color || 0x94a3b8,
+          transparent: true,
+          opacity: 0.95,
+          roughness: 0.35,
+          metalness: 0.18,
+          emissive: 0x0b1220,
+          emissiveIntensity: 0.22,
+          depthTest: false
+        });
+        const cableMesh = new THREE.Mesh(geo, mat);
+        cableMesh.renderOrder = 40;
+        g.add(cableMesh);
+        rendered += 1;
+      }
+
+      return g;
     }
 
     function clearGroup() {
@@ -1077,6 +2312,32 @@
       state.controls.update();
     }
 
+    function fitCameraToRoom(roomConfig) {
+      const maxDim = Math.max(mm(roomConfig.widthMm), mm(roomConfig.depthMm));
+      const dist = maxDim * 1.1;
+      state.camera.position.set(dist, dist * 0.85, dist);
+      state.controls.target.set(0, mm(1200), 0);
+      state.controls.update();
+    }
+
+    function focusCameraOnRackInRoom(position, roomConfig) {
+      if (!position) return;
+      const span = Math.max(mm(roomConfig.widthMm), mm(roomConfig.depthMm));
+      const dist = Math.max(1.2, span * 0.35);
+      state.camera.position.set(position.x + dist, position.y + dist * 0.5, position.z + dist);
+      state.controls.target.set(position.x, position.y, position.z);
+      state.controls.update();
+    }
+
+    function maybeRefreshNearbyRacksFromCamera() {
+      if (!state.loaded || !state.showRoomLayout || !state.roomAutoNearby) return;
+      const now = performance.now();
+      if (now - state.roomLastAutoRefreshAt < 450) return;
+      state.roomLastAutoRefreshAt = now;
+      state.lastModelSignature = null;
+      renderFromInput();
+    }
+
     function renderFromInput() {
       const parsed = parseInput();
       if (!parsed.ok) {
@@ -1093,7 +2354,25 @@
 
       renderLoadSummary(data);
 
-      const nextSignature = modelSignature(data);
+      const roomConfig = getRoomConfig();
+
+      const nextSignature = JSON.stringify({
+        model: modelSignature(data),
+        roomMode: state.showRoomLayout,
+        showCables: state.showCables,
+        cableRearAware: state.cableRearAware,
+        roomAutoNearby: state.roomAutoNearby,
+        roomChunking: state.roomChunking,
+        roomNearbyCount: state.roomNearbyCount,
+        roomFocusDevicesOnly: state.roomFocusDevicesOnly,
+        roomFocusedRackId: state.roomFocusedRackId,
+        roomCamCell: state.roomAutoNearby && state.camera
+          ? `${Math.round(state.camera.position.x * 2) / 2}|${Math.round(state.camera.position.z * 2) / 2}`
+          : '',
+        room: roomConfig,
+        liveRackIds: state.liveRacks.map((r) => r.uuid),
+        liveConnectionCount: state.liveConnections.length
+      });
       if (state.useSceneCache && state.group && state.lastModelSignature === nextSignature) {
         setStatus('Szene unverändert - Rebuild übersprungen (Cache).');
         return;
@@ -1101,10 +2380,62 @@
 
       clearGroup();
       const g = new state.THREE.Group();
+
+      if (state.showRoomLayout) {
+        syncRoomFocusRackOptions(data, roomConfig);
+        const activeConnections = state.liveConnections.length > 0
+          ? state.liveConnections
+          : normalizeConnections(Array.isArray(data.connections) ? data.connections : []);
+        const roomLayout = createRoomLayoutGroup(state.THREE, roomConfig, data, activeConnections);
+        g.add(roomLayout.group);
+        state.scene.add(g);
+        state.group = g;
+        state.lastModelSignature = nextSignature;
+        if (!state.roomCameraInitialized) {
+          fitCameraToRoom(roomConfig);
+          state.roomCameraInitialized = true;
+        }
+        if (!state.roomAutoNearby) {
+          focusCameraOnRackInRoom(roomLayout.summary.focusedRackPosition, roomConfig);
+        }
+        renderRoomSummary(roomLayout.summary);
+        renderCableSummary(activeConnections, roomLayout.summary.renderedCableCount || 0);
+        setStatus(`Room-Modus: Fokus auf ${roomLayout.summary.focusLabel}, Geräte ${roomLayout.summary.renderedDeviceCount}/${roomLayout.summary.deviceCount}.`);
+        return;
+      }
+
+      state.roomCameraInitialized = false;
+      renderRoomSummary(null);
       g.add(createRackMesh(state.THREE, rackGeom));
 
       const devices = Array.isArray(data.devices) ? data.devices : [];
       devices.forEach((dev) => g.add(createDeviceMesh(state.THREE, dev, rackGeom)));
+
+      if (state.showCables) {
+        // In single-rack mode the whole rack group is moved up later (g.position.y).
+        // Do not add rackOffset here, otherwise cable anchors get lifted twice.
+        const portAnchors = buildPortAnchorIndex(state.THREE, devices, rackGeom, null);
+        const activeConnections = state.liveConnections.length > 0
+          ? state.liveConnections
+          : normalizeConnections(Array.isArray(data.connections) ? data.connections : []);
+        const cables = createCableRoutingGroup(state.THREE, activeConnections, portAnchors, roomConfig.cableRenderLimit, {
+          rearAware: state.cableRearAware
+        });
+        g.add(cables);
+        renderCableSummary(activeConnections, cables.children.length);
+      } else {
+        renderCableSummary([], 0);
+      }
+
+      if (state.showLoadOverlay) {
+        const loadOverlay = createLoadOverlayMesh(state.THREE, rackGeom, summarizeRackLoad(data));
+        g.add(loadOverlay);
+      }
+
+      if (state.showComMarker) {
+        const marker = createCenterOfMassMarker(state.THREE, rackGeom, summarizeRackLoad(data));
+        g.add(marker);
+      }
 
       // Place rack on floor plane (grid at y=0) instead of centered through the ground.
       g.position.y = mm(ensureNum(rackGeom.outer.y, 2200)) / 2;
@@ -1129,6 +2460,7 @@
         if (!state.loopRunning) return;
         state.controls.update();
         state.renderer.render(state.scene, state.camera);
+        maybeRefreshNearbyRacksFromCamera();
         state.raf = requestAnimationFrame(tick);
       };
       state.loopRunning = true;
@@ -1172,6 +2504,12 @@
         state.controls = new state.OrbitControls(state.camera, state.renderer.domElement);
         state.controls.enableDamping = true;
         state.controls.dampingFactor = 0.08;
+        // UX: middle mouse button pans the camera.
+        state.controls.mouseButtons = {
+          LEFT: state.THREE.MOUSE.ROTATE,
+          MIDDLE: state.THREE.MOUSE.PAN,
+          RIGHT: state.THREE.MOUSE.DOLLY
+        };
 
         const ambient = new state.THREE.AmbientLight(0xffffff, 0.65);
         const keyLight = new state.THREE.DirectionalLight(0xffffff, 0.9);
@@ -1216,7 +2554,13 @@
     deviceEditorSelect.addEventListener('change', () => {
       const model = modelFromInputOrDefault();
       syncDeviceFieldsFromModel(model);
+      syncPortEditorOptions(model);
     });
+    portEditorSelect.addEventListener('change', () => {
+      const model = modelFromInputOrDefault();
+      syncPortFieldsFromModel(model);
+    });
+    applyPortBtn.addEventListener('click', applyPortFieldsToModel);
     autoPreviewToggle.addEventListener('change', () => {
       state.autoPreview = autoPreviewToggle.checked;
       setStatus(`Auto-Preview ${state.autoPreview ? 'aktiv' : 'deaktiviert'}.`);
@@ -1235,6 +2579,106 @@
       state.lastModelSignature = null;
       if (state.loaded) renderFromInput();
       setStatus(`Rackohren ${state.showRackEars ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    loadOverlayToggle.addEventListener('change', () => {
+      state.showLoadOverlay = loadOverlayToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Last-Heat-Overlay ${state.showLoadOverlay ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    portsToggle.addEventListener('change', () => {
+      state.showPorts = portsToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Ports ${state.showPorts ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    cablesToggle.addEventListener('change', () => {
+      state.showCables = cablesToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Kabel ${state.showCables ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    cableRearAwareToggle.addEventListener('change', () => {
+      state.cableRearAware = cableRearAwareToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Kabel-Routing ${state.cableRearAware ? 'rear-aware' : 'direct'}.`);
+    });
+    comMarkerToggle.addEventListener('change', () => {
+      state.showComMarker = comMarkerToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Schwerpunktmarker ${state.showComMarker ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    roomModeToggle.addEventListener('change', () => {
+      state.showRoomLayout = roomModeToggle.checked;
+      state.roomCameraInitialized = false;
+      state.roomNearbyStickyIds = new Set();
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Room-Modus ${state.showRoomLayout ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    roomAutoNearbyToggle.addEventListener('change', () => {
+      state.roomAutoNearby = roomAutoNearbyToggle.checked;
+      state.roomNearbyStickyIds = new Set();
+      state.lastModelSignature = null;
+      if (state.loaded && state.showRoomLayout) renderFromInput();
+      setStatus(`Auto-Near ${state.roomAutoNearby ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    roomChunkingToggle.addEventListener('change', () => {
+      state.roomChunking = roomChunkingToggle.checked;
+      state.lastModelSignature = null;
+      if (state.loaded && state.showRoomLayout) renderFromInput();
+      setStatus(`Chunking ${state.roomChunking ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    roomNearbyCountEl.addEventListener('input', () => {
+      state.roomNearbyCount = Math.max(1, Math.floor(ensureNum(roomNearbyCountEl.value, 5)));
+      state.roomNearbyStickyIds = new Set();
+      state.lastModelSignature = null;
+      if (state.loaded && state.showRoomLayout) scheduleRenderFromInput();
+    });
+    roomFocusDevicesToggle.addEventListener('change', () => {
+      state.roomFocusDevicesOnly = roomFocusDevicesToggle.checked;
+      state.roomNearbyStickyIds = new Set();
+      state.lastModelSignature = null;
+      if (state.loaded && state.showRoomLayout) renderFromInput();
+      setStatus(`Room-Fokus-Geräte ${state.roomFocusDevicesOnly ? 'nur Fokusrack' : 'alle Racks'}.`);
+    });
+    roomFocusRackSelect.addEventListener('change', () => {
+      state.roomFocusedRackId = roomFocusRackSelect.value;
+      state.roomNearbyStickyIds = new Set();
+      state.lastModelSignature = null;
+      if (state.loaded && state.showRoomLayout) renderFromInput();
+    });
+    roomFocusRackBtn.addEventListener('click', () => {
+      state.roomFocusedRackId = roomFocusRackSelect.value || state.roomFocusedRackId;
+      state.roomNearbyStickyIds = new Set();
+      state.lastModelSignature = null;
+      if (state.loaded && state.showRoomLayout) {
+        renderFromInput();
+        setStatus('Rack-Fokus aktualisiert.');
+      } else {
+        setStatus('Rack-Fokus gesetzt. Room-Modus aktivieren, um ihn zu sehen.');
+      }
+    });
+    [
+      roomWidthEl,
+      roomDepthEl,
+      roomAisleEl,
+      roomNearbyCountEl,
+      roomChunkSizeEl,
+      roomChunkCountEl,
+      roomRackRenderLimitEl,
+      roomDeviceRenderLimitEl,
+      roomCableRenderLimitEl,
+      roomMinClearanceEl,
+      roomSampleCountEl
+    ].forEach((el) => {
+      el.addEventListener('input', () => {
+        state.roomNearbyStickyIds = new Set();
+        state.lastModelSignature = null;
+        scheduleRenderFromInput();
+      });
     });
     document.addEventListener('visibilitychange', () => {
       if (!state.loaded || !state.pauseWhenHidden) return;

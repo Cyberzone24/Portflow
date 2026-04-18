@@ -106,6 +106,21 @@ If `size` is missing, fallback defaults are used in viewer.
 - Front/rear rack views.
 - Hybrid mode: parametric + real assets.
 
+### Phase 7: Room Survey and Multi-Rack Layout
+- Capture room dimensions and structural constraints (walls, doors, pathways).
+- Place multiple racks in one shared room coordinate system.
+- Add aisle clearances and collision/walkway checks.
+- Support room-level camera/navigation presets.
+
+Performance guidance for Phase 7:
+- Feasible with current stack when using lightweight parametric meshes.
+- Recommended baseline for smooth interaction:
+  - 10-30 racks with box-based devices/ports should be performant on standard office GPUs.
+  - Use frustum culling, visibility toggles, and optional LOD for larger scenes.
+- Scaling strategy for larger environments:
+  - Chunked room loading and selective detail rendering (rack focus mode).
+  - Keep heavy overlays optional (ports/heat/labels toggles).
+
 ## 6. Input and Configuration UX
 
 ### Recommended UX
@@ -292,3 +307,141 @@ Proceed with Phase 1 mockup implementation in `Mockup.html` (overwrite), includi
   - Erstes Rack-Load-Overlay ergänzt (`Gesamtlast`, `Rack-Limit`, `Auslastung`).
   - Warn-/Error-Hervorhebung bei hoher oder überschrittener Last.
   - Device-Gewichte werden aus Daten übernommen, sonst typbasiert geschätzt.
+
+### 2026-04-18 - Phase 5 Load Distribution (Vertical Segments)
+- Rack-Load-Overlay um Lastverteilung über die Höhe erweitert.
+- Neue Kennzahlen in `Mockup.html`:
+  - Lastschwerpunkt auf Y (`Schwerpunkt Y` in mm).
+  - Segmentlast unten->oben (5 vertikale Segmente der inneren Höhe).
+- Datenquelle:
+  - Gerätemasse aus `weightKg`/`weight_kg`, sonst typbasierte Fallback-Schätzung.
+  - Segmentzuordnung über Device-Y-Mittelpunkt.
+- Ergebnis: Schnellere Erkennung von Last-Hotspots und Schwerpunktlage im Rack.
+
+### 2026-04-18 - Phase 5 Visual Heat Overlay
+- Last-Hotspots werden jetzt zusätzlich direkt im 3D-Rack visualisiert.
+- Umsetzung in `Mockup.html`:
+  - Halbtransparente, farbkodierte Höhensegmente im inneren Rackvolumen.
+  - Farblogik je Segmentlast (grün = niedriger, rot = höher relativ zur Max-Segmentlast).
+  - Neuer Toggle `Last-Heat-Overlay anzeigen` für Ein/Aus.
+- Ergebnis: Lastverteilung ist als Zahlen + räumliche Heat-Darstellung sofort interpretierbar.
+
+### 2026-04-18 - Port Implementation (Device Port Overlay)
+- Port-Visualisierung in `Mockup.html` ergänzt:
+  - Ports werden als kleine Front-Elemente pro Gerät gerendert.
+  - Neuer Toggle `Ports anzeigen` für Ein/Aus.
+- Live-DB-Integration erweitert:
+  - Zusätzliches Laden von `device_port` über API.
+  - Zuordnung von Ports über `device_port.device` auf Geräte-UUID.
+- Datenmodell:
+  - Pro Gerät wird `ports[]` normalisiert (`name`, `placement`, `size`, `type`, `color`).
+  - Fallback-Positionen/-Größen für fehlende Portdaten.
+- Debug/Abgleich:
+  - Geräteausgabe enthält jetzt UUID und Portanzahl je Gerät.
+
+### 2026-04-18 - Port Coordinate Space Auto-Detection
+- Rückmeldung: Port-Positionen wirkten wie vom inneren Rack-Root statt vom Gerät aus berechnet.
+- Fix in `Mockup.html`:
+  - Auto-Erkennung des Port-Koordinatenraums ergänzt.
+  - Device-lokale Portdaten werden direkt verwendet.
+  - Rack-/Global-ähnliche Portdaten werden vor dem Rendern in Geräteraum umgerechnet.
+- Ergebnis: Port-Overlay ist robuster gegenüber unterschiedlichen Datenquellen/Koordinatenkonventionen.
+
+### 2026-04-18 - Port Front/Back Depth Fix
+- Rückmeldung: Ports erschienen trotz korrekter Zuordnung noch auf der Rückseite.
+- Fix in `Mockup.html`:
+  - Port-Tiefenachse auf Front-Referenz umgestellt (`z=0` an Gerätefront).
+  - Port-Z wird nun als `-d/2 + z + depth/2` berechnet (statt rückseitiger Ableitung).
+- Ergebnis: Ports werden von der Vorderseite aus ins Gerät gelegt.
+
+### 2026-04-18 - Port Left-Origin + Foreground Highlight
+- Rückmeldung:
+  - `x=0` lag visuell rechts statt links.
+  - Negative `z`-Werte konnten Ports nicht vor die Front führen.
+  - Ports sollten zur Hervorhebung im Vordergrund liegen.
+- Fix in `Mockup.html`:
+  - X-Mapping für Ports gespiegelt (kompatibel mit 180° Device-Basisyaw), damit `x=0` links ist.
+  - Front-Clamp auf Z entfernt: Ports können bei negativem `z` vor der Gerätefront starten.
+  - Port-Meshes erhalten höhere Render-Priorität (`renderOrder`) und deaktivierten Depth-Test für bessere Sichtbarkeit.
+- Ergebnis: Port-Positionierung folgt der erwarteten Links/Front-Logik und bleibt deutlich sichtbar.
+
+### 2026-04-18 - Rear Ports Support (No Back Clamp)
+- Rückmeldung: Rückseiten-Ports (z. B. Strom) sollen nicht durch Back-Clamp begrenzt sein.
+- Fix in `Mockup.html`:
+  - Z-Clamp auf der Rückseite entfernt (Port-Z wird nicht mehr hart begrenzt).
+  - Side-aware Mapping ergänzt: Ports unterstützen jetzt `side = front|rear`.
+  - Front/Rear-Z-Referenz wird entsprechend berechnet (beide Seiten mit eigenem Ursprung).
+  - Debug-Ausgabe zeigt zusätzlich Port-Statistik (`total`, `front`, `rear`).
+- Ergebnis: Ports können kontrolliert auf Vorder- und Rückseite modelliert werden, inkl. freier Tiefe ohne Rückseiten-Clamping.
+
+### 2026-04-18 - UX Polishing: MMB Pan + Toggle Sync + Port Side Editor
+- Kamera-Steuerung:
+  - Mittlere Maustaste (`MIDDLE`) steuert nun Pan in OrbitControls.
+- Toggle-Konsistenz beim Start:
+  - Runtime-Flags werden jetzt aus den tatsächlichen Checkbox-States initialisiert.
+  - Behebt Fälle, in denen Browser-Form-Restore und Rendering-Status auseinanderlaufen (z. B. Heat-Overlay).
+- Port-Editor im Formbereich:
+  - Port-Auswahl je Gerät + Feld `side (front/rear)` ergänzt.
+  - Button `Port-Seite übernehmen` schreibt die Änderung zurück ins JSON und rendert sofort neu.
+
+### 2026-04-18 - Phase 5 Next Step: Center-of-Mass Marker
+- Lastanalyse wurde um einen visuellen Schwerpunktmarker erweitert.
+- Umsetzung in `Mockup.html`:
+  - Neuer Toggle `Last-Schwerpunktmarker anzeigen`.
+  - Marker wird aus `centerOfMassY` berechnet und als horizontale Linie + Markerpunkt im inneren Rack dargestellt.
+- Ergebnis: Schwerpunktlage ist nicht nur numerisch, sondern direkt räumlich erkennbar.
+
+### 2026-04-18 - Phase 7 Foundation: Room Mode (Multi-Rack)
+- `Mockup.html` um Room-Modus erweitert:
+  - Toggle `Room-Modus (mehrere Racks)`.
+  - Raumparameter (`room.width`, `room.depth`, `aisle`) im UI editierbar.
+  - Mehrere geladene DB-Racks werden in einem gemeinsamen Raumkoordinatensystem als Grid platziert.
+- Zusätzliche Auswertung:
+  - `Room Summary` mit Rackanzahl, Geräteanzahl, Flächennutzung und Performance-Einschätzung.
+- Ziel: Technisches Fundament für die nächste Ausbaustufe (Kollisionen, Wege, fokussierte Detailstufen).
+
+### 2026-04-18 - Phase 7 Performance: Proximity, Chunking, Limits
+- Room-Renderer für große Datenmengen gehärtet:
+  - Auto-Near lädt Geräte nur für kameranahe Racks.
+  - Chunking begrenzt gerenderte Rack-Mengen auf nahe Raumsegmente.
+  - Harte Render-Budgets für Racks und Geräte (`rack.render.limit`, `device.render.limit`).
+- Datenpfad optimiert:
+  - DB-Geräte werden beim Laden pro Rack vorindiziert/cached (`liveDevicesByRack`).
+  - Verhindert teure Neu-Filterung über komplette Device-Listen pro Renderlauf.
+- Stabilität:
+  - Sticky/Hysterese für Auto-Near reduziert Umschalt-Churn beim Kamerafahren.
+
+### 2026-04-18 - Phase 7 Safety Checks: Clearance + Collision
+- Room-Layout um Sicherheitsprüfung erweitert:
+  - Mindestabstand (`min.clearance`) konfigurierbar.
+  - Paarweise Clearance-Analyse für gerenderte Racks.
+  - Kollisionserkennung bei überlappenden Rack-Footprints.
+- Ergebnisdarstellung in `Room Summary`:
+  - Ist-/Soll-Clearance, Anzahl Kollisionen, Anzahl Clearance-Verstöße.
+  - Warn-/Error-Hervorhebung reagiert jetzt auch auf Safety-Verletzungen.
+
+### 2026-04-18 - Phase 5/7 Cable Routing Integration (DB `connection`)
+- Schemaabgleich gegen `includes/core/db_tables.json` durchgeführt.
+- `Mockup.html` erweitert um Kabelrouting:
+  - DB-Laden liest jetzt zusätzlich Tabelle `connection`.
+  - Normalisierung für `device_port_source`/`device_port_destination` (inkl. Fallback auf `expected_*`).
+  - Port-UUIDs werden in Port-Modellen geführt und für Verbindungsanker verwendet.
+  - 3D-Kabelpfade werden als Kurven zwischen Portankern gerendert.
+- Performance/UX:
+  - Toggle `Kabel anzeigen` ergänzt.
+  - Budget `cable.render.limit` ergänzt.
+  - Room-Summary zeigt gerenderte Kabelanzahl.
+
+### 2026-04-18 - Layout UX Update (Viewer 100% + Sidebar Scroll)
+- Viewer-Höhe auf volle verfügbare Höhe gestellt.
+- Seitenleiste (`panel`) auf vertikales Scrollen umgestellt.
+- Mobil-Breakpoint bleibt mit reduzierter Panelhöhe und 58vh-Viewport nutzbar.
+
+### 2026-04-18 - Cable Visibility + Next Routing Steps
+- Kabelsichtbarkeit im Mockup verbessert:
+  - Default-JSON enthält jetzt Beispiel-Port-UUIDs und Beispiel-`connections`.
+  - Kabel werden dadurch auch ohne DB-Daten sofort sichtbar.
+  - Kabel-Linien rendern mit Vordergrund-Priorität (ähnlich Port-Overlay).
+- Nächste Ausbauschritte begonnen:
+  - Rear-aware Routing-Option (`Kabel rear-aware Routing`) ergänzt.
+  - Cable Summary/Legend ergänzt (Counts je Typ, Crossover, Speed-Range, gerendert/gesamt).
