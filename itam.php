@@ -15,661 +15,28 @@
     $limit = $_COOKIE['table_limit'] ?? 100;
 ?>
 <style>
-    .itam-shell {
-        margin: 0.75rem 1rem 1rem;
-        margin-top: 0;
-        padding: 0;
-        border-radius: 0;
-        background: transparent;
-        border: 0;
-        box-shadow: none;
-        display: grid;
-        gap: 0.95rem;
-        grid-template-columns: 1fr;
-        min-height: 0;
-    }
-
-    .itam-sidebar {
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 1rem;
-        padding: 0.9rem;
-        overflow: auto;
-        display: none;
-        min-height: 0;
-        position: relative;
-    }
-
-    .itam-sidebar-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.6rem;
-        margin-bottom: 0.85rem;
-        padding-right: 2.5rem;
-    }
-
-    .itam-sidebar-toggle {
-        height: 2.35rem;
-        width: 2.35rem;
-        border-radius: 9999px;
-        background: #94a3b8;
-        color: #ffffff;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
-        flex-shrink: 0;
-        position: absolute;
-        top: 0.75rem;
-        right: 0.75rem;
-    }
-
-    .itam-sidebar-toggle:hover {
-        background: #64748b;
-    }
-
-    .itam-nav {
-        display: grid;
-        gap: 0.55rem;
-    }
-
-    .itam-nav-item {
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
-        color: #1e293b;
-        border-radius: 9999px;
-        padding: 0.62rem 0.85rem;
-        cursor: pointer;
-        transition: 140ms ease;
-        font-weight: 600;
-        white-space: nowrap;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.7rem;
-    }
-
-    .itam-nav-item-main {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.55rem;
-        min-width: 0;
-    }
-
-    .itam-nav-item-main i[data-lucide],
-    .itam-nav-chevron i[data-lucide] {
-        width: 1rem;
-        height: 1rem;
-        flex-shrink: 0;
-    }
-
-    .itam-nav-label {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .itam-nav-item:hover {
-        background: #f1f5f9;
-    }
-
-    .itam-nav-item-active {
-        background: #2563eb;
-        border-color: #2563eb;
-        color: #ffffff;
-    }
-
-    .itam-mobile-subnav {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        overflow-x: auto;
-        padding-bottom: 0.25rem;
-    }
-
-    .itam-mobile-subnav .itam-nav-item {
-        flex: 0 0 auto;
-    }
-
-    .itam-mobile-subnav .itam-nav-chevron {
+    .itam-shell.sidebar-collapsed .itam-sidebar-copy,
+    .itam-shell.sidebar-collapsed .itam-nav-label,
+    .itam-shell.sidebar-collapsed .itam-nav-chevron {
         display: none;
     }
 
-    .itam-content {
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 1rem;
-        position: relative;
-        overflow: auto;
-        min-height: 0;
-    }
-
-    .itam-content-head {
-        margin-bottom: 0.95rem;
-    }
-
-    .itam-content-title {
-        font-size: 1.55rem;
-        line-height: 1.2;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .itam-content-copy {
-        margin-top: 0.25rem;
-        color: #64748b;
-    }
-
-    .itam-toolbar {
-        display: grid;
-        gap: 0.75rem;
-    }
-
-    .itam-toolbar-top {
-        display: block;
-        gap: 0.75rem;
-    }
-
-    .itam-search-row {
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
-        min-width: 0;
-        flex-wrap: nowrap;
-    }
-
-    .itam-search-form {
-        flex: 0 1 30rem;
-        min-width: 0;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .itam-search-input {
-        flex: 1 1 auto;
-        min-width: 0;
-        border-radius: 9999px;
-        border: 1px solid #cbd5e1;
-        padding: 0.58rem 1rem;
-        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
-    }
-
-    .itam-circle-btn {
-        height: 2.5rem;
-        width: 2.5rem;
-        border-radius: 9999px;
-        display: inline-flex;
-        align-items: center;
+    .itam-shell.sidebar-collapsed .itam-nav-item {
         justify-content: center;
-        color: #ffffff;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+        min-height: 3rem;
     }
 
-    .itam-count-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-count-left {
-        display: inline-flex;
-        align-items: center;
-        gap: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-limit-wrap {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .itam-limit-select {
-        border: 1px solid #cbd5e1;
-        border-radius: 9999px;
-        background: #ffffff;
-        padding: 0.35rem 0.8rem;
-    }
-
-    .itam-table-wrap {
-        overflow: auto;
-        border-radius: 0.8rem;
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
-    }
-
-    .itam-table {
-        min-width: 100%;
-        margin-bottom: 0;
-    }
-
-    .itam-table thead tr {
-        background: #e2e8f0;
-    }
-
-    .itam-table th {
-        font-weight: 700;
-        color: #1e293b;
-        white-space: nowrap;
-    }
-
-    .itam-table td {
-        color: #475569;
-    }
-
-    .itam-progress-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(15, 23, 42, 0.5);
-        display: none;
-        align-items: center;
+    .itam-shell.sidebar-collapsed .itam-nav-item-main {
         justify-content: center;
-        padding: 1rem;
-        z-index: 30;
-    }
-
-    .itam-progress-card {
-        width: min(34rem, 100%);
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 1rem;
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.24);
-        padding: 1rem;
-        display: grid;
-        gap: 0.75rem;
-    }
-
-    .itam-progress-title {
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .itam-progress-copy {
-        color: #475569;
-        font-size: 0.95rem;
-    }
-
-    .itam-progress-track {
+        gap: 0;
         width: 100%;
-        height: 0.65rem;
-        border-radius: 9999px;
-        background: #e2e8f0;
-        overflow: hidden;
     }
 
-    .itam-progress-bar {
-        height: 100%;
-        width: 0%;
-        border-radius: 9999px;
-        background: linear-gradient(90deg, #2563eb 0%, #38bdf8 100%);
-        transition: width 180ms ease;
-    }
-
-    .itam-item-group-helper {
-        margin-top: 0.5rem;
-        border: 1px solid #cbd5e1;
-        background: #f8fafc;
-        border-radius: 0.85rem;
-        padding: 0.65rem;
-        display: grid;
-        gap: 0.55rem;
-    }
-
-    .itam-item-group-helper-row {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-item-group-helper select,
-    .itam-item-group-helper button {
-        border: 1px solid #cbd5e1;
-        border-radius: 9999px;
-        padding: 0.35rem 0.75rem;
-        background: #ffffff;
-    }
-
-    .itam-item-group-helper button {
-        font-weight: 600;
-    }
-
-    .itam-item-group-helper small {
-        color: #64748b;
-    }
-
-    .itam-details-grid {
-        display: grid;
-        gap: 0.9rem;
-        grid-template-columns: 1fr;
-    }
-
-    .itam-details-card {
-        border: 1px solid #cbd5e1;
-        border-radius: 0.9rem;
-        background: #f8fafc;
-        padding: 0.75rem;
-    }
-
-    .itam-details-title {
-        font-size: 1rem;
-        font-weight: 700;
-        margin-bottom: 0.55rem;
-        color: #0f172a;
-    }
-
-    .itam-details-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    .itam-details-table th,
-    .itam-details-table td {
-        padding: 0.45rem 0.5rem;
-        border-bottom: 1px solid #e2e8f0;
-        vertical-align: top;
-        text-align: left;
-        font-size: 0.85rem;
-    }
-
-    .itam-details-table th {
-        width: 38%;
-        color: #475569;
-        font-weight: 600;
-    }
-
-    .itam-details-table td {
-        color: #0f172a;
-        word-break: break-word;
-    }
-
-    .itam-details-panels {
-        display: grid;
-        gap: 0.75rem;
-    }
-
-    .itam-details-empty {
-        font-size: 0.85rem;
-        color: #64748b;
-    }
-
-    .itam-details-link-list {
-        display: grid;
-        gap: 0.55rem;
-        margin-top: 0.25rem;
-    }
-
-    .itam-details-link-item {
-        border: 1px solid #e2e8f0;
-        border-radius: 0.65rem;
-        background: #f8fafc;
-        padding: 0.5rem;
-        display: grid;
-        gap: 0.4rem;
-    }
-
-    .itam-details-link-item a {
-        font-size: 0.82rem;
-        color: #2563eb;
-        word-break: break-all;
-        text-decoration: underline;
-    }
-
-    .itam-details-link-preview {
-        max-width: 100%;
-        max-height: 180px;
-        border: 1px solid #cbd5e1;
-        border-radius: 0.45rem;
-        object-fit: contain;
-        background: #ffffff;
-    }
-
-    .itam-details-journal-head {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 0.6rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-details-journal-title {
-        font-size: 0.82rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .itam-details-journal-meta {
-        font-size: 0.75rem;
-        color: #64748b;
-    }
-
-    .itam-details-journal-body {
-        margin-top: 0.35rem;
-        font-size: 0.8rem;
-        color: #334155;
-        white-space: pre-wrap;
-    }
-
-    .itam-details-actions {
-        display: flex;
-        gap: 0.5rem;
-        margin-top: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-details-action-btn {
-        border: 1px solid #cbd5e1;
-        border-radius: 9999px;
-        background: #2563eb;
-        color: #ffffff;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.85rem;
-        font-weight: 600;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-    }
-
-    .itam-details-action-btn:hover {
-        background: #1d4ed8;
-    }
-
-    .itam-modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(15, 23, 42, 0.7);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 50;
-        padding: 1rem;
-    }
-
-    .itam-modal.active {
-        display: flex;
-    }
-
-    .itam-modal-content {
-        background: #ffffff;
-        border-radius: 1rem;
-        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
-        padding: 1.5rem;
-        max-width: 600px;
-        width: 100%;
-        max-height: 90vh;
-        overflow-y: auto;
-    }
-
-    .itam-modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.25rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid #e2e8f0;
-    }
-
-    .itam-modal-title {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .itam-modal-close {
-        background: #94a3b8;
-        color: #ffffff;
-        border: none;
-        border-radius: 9999px;
-        width: 2rem;
-        height: 2rem;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .itam-modal-close:hover {
-        background: #64748b;
-    }
-
-    .itam-modal-body {
-        display: grid;
-        gap: 1rem;
-        margin-bottom: 1.25rem;
-    }
-
-    .itam-modal-field {
-        display: grid;
-        gap: 0.4rem;
-    }
-
-    .itam-modal-label {
-        font-weight: 600;
-        color: #0f172a;
-        font-size: 0.9rem;
-    }
-
-    .itam-modal-input,
-    .itam-modal-textarea {
-        border: 1px solid #cbd5e1;
-        border-radius: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-    }
-
-    .itam-modal-textarea {
-        resize: vertical;
-        min-height: 100px;
-    }
-
-    .itam-modal-file-input {
-        display: none;
-    }
-
-    .itam-modal-file-label {
-        border: 2px dashed #cbd5e1;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        text-align: center;
-        cursor: pointer;
-        background: #f8fafc;
-        transition: all 0.2s;
-    }
-
-    .itam-modal-file-label:hover {
-        border-color: #2563eb;
-        background: #eff6ff;
-    }
-
-    .itam-modal-footer {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: flex-end;
-    }
-
-    .itam-modal-btn {
-        border-radius: 9999px;
-        padding: 0.5rem 1.2rem;
-        font-weight: 600;
-        cursor: pointer;
-        border: none;
-        font-size: 0.9rem;
-        transition: all 0.2s;
-    }
-
-    .itam-modal-btn-primary {
-        background: #2563eb;
-        color: #ffffff;
-    }
-
-    .itam-modal-btn-primary:hover {
-        background: #1d4ed8;
-    }
-
-    .itam-modal-btn-secondary {
-        background: #e2e8f0;
-        color: #0f172a;
-    }
-
-    .itam-modal-btn-secondary:hover {
-        background: #cbd5e1;
-    }
-
-    .itam-device-mode-tabs {
-        display: flex;
-        gap: 0.5rem;
-        padding-bottom: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-device-mode-tab {
-        border: 1px solid #cbd5e1;
-        border-radius: 9999px;
-        background: #ffffff;
-        color: #334155;
-        padding: 0.4rem 0.9rem;
-        font-weight: 600;
-    }
-
-    .itam-device-mode-tab.active {
-        background: #2563eb;
-        color: #ffffff;
-        border-color: #2563eb;
-    }
-
-    .itam-template-picker {
-        border: 1px solid #cbd5e1;
-        border-radius: 0.85rem;
-        background: #f8fafc;
-        padding: 0.75rem;
-        display: grid;
-        gap: 0.55rem;
-        margin-bottom: 0.75rem;
-    }
-
-    .itam-template-picker-row {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
-
-    .itam-template-picker select,
-    .itam-template-picker button {
-        border: 1px solid #cbd5e1;
-        border-radius: 9999px;
-        background: #ffffff;
-        padding: 0.35rem 0.8rem;
-    }
-
-    .itam-template-picker small {
-        color: #64748b;
+    .itam-shell.sidebar-collapsed .itam-nav-item-main i[data-lucide] {
+        width: 1.25rem;
+        height: 1.25rem;
     }
 
     @media (min-width: 1024px) {
@@ -683,116 +50,70 @@
             grid-template-columns: 4.75rem minmax(0, 1fr);
         }
 
-        .itam-sidebar {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .itam-mobile-subnav {
-            display: none;
-        }
-
-        .itam-nav {
-            display: grid;
-            gap: 0.7rem;
-        }
-
-        .itam-shell.sidebar-collapsed .itam-sidebar-copy,
-        .itam-shell.sidebar-collapsed .itam-nav-label,
-        .itam-shell.sidebar-collapsed .itam-nav-chevron {
-            display: none;
-        }
-
-        .itam-shell.sidebar-collapsed .itam-nav-item {
-            justify-content: center;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
-            min-height: 3rem;
-        }
-
-        .itam-shell.sidebar-collapsed .itam-nav-item-main {
-            justify-content: center;
-            gap: 0;
-            width: 100%;
-        }
-
-        .itam-shell.sidebar-collapsed .itam-nav-item-main i[data-lucide] {
-            width: 1.25rem;
-            height: 1.25rem;
-        }
-
-        .itam-toolbar-top {
-            display: block;
-        }
-
-        .itam-count-row {
-            justify-content: space-between;
-        }
-
         .itam-details-grid {
             grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.35fr);
             align-items: start;
         }
     }
 </style>
-<div class="itam-shell" id="itamShell">
-    <aside class="itam-sidebar" id="itamSidebar">  
-        <div class="itam-sidebar-head">
+<div class="itam-shell mx-4 mb-4 mt-0 grid min-h-0 grid-cols-1 gap-4" id="itamShell">
+    <aside class="itam-sidebar relative hidden min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white p-4 lg:flex lg:flex-col" id="itamSidebar">  
+        <div class="itam-sidebar-head mb-3 flex items-center justify-between gap-2 pr-10">
             <div class="itam-sidebar-copy">
                 <p class="text-lg font-bold"><?php echo $lang['it asset-management']; ?></p>
                 <p class="text-sm text-slate-500"><?php echo $lang['navigation'] ?? 'Navigation'; ?></p>
             </div>
-            <button id="itamSidebarToggle" class="itam-sidebar-toggle" type="button" title="Leiste verkleinern">
+            <button id="itamSidebarToggle" class="absolute right-3 top-3 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-400 text-white shadow-md transition hover:bg-slate-500" type="button" title="Leiste verkleinern">
                 <i data-lucide="panel-left"></i>
             </button>
         </div>
-        <ul class="itam-nav" id="itam_nav">
-            <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item itam-nav-item-active"><span class="itam-nav-item-main"><i data-lucide="map-pin"></i><span class="itam-nav-label"><?php echo $lang['location']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="network"></i><span class="itam-nav-label"><?php echo $lang['ipam']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="layers"></i><span class="itam-nav-label"><?php echo $lang['vlan']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="server"></i><span class="itam-nav-label"><?php echo $lang['devices']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="ethernet-port"></i><span class="itam-nav-label"><?php echo $lang['device ports']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="link-2"></i><span class="itam-nav-label"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i data-lucide="chevron-right"></i></span></li>
+        <ul class="itam-nav grid gap-2.5 lg:gap-3" id="itam_nav">
+            <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-blue-600 bg-blue-600 px-3 py-2.5 font-semibold text-white transition hover:bg-slate-100 hover:text-slate-800"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="map-pin"></i><span class="itam-nav-label truncate"><?php echo $lang['location']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="network"></i><span class="itam-nav-label truncate"><?php echo $lang['ipam']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="layers"></i><span class="itam-nav-label truncate"><?php echo $lang['vlan']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="server"></i><span class="itam-nav-label truncate"><?php echo $lang['devices']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="ethernet-port"></i><span class="itam-nav-label truncate"><?php echo $lang['device ports']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+            <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
         </ul>
     </aside>
-    <div class="itam-content">
+    <div class="itam-content relative min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white">
         <div class="h-fit w-full p-4">
-            <div class="itam-content-head">
-                <div class="itam-content-title"><?php echo $lang['it asset-management']; ?></div>
-                <div class="itam-content-copy"><?php echo $lang['quick note'] ?? 'Kurze Erklaerung: Hier werden Locations, Devices, Ports und Verbindungen schnell erfasst und gepflegt.'; ?></div>
+            <div class="mb-4">
+                <div class="text-2xl font-bold text-slate-900"><?php echo $lang['it asset-management']; ?></div>
+                <div class="mt-1 text-sm text-slate-500"><?php echo $lang['quick note'] ?? 'Kurze Erklaerung: Hier werden Locations, Devices, Ports und Verbindungen schnell erfasst und gepflegt.'; ?></div>
             </div>
 
-            <ul class="itam-mobile-subnav" id="itam_nav_mobile">
-                <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item itam-nav-item-active"><span class="itam-nav-item-main"><i data-lucide="map-pin"></i><span class="itam-nav-label"><?php echo $lang['location']; ?></span></span></li>
-                <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="network"></i><span class="itam-nav-label"><?php echo $lang['ipam']; ?></span></span></li>
-                <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="layers"></i><span class="itam-nav-label"><?php echo $lang['vlan']; ?></span></span></li>
-                <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="server"></i><span class="itam-nav-label"><?php echo $lang['devices']; ?></span></span></li>
-                <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="ethernet-port"></i><span class="itam-nav-label"><?php echo $lang['device ports']; ?></span></span></li>
-                <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item"><span class="itam-nav-item-main"><i data-lucide="link-2"></i><span class="itam-nav-label"><?php echo $lang['connections']; ?></span></span></li>
+            <ul class="itam-mobile-subnav flex items-center gap-2 overflow-x-auto pb-1 lg:hidden" id="itam_nav_mobile">
+                <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-blue-600 bg-blue-600 px-3 py-2.5 font-semibold text-white transition hover:bg-slate-100 hover:text-slate-800"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="map-pin"></i><span class="itam-nav-label truncate"><?php echo $lang['location']; ?></span></span></li>
+                <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="network"></i><span class="itam-nav-label truncate"><?php echo $lang['ipam']; ?></span></span></li>
+                <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="layers"></i><span class="itam-nav-label truncate"><?php echo $lang['vlan']; ?></span></span></li>
+                <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="server"></i><span class="itam-nav-label truncate"><?php echo $lang['devices']; ?></span></span></li>
+                <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="ethernet-port"></i><span class="itam-nav-label truncate"><?php echo $lang['device ports']; ?></span></span></li>
+                <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span></li>
             </ul>
 
-            <div class="itam-toolbar mb-4">
-                <div class="itam-toolbar-top">
-                    <div class="itam-search-row">
-                        <form id="searchForm" class="itam-search-form" enctype="multipart/form-data" onsubmit="searchTable(event)">
-                            <input type="text" name="search" placeholder="Suchen ..." class="itam-search-input">
-                            <div class="itam-circle-btn bg-blue-500 hover:bg-blue-700">
-                                <button type="submit" class="text-2xl text-white"><i data-lucide="search"></i></button>
+            <div class="mb-4 grid gap-3">
+                <div class="block">
+                    <div class="flex min-w-0 flex-nowrap items-center gap-2.5">
+                        <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="searchTable(event)">
+                            <input type="text" name="search" placeholder="Suchen ..." class="min-w-0 flex-1 rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white shadow-md hover:bg-blue-700">
+                                <button type="submit" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="search"></i></button>
                             </div>
                         </form>
-                        <div class="itam-circle-btn bg-green-500 hover:bg-green-700">
-                            <button form="" onclick="openNewEntry()" class="new_entry_button text-2xl text-white"><i data-lucide="plus"></i></button>
+                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white shadow-md hover:bg-green-700">
+                            <button form="" onclick="openNewEntry()" class="new_entry_button inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="plus"></i></button>
                         </div>
                     </div>
                 </div>
-                <div class="itam-count-row">
-                    <div class="itam-count-left">
+                <div class="grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
+                    <div class="inline-flex flex-wrap items-center gap-4">
                         <p id="count"></p>
-                        <div id="pagination" class="flex flex-row"></div>
                     </div>
-                    <div class="itam-limit-wrap">
+                    <div id="pagination" class="flex flex-row"></div>
+                    <div class="inline-flex items-center justify-end gap-2">
                         <p><?php echo $lang['quantity']; ?>:</p>
-                        <select id="table_limit_1" name="limit" class="itam-limit-select" onchange="setTableLimit(this.value)">
+                        <select id="table_limit_1" name="limit" class="rounded-full border border-slate-300 bg-white px-3 py-1.5" onchange="setTableLimit(this.value)">
                             <option value="50" <?php if ($limit == 50) echo 'selected'; ?>>50</option>
                             <option value="100" <?php if ($limit == 100) echo 'selected'; ?>>100</option>
                             <option value="500" <?php if ($limit == 500) echo 'selected'; ?>>500</option>
@@ -801,8 +122,8 @@
                     </div>
                 </div>
             </div>
-            <div class="itam-table-wrap">
-            <table class="static itam-table rounded-lg w-full text-sm text-left text-gray-500 shadow-md">
+            <div class="overflow-auto rounded-xl border border-slate-300 bg-white shadow-sm">
+            <table class="static w-full min-w-full rounded-lg text-left text-sm text-gray-500 shadow-md">
                 <thead class="text-gray-800"></thead>
                 <tbody></tbody>
             </table>
@@ -823,57 +144,57 @@
         <!-- New Location -->
         <div id="formContainer" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 overflow-y-auto hidden newEntry"></div>
 
-        <div id="itamProgressOverlay" class="itam-progress-overlay" aria-live="polite" aria-hidden="true">
-            <div class="itam-progress-card">
-                <div class="itam-progress-title">Eintrag wird gespeichert</div>
-                <div id="itamProgressCopy" class="itam-progress-copy">Bitte warten ...</div>
-                <div class="itam-progress-track">
-                    <div id="itamProgressBar" class="itam-progress-bar"></div>
+        <div id="itamProgressOverlay" class="absolute inset-0 z-30 hidden items-center justify-center bg-slate-900/50 p-4" aria-live="polite" aria-hidden="true">
+            <div class="grid w-full max-w-2xl gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-2xl">
+                <div class="font-bold text-slate-900">Eintrag wird gespeichert</div>
+                <div id="itamProgressCopy" class="text-[0.95rem] text-slate-600">Bitte warten ...</div>
+                <div class="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div id="itamProgressBar" class="h-full w-0 rounded-full bg-gradient-to-r from-blue-600 to-sky-400 transition-[width] duration-200 ease-out"></div>
                 </div>
-                <div id="itamProgressCount" class="itam-progress-copy">0 / 0</div>
+                <div id="itamProgressCount" class="text-[0.95rem] text-slate-600">0 / 0</div>
             </div>
         </div>
 
         <!-- Journal Entry Modal -->
-        <div id="journalEntryModal" class="itam-modal">
-            <div class="itam-modal-content">
-                <div class="itam-modal-header">
-                    <div class="itam-modal-title">Journaleintrag erstellen</div>
-                    <button type="button" class="itam-modal-close" onclick="closeJournalEntryModal()"><i data-lucide="x"></i></button>
+        <div id="journalEntryModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
+            <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div class="text-xl font-bold text-slate-900">Journaleintrag erstellen</div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeJournalEntryModal()"><i data-lucide="x"></i></button>
                 </div>
-                <div class="itam-modal-body">
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Titel</label>
-                        <input type="text" id="journalEntryCaption" class="itam-modal-input" placeholder="Kurzer Titel des Eintrags">
+                <div class="mb-5 grid gap-4">
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Titel</label>
+                        <input type="text" id="journalEntryCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Kurzer Titel des Eintrags">
                     </div>
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Beschreibung</label>
-                        <textarea id="journalEntryDescription" class="itam-modal-textarea" placeholder="Detaillierte Beschreibung des Journaleintrags"></textarea>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
+                        <textarea id="journalEntryDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Detaillierte Beschreibung des Journaleintrags"></textarea>
                     </div>
                 </div>
-                <div class="itam-modal-footer">
-                    <button type="button" class="itam-modal-btn itam-modal-btn-secondary" onclick="closeJournalEntryModal()">Abbrechen</button>
-                    <button type="button" class="itam-modal-btn itam-modal-btn-primary" onclick="submitJournalEntry()">Speichern</button>
+                <div class="flex justify-end gap-3">
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeJournalEntryModal()">Abbrechen</button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitJournalEntry()">Speichern</button>
                 </div>
             </div>
         </div>
 
         <!-- File Upload Modal -->
-        <div id="fileUploadModal" class="itam-modal">
-            <div class="itam-modal-content">
-                <div class="itam-modal-header">
-                    <div class="itam-modal-title">Datei hochladen</div>
-                    <button type="button" class="itam-modal-close" onclick="closeFileUploadModal()"><i data-lucide="x"></i></button>
+        <div id="fileUploadModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
+            <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div class="text-xl font-bold text-slate-900">Datei hochladen</div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeFileUploadModal()"><i data-lucide="x"></i></button>
                 </div>
-                <div class="itam-modal-body">
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Datei</label>
-                        <input type="file" id="fileUploadInput" class="itam-modal-file-input" onchange="updateFileSelection()">
-                        <label for="fileUploadInput" class="itam-modal-file-label">
+                <div class="mb-5 grid gap-4">
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Datei</label>
+                        <input type="file" id="fileUploadInput" class="hidden" onchange="updateFileSelection()">
+                        <label for="fileUploadInput" class="cursor-pointer rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-blue-600 hover:bg-blue-50">
                             <div><i data-lucide="upload"></i></div>
                             <div>Datei zum Hochladen ausw&auml;hlen oder hier ablegen</div>
                         </label>
-                        <div id="fileUploadFeedback" class="itam-modal-feedback" style="display:none; margin-top: 0.5rem; padding: 0.75rem; background-color: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 0.375rem;">
+                        <div id="fileUploadFeedback" class="mt-2 hidden rounded-md border border-sky-500 bg-sky-50 p-3">
                             <div style="font-size: 0.875rem;"><strong>Ausgewählte Datei:</strong></div>
                             <div id="fileUploadFileName" style="font-size: 0.875rem; color: #0c4a6e; margin-top: 0.25rem;"></div>
                             <div id="fileUploadFileSize" style="font-size: 0.875rem; color: #0c4a6e;"></div>
@@ -886,62 +207,62 @@
                             <div id="fileUploadProgressPercent" style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; text-align: center;">0%</div>
                         </div>
                     </div>
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Beschreibung (optional)</label>
-                        <textarea id="fileUploadDescription" class="itam-modal-textarea" placeholder="Beschreibung der Datei"></textarea>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Beschreibung (optional)</label>
+                        <textarea id="fileUploadDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung der Datei"></textarea>
                     </div>
                 </div>
-                <div class="itam-modal-footer">
-                    <button type="button" class="itam-modal-btn itam-modal-btn-secondary" onclick="closeFileUploadModal()" id="fileUploadCancelBtn">Abbrechen</button>
-                    <button type="button" class="itam-modal-btn itam-modal-btn-primary" onclick="submitFileUpload()" id="fileUploadSubmitBtn">Hochladen</button>
+                <div class="flex justify-end gap-3">
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeFileUploadModal()" id="fileUploadCancelBtn">Abbrechen</button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitFileUpload()" id="fileUploadSubmitBtn">Hochladen</button>
                 </div>
             </div>
         </div>
 
         <!-- Edit Journal Entry Modal -->
-        <div id="editJournalModal" class="itam-modal">
-            <div class="itam-modal-content">
-                <div class="itam-modal-header">
-                    <div class="itam-modal-title">Journaleintrag bearbeiten</div>
-                    <button type="button" class="itam-modal-close" onclick="closeEditJournalModal()"><i data-lucide="x"></i></button>
+        <div id="editJournalModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
+            <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div class="text-xl font-bold text-slate-900">Journaleintrag bearbeiten</div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeEditJournalModal()"><i data-lucide="x"></i></button>
                 </div>
-                <div class="itam-modal-body">
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Titel</label>
-                        <input type="text" id="editJournalCaption" class="itam-modal-input" placeholder="Titel">
+                <div class="mb-5 grid gap-4">
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Titel</label>
+                        <input type="text" id="editJournalCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Titel">
                     </div>
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Beschreibung</label>
-                        <textarea id="editJournalDescription" class="itam-modal-textarea" placeholder="Beschreibung"></textarea>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
+                        <textarea id="editJournalDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung"></textarea>
                     </div>
                 </div>
-                <div class="itam-modal-footer">
-                    <button type="button" class="itam-modal-btn itam-modal-btn-secondary" onclick="closeEditJournalModal()">Abbrechen</button>
-                    <button type="button" class="itam-modal-btn itam-modal-btn-primary" onclick="submitEditJournal()">Speichern</button>
+                <div class="flex justify-end gap-3">
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditJournalModal()">Abbrechen</button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditJournal()">Speichern</button>
                 </div>
             </div>
         </div>
 
         <!-- Edit File/Attachment Modal -->
-        <div id="editFileModal" class="itam-modal">
-            <div class="itam-modal-content">
-                <div class="itam-modal-header">
-                    <div class="itam-modal-title">Anlage bearbeiten</div>
-                    <button type="button" class="itam-modal-close" onclick="closeEditFileModal()"><i data-lucide="x"></i></button>
+        <div id="editFileModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
+            <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div class="text-xl font-bold text-slate-900">Anlage bearbeiten</div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeEditFileModal()"><i data-lucide="x"></i></button>
                 </div>
-                <div class="itam-modal-body">
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Dateiname</label>
-                        <input type="text" id="editFileName" class="itam-modal-input" placeholder="Dateiname" disabled>
+                <div class="mb-5 grid gap-4">
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Dateiname</label>
+                        <input type="text" id="editFileName" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Dateiname" disabled>
                     </div>
-                    <div class="itam-modal-field">
-                        <label class="itam-modal-label">Beschreibung</label>
-                        <textarea id="editFileDescription" class="itam-modal-textarea" placeholder="Beschreibung der Datei"></textarea>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
+                        <textarea id="editFileDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung der Datei"></textarea>
                     </div>
                 </div>
-                <div class="itam-modal-footer">
-                    <button type="button" class="itam-modal-btn itam-modal-btn-secondary" onclick="closeEditFileModal()">Abbrechen</button>
-                    <button type="button" class="itam-modal-btn itam-modal-btn-primary" onclick="submitEditFile()">Speichern</button>
+                <div class="flex justify-end gap-3">
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditFileModal()">Abbrechen</button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditFile()">Speichern</button>
                 </div>
             </div>
         </div>
@@ -1380,16 +701,16 @@ function setupDeviceTemplateMode(container) {
     const insertionAnchor = container.children[1] || null;
 
     const tabs = document.createElement('div');
-    tabs.className = 'itam-device-mode-tabs';
+    tabs.className = 'flex flex-wrap gap-2 pb-3';
 
     const newButton = document.createElement('button');
     newButton.type = 'button';
-    newButton.className = 'itam-device-mode-tab active';
+    newButton.className = 'rounded-full border border-blue-600 bg-blue-600 px-4 py-1.5 font-semibold text-white';
     newButton.textContent = 'Neues Geraet';
 
     const templateButton = document.createElement('button');
     templateButton.type = 'button';
-    templateButton.className = 'itam-device-mode-tab';
+    templateButton.className = 'rounded-full border border-slate-300 bg-white px-4 py-1.5 font-semibold text-slate-700';
     templateButton.textContent = 'Aus Template';
 
     tabs.appendChild(newButton);
@@ -1397,13 +718,13 @@ function setupDeviceTemplateMode(container) {
     container.insertBefore(tabs, insertionAnchor);
 
     const picker = document.createElement('div');
-    picker.className = 'itam-template-picker hidden';
+    picker.className = 'mb-3 grid hidden gap-2 rounded-xl border border-slate-300 bg-slate-50 p-3';
 
     const pickerInfo = document.createElement('small');
     pickerInfo.textContent = 'Template auswaehlen, Felder werden vorbefuellt und koennen danach angepasst werden.';
 
     const pickerRow = document.createElement('div');
-    pickerRow.className = 'itam-template-picker-row';
+    pickerRow.className = 'flex flex-wrap gap-2';
 
     const pickerSelect = document.createElement('select');
     pickerSelect.innerHTML = '<option value="">Template waehlen ...</option>';
@@ -1429,8 +750,19 @@ function setupDeviceTemplateMode(container) {
         currentDeviceCreateMode = mode;
         const templateMode = mode === 'template';
 
-        newButton.classList.toggle('active', !templateMode);
-        templateButton.classList.toggle('active', templateMode);
+        newButton.classList.toggle('border-blue-600', !templateMode);
+        newButton.classList.toggle('bg-blue-600', !templateMode);
+        newButton.classList.toggle('text-white', !templateMode);
+        newButton.classList.toggle('border-slate-300', templateMode);
+        newButton.classList.toggle('bg-white', templateMode);
+        newButton.classList.toggle('text-slate-700', templateMode);
+
+        templateButton.classList.toggle('border-blue-600', templateMode);
+        templateButton.classList.toggle('bg-blue-600', templateMode);
+        templateButton.classList.toggle('text-white', templateMode);
+        templateButton.classList.toggle('border-slate-300', !templateMode);
+        templateButton.classList.toggle('bg-white', !templateMode);
+        templateButton.classList.toggle('text-slate-700', !templateMode);
         picker.classList.toggle('hidden', !templateMode);
 
         // Keep template checkbox off when creating from template.
@@ -1952,23 +1284,26 @@ function setupItemGroupHelper() {
     }
 
     const helper = document.createElement('div');
-    helper.className = 'itam-item-group-helper hidden';
+    helper.className = 'itam-item-group-helper mt-2 grid hidden gap-2 rounded-xl border border-slate-300 bg-slate-50 p-3';
 
     const info = document.createElement('small');
     info.textContent = 'Fuer Switch-Stacks: vorhandene Group waehlen oder neue UUID erzeugen.';
 
     const controls = document.createElement('div');
-    controls.className = 'itam-item-group-helper-row';
+    controls.className = 'flex flex-wrap gap-2';
 
     const select = document.createElement('select');
+    select.className = 'rounded-full border border-slate-300 bg-white px-3 py-1.5';
     select.innerHTML = '<option value="">Vorhandene Item Group waehlen ...</option>';
 
     const generateButton = document.createElement('button');
     generateButton.type = 'button';
+    generateButton.className = 'rounded-full border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700';
     generateButton.textContent = 'Neue UUID erzeugen';
 
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
+    refreshButton.className = 'rounded-full border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700';
     refreshButton.textContent = 'Groups neu laden';
 
     controls.appendChild(select);
@@ -2617,14 +1952,16 @@ function updateActiveTab(table) {
 
     navScopes.forEach(selector => {
         document.querySelectorAll(selector).forEach(item => {
-            item.classList.remove('itam-nav-item-active');
+            item.classList.remove('border-blue-600', 'bg-blue-600', 'text-white');
+            item.classList.add('border-slate-300', 'bg-white', 'text-slate-800');
         });
     });
 
     navScopes.forEach(selector => {
         const selectedItem = document.querySelector(`${selector}[data-table="${table}"]`);
         if (selectedItem) {
-            selectedItem.classList.add('itam-nav-item-active');
+            selectedItem.classList.remove('border-slate-300', 'bg-white', 'text-slate-800');
+            selectedItem.classList.add('border-blue-600', 'bg-blue-600', 'text-white');
         }
     });
 }
@@ -3316,7 +2653,7 @@ async function buildDetailsPanelContent(panel, rowData) {
             && String(rowData.device_uuid || '').trim() !== '';
 
         if (!isSwitchDevice) {
-            return '<div class="itam-details-empty">Keine Skript-Ausfuehrungen fuer diesen Eintrag.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Skript-Ausfuehrungen fuer diesen Eintrag.</div>';
         }
 
         const entries = await loadSwitchScriptHistory(
@@ -3329,7 +2666,7 @@ async function buildDetailsPanelContent(panel, rowData) {
         );
 
         if (entries.length === 0) {
-            return '<div class="itam-details-empty">Keine Ausfuehrungseintraege vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Ausfuehrungseintraege vorhanden.</div>';
         }
 
         return entries.map((entry) => {
@@ -3348,7 +2685,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'journal') {
         const entries = await loadJournalEntriesForRow(rowData);
         if (entries.length === 0) {
-            return '<div class="itam-details-empty">Keine Journal-Eintraege vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Journal-Eintraege vorhanden.</div>';
         }
 
         return entries.map((entry) => {
@@ -3361,15 +2698,15 @@ async function buildDetailsPanelContent(panel, rowData) {
             const journalMetadataUuid = entry.journal_metadata_uuid || entry.metadata_uuid || '';
 
             return `<div class="mt-2 p-2 rounded border border-slate-200 bg-slate-50 text-xs">`
-                + `<div class="itam-details-journal-head">`
-                + `<div class="itam-details-journal-title">${escapeHtml(rowTitle)}</div>`
-                + `<div class="itam-details-journal-meta">Status ${escapeHtml(rowStatus)}</div>`
+                + `<div class="flex flex-wrap items-baseline justify-between gap-2">`
+                + `<div class="text-xs font-bold text-slate-900">${escapeHtml(rowTitle)}</div>`
+                + `<div class="text-xs text-slate-500">Status ${escapeHtml(rowStatus)}</div>`
                 + `</div>`
-                + `<div class="itam-details-journal-meta">${escapeHtml(rowCreated)} | ${escapeHtml(rowUser)}</div>`
-                + (rowDescription !== '--' && rowDescription !== '' ? `<div class="itam-details-journal-body">${escapeHtml(rowDescription)}</div>` : '')
-                + `<div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">`
-                + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #3b82f6; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="openEditJournalModal('${escapeHtml(journalMetadataUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Bearbeiten</button>`
-                + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #ef4444; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="deleteJournalEntry('${escapeHtml(journalUuid)}')" title="Löschen"><i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Löschen</button>`
+                + `<div class="text-xs text-slate-500">${escapeHtml(rowCreated)} | ${escapeHtml(rowUser)}</div>`
+                + (rowDescription !== '--' && rowDescription !== '' ? `<div class="mt-1 whitespace-pre-wrap text-xs text-slate-700">${escapeHtml(rowDescription)}</div>` : '')
+                + `<div class="mt-2 flex gap-2">`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditJournalModal('${escapeHtml(journalMetadataUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteJournalEntry('${escapeHtml(journalUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
@@ -3378,7 +2715,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'attachments') {
         const attachments = await loadAttachmentMetadataForRow(rowData);
         if (attachments.length === 0) {
-            return '<div class="itam-details-empty">Keine Anhaenge vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Anhaenge vorhanden.</div>';
         }
 
         return attachments.map((item) => {
@@ -3391,22 +2728,22 @@ async function buildDetailsPanelContent(panel, rowData) {
                 ? `<?php echo PORTFLOW_HOSTNAME; ?>${fileUrl}`
                 : fileUrl;
             const preview = isImage && fileUrl
-                ? `<img class="itam-details-link-preview" loading="lazy" src="${escapeHtml(displayUrl)}" alt="Vorschau" />`
+                ? `<img class="max-h-[180px] max-w-full rounded-md border border-slate-300 bg-white object-contain" loading="lazy" src="${escapeHtml(displayUrl)}" alt="Vorschau" />`
                 : '';
 
-            return `<div class="itam-details-link-item" style="margin-bottom: 0.5rem; padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 0.25rem;">`
-                + (fileUrl ? `<a href="${escapeHtml(displayUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0ea5e9; text-decoration: underline;">${escapeHtml(fileName)}</a>` : `<span>${escapeHtml(fileName)}</span>`)
-                + (description ? `<div style="margin-top: 0.25rem; font-size: 0.75rem; color: #6b7280;">${escapeHtml(description)}</div>` : '')
+            return `<div class="mb-2 grid gap-2 rounded-md border border-slate-200 bg-white p-2">`
+                + (fileUrl ? `<a href="${escapeHtml(displayUrl)}" target="_blank" rel="noopener noreferrer" class="break-all text-xs text-blue-600 underline">${escapeHtml(fileName)}</a>` : `<span>${escapeHtml(fileName)}</span>`)
+                + (description ? `<div class="text-xs text-slate-500">${escapeHtml(description)}</div>` : '')
                 + preview
-                + `<div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">`
-                + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #3b82f6; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="openEditFileModal('${escapeHtml(metadataUuid)}', '${escapeHtml(fileName).replace(/'/g, "\\'")}', '${escapeHtml(description).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" style="width: 12px; height: 12px;"></i> Bearbeiten</button>`
-                + `<button type="button" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #ef4444; color: white; border: none; border-radius: 0.25rem; cursor: pointer;" onclick="deleteFile('${escapeHtml(metadataUuid)}')" title="Löschen"><i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Löschen</button>`
+                + `<div class="mt-1 flex gap-2">`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditFileModal('${escapeHtml(metadataUuid)}', '${escapeHtml(fileName).replace(/'/g, "\\'")}', '${escapeHtml(description).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteFile('${escapeHtml(metadataUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
     }
 
-    return '<div class="itam-details-empty">Panel nicht konfiguriert.</div>';
+    return '<div class="itam-details-empty text-sm text-slate-500">Panel nicht konfiguriert.</div>';
 }
 
 async function renderDetailsGrid(rowData) {
@@ -3419,43 +2756,43 @@ async function renderDetailsGrid(rowData) {
         return;
     }
 
-    const $grid = $('<div class="itam-details-grid"></div>');
-    const $leftCard = $('<div class="itam-details-card"></div>');
-    const $rightPanels = $('<div class="itam-details-panels"></div>');
+    const $grid = $('<div class="itam-details-grid grid gap-4"></div>');
+    const $leftCard = $('<div class="rounded-xl border border-slate-300 bg-slate-50 p-3"></div>');
+    const $rightPanels = $('<div class="grid gap-3"></div>');
 
     const primaryTitle = detailsLayout.primary_title || 'Stammdaten';
-    $leftCard.append(`<div class="itam-details-title">${escapeHtml(primaryTitle)}</div>`);
-    const $table = $('<table class="itam-details-table"><tbody></tbody></table>');
+    $leftCard.append(`<div class="mb-2 text-base font-bold text-slate-900">${escapeHtml(primaryTitle)}</div>`);
+    const $table = $('<table class="w-full border-collapse"><tbody></tbody></table>');
     const $tbody = $table.find('tbody');
 
     detailsLayout.primary_fields.forEach((fieldKey) => {
         const label = resolveDetailsLabel(fieldKey, tableConfig);
         const value = resolveDetailsValue(fieldKey, rowData);
-        $tbody.append(`<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`);
+        $tbody.append(`<tr><th class="w-[38%] border-b border-slate-200 px-2 py-2 text-left text-sm font-semibold text-slate-600">${escapeHtml(label)}</th><td class="break-words border-b border-slate-200 px-2 py-2 text-left text-sm text-slate-900">${escapeHtml(value)}</td></tr>`);
     });
     $leftCard.append($table);
 
     const panels = Array.isArray(detailsLayout.panels) ? detailsLayout.panels : [];
     for (const panel of panels) {
         const panelTitle = panel.title || panel.type || 'Panel';
-        const $panelCard = $('<div class="itam-details-card"></div>');
-        $panelCard.append(`<div class="itam-details-title">${escapeHtml(panelTitle)}</div>`);
+        const $panelCard = $('<div class="rounded-xl border border-slate-300 bg-slate-50 p-3"></div>');
+        $panelCard.append(`<div class="mb-2 text-base font-bold text-slate-900">${escapeHtml(panelTitle)}</div>`);
         
         // Add action buttons to appropriate panels
         let panelType = panel.type?.toLowerCase() || '';
         if (panelType.includes('journal')) {
-            const $actions = $('<div class="itam-details-actions" style="margin-bottom: 1rem;"></div>');
-            const $journalBtn = $('<button type="button" class="itam-details-action-btn" onclick="openJournalEntryModal()" style="width: 100%;"><i data-lucide="message-square-plus"></i>Journaleintrag erstellen</button>');
+            const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
+            const $journalBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openJournalEntryModal()"><i data-lucide="message-square-plus"></i>Journaleintrag erstellen</button>');
             $actions.append($journalBtn);
             $panelCard.append($actions);
         } else if (panelType.includes('attachment') || panelType.includes('anhang') || panelType.includes('file')) {
-            const $actions = $('<div class="itam-details-actions" style="margin-bottom: 1rem;"></div>');
-            const $uploadBtn = $('<button type="button" class="itam-details-action-btn" onclick="openFileUploadModal()" style="width: 100%;"><i data-lucide="upload"></i>Datei hochladen</button>');
+            const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
+            const $uploadBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openFileUploadModal()"><i data-lucide="upload"></i>Datei hochladen</button>');
             $actions.append($uploadBtn);
             $panelCard.append($actions);
         }
         
-        $panelCard.append('<div class="itam-details-empty">Lade Daten ...</div>');
+        $panelCard.append('<div class="itam-details-empty text-sm text-slate-500">Lade Daten ...</div>');
         $rightPanels.append($panelCard);
 
         try {
@@ -3492,11 +2829,15 @@ function openJournalEntryModal() {
     }
     document.getElementById('journalEntryCaption').value = '';
     document.getElementById('journalEntryDescription').value = '';
-    document.getElementById('journalEntryModal').classList.add('active');
+    const modal = document.getElementById('journalEntryModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
 function closeJournalEntryModal() {
-    document.getElementById('journalEntryModal').classList.remove('active');
+    const modal = document.getElementById('journalEntryModal');
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
 }
 
 function openFileUploadModal() {
@@ -3506,15 +2847,19 @@ function openFileUploadModal() {
     }
     document.getElementById('fileUploadInput').value = '';
     document.getElementById('fileUploadDescription').value = '';
-    document.getElementById('fileUploadModal').classList.add('active');
+    const modal = document.getElementById('fileUploadModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
 function closeFileUploadModal() {
-    document.getElementById('fileUploadModal').classList.remove('active');
+    const modal = document.getElementById('fileUploadModal');
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
     // Reset form
     document.getElementById('fileUploadInput').value = '';
     document.getElementById('fileUploadDescription').value = '';
-    document.getElementById('fileUploadFeedback').style.display = 'none';
+    document.getElementById('fileUploadFeedback').classList.add('hidden');
     document.getElementById('fileUploadProgress').style.display = 'none';
 }
 
@@ -3527,9 +2872,9 @@ function updateFileSelection() {
         const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
         document.getElementById('fileUploadFileName').textContent = `Name: ${file.name}`;
         document.getElementById('fileUploadFileSize').textContent = `Größe: ${sizeMB} MB`;
-        feedback.style.display = 'block';
+        feedback.classList.remove('hidden');
     } else {
-        feedback.style.display = 'none';
+        feedback.classList.add('hidden');
     }
 }
 
@@ -3855,11 +3200,15 @@ function openEditJournalModal(journalUuid, caption, description) {
     currentEditingJournalUuid = journalUuid;
     document.getElementById('editJournalCaption').value = caption || '';
     document.getElementById('editJournalDescription').value = description || '';
-    document.getElementById('editJournalModal').classList.add('active');
+    const modal = document.getElementById('editJournalModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
 function closeEditJournalModal() {
-    document.getElementById('editJournalModal').classList.remove('active');
+    const modal = document.getElementById('editJournalModal');
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
     currentEditingJournalUuid = null;
 }
 
@@ -3922,11 +3271,15 @@ function openEditFileModal(metadataUuid, fileName, description) {
     currentEditingMetadataUuid = metadataUuid;
     document.getElementById('editFileName').value = fileName || '';
     document.getElementById('editFileDescription').value = description || '';
-    document.getElementById('editFileModal').classList.add('active');
+    const modal = document.getElementById('editFileModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
 function closeEditFileModal() {
-    document.getElementById('editFileModal').classList.remove('active');
+    const modal = document.getElementById('editFileModal');
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
     currentEditingMetadataUuid = null;
 }
 

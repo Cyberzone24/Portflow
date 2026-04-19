@@ -1271,57 +1271,16 @@
         $site = $_GET['site'] ?? NULL;
         $activeScriptsTab = getScriptsTabFromRequest();
     }
+    $settingsNavBaseClasses = 'settings-nav-item block rounded-full border px-3 py-2.5 font-semibold whitespace-nowrap transition';
+    $settingsNavActiveClasses = 'settings-nav-item-active';
+    $settingsNavSubBaseClasses = 'settings-nav-subitem settings-script-tab block rounded-full border px-3 py-2 text-sm font-semibold whitespace-nowrap transition';
+    $settingsNavSubActiveClasses = 'settings-nav-subitem-active';
 ?>
 <style>
-    .settings-shell {
-        margin: 0.75rem 1rem 1rem;
-        margin-top: 0;
-        display: grid;
-        gap: 0.95rem;
-        grid-template-columns: 1fr;
-    }
-
-    .settings-sidebar {
-        background: var(--pf-surface);
-        border: 1px solid var(--pf-border);
-        border-radius: 1rem;
-        padding: 0.95rem;
-        overflow-y: auto;
-        min-height: 0;
-    }
-
-    .settings-content {
-        background: var(--pf-surface-alt);
-        border: 1px solid var(--pf-border);
-        border-radius: 1rem;
-        position: relative;
-        overflow-y: auto;
-        min-height: 0;
-        padding: 0.95rem;
-    }
-
-    .settings-nav {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        overflow-x: auto;
-        padding-bottom: 0.25rem;
-    }
-
-    .settings-nav > a {
-        flex: 0 0 auto;
-    }
-
     .settings-nav-item {
-        display: block;
         border: 1px solid var(--pf-border);
         background: var(--pf-surface-alt);
-        border-radius: 9999px;
-        padding: 0.62rem 0.9rem;
-        font-weight: 600;
         color: var(--pf-text);
-        transition: 140ms ease;
-        white-space: nowrap;
     }
 
     .settings-nav-item:hover {
@@ -1334,25 +1293,10 @@
         color: #ffffff;
     }
 
-    .settings-subnav {
-        margin-top: -0.15rem;
-        padding-left: 0.45rem;
-        border-left: 2px solid var(--pf-accent-500);
-        display: grid;
-        gap: 0.42rem;
-    }
-
     .settings-nav-subitem {
-        display: block;
         border: 1px solid var(--pf-border);
         background: var(--pf-surface-alt);
-        border-radius: 9999px;
-        padding: 0.48rem 0.82rem;
-        font-size: 0.82rem;
-        font-weight: 600;
         color: var(--pf-text);
-        transition: 140ms ease;
-        white-space: nowrap;
     }
 
     .settings-nav-subitem:hover {
@@ -1497,46 +1441,28 @@
         height: 0.95rem;
     }
 
-    @media (min-width: 1024px) {
-        .settings-shell {
-            grid-template-columns: minmax(220px, 18rem) minmax(0, 1fr);
-            height: calc(100vh - 7.2rem);
-            align-items: stretch;
-        }
-
-        .settings-nav {
-            display: grid;
-            gap: 0.7rem;
-            overflow: visible;
-            padding-bottom: 0;
-        }
-
-        .settings-nav > a {
-            flex: initial;
-        }
-    }
 </style>
-<div class="settings-shell">
-    <div class="settings-sidebar flex flex-col gap-6">  
+<div class="mx-4 mb-4 mt-0 grid grid-cols-1 gap-4 lg:h-[calc(100vh-7.2rem)] lg:grid-cols-[minmax(220px,18rem)_minmax(0,1fr)] lg:items-stretch">
+    <div class="settings-sidebar flex min-h-0 flex-col gap-6 overflow-y-auto rounded-2xl border p-4" style="background: var(--pf-surface); border-color: var(--pf-border);">  
         <p class="text-base font-semibold text-slate-900"><?php echo $lang['settings']; ?></p>
-        <ul class="settings-nav" id="itam_nav">
-            <a href="?site=appearance"><li class="<?php echo ($site == 'appearance' || $site == NULL) ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item';?>"><?php echo $lang['appearance']; ?></li></a>
-            <?php echo ($role !== 'ldap') ? '<a href="?site=account"><li class="' . ($site == 'account' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['account'] . '</li></a>' : ''; ?>
-            <a href="?site=notifications"><li class="<?php echo ($site == 'notifications') ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item';?>"><?php echo $lang['notifications']; ?></li></a>
-            <?php echo ($role == 'admin') ? '<a href="?site=configuration"><li class="' . ($site == 'configuration' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
-            <?php echo ($role == 'admin') ? '<a href="?site=scripts"><li class="' . ($site == 'scripts' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
+        <ul class="settings-nav flex items-center gap-2 overflow-x-auto pb-1 lg:grid lg:gap-3 lg:overflow-visible lg:pb-0" id="itam_nav">
+            <a class="flex-none lg:flex-auto" href="?site=appearance"><li class="<?php echo $settingsNavBaseClasses . ' ' . (($site == 'appearance' || $site == NULL) ? $settingsNavActiveClasses : '');?>"><?php echo $lang['appearance']; ?></li></a>
+            <?php echo ($role !== 'ldap') ? '<a class="flex-none lg:flex-auto" href="?site=account"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'account' ? $settingsNavActiveClasses : '') . '">' . $lang['account'] . '</li></a>' : ''; ?>
+            <a class="flex-none lg:flex-auto" href="?site=notifications"><li class="<?php echo $settingsNavBaseClasses . ' ' . (($site == 'notifications') ? $settingsNavActiveClasses : '');?>"><?php echo $lang['notifications']; ?></li></a>
+            <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=configuration"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'configuration' ? $settingsNavActiveClasses : '') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=scripts"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'scripts' ? $settingsNavActiveClasses : '') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
             <?php if ($role == 'admin' && $site == 'scripts') : ?>
-                <div class="settings-subnav">
-                    <a href="?site=scripts&tab=switch"><li class="settings-nav-subitem settings-script-tab <?php echo ($activeScriptsTab === 'switch') ? 'settings-nav-subitem-active' : ''; ?>" data-script-tab="switch">Switch/SSH</li></a>
-                    <a href="?site=scripts&tab=templates"><li class="settings-nav-subitem settings-script-tab <?php echo ($activeScriptsTab === 'templates') ? 'settings-nav-subitem-active' : ''; ?>" data-script-tab="templates">Template Overrides</li></a>
-                    <a href="?site=scripts&tab=history"><li class="settings-nav-subitem settings-script-tab <?php echo ($activeScriptsTab === 'history') ? 'settings-nav-subitem-active' : ''; ?>" data-script-tab="history">Historie</li></a>
+                <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
+                    <a href="?site=scripts&tab=switch"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'switch') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="switch">Switch/SSH</li></a>
+                    <a href="?site=scripts&tab=templates"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'templates') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="templates">Template Overrides</li></a>
+                    <a href="?site=scripts&tab=history"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'history') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="history">Historie</li></a>
                 </div>
             <?php endif; ?>
-            <?php echo ($role == 'admin') ? '<a href="?site=access"><li class="' . ($site == 'access' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
-            <?php echo ($role == 'admin') ? '<a href="?site=changelog"><li class="' . ($site == 'changelog' ? 'settings-nav-item settings-nav-item-active' : 'settings-nav-item') . '">Changelog</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=access"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'access' ? $settingsNavActiveClasses : '') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=changelog"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'changelog' ? $settingsNavActiveClasses : '') . '">Changelog</li></a>' : ''; ?>
         </ul>
     </div>
-    <div class="settings-content">
+    <div class="settings-content relative min-h-0 overflow-y-auto rounded-2xl border p-4" style="background: var(--pf-surface-alt); border-color: var(--pf-border);">
 <?php 
 switch ($site) {        
     case 'account':
