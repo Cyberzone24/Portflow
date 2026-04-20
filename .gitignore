@@ -3,4 +3,3 @@
 .env.local
 podman-compose.override.yml
 data
-switches.json

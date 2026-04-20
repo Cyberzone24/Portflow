@@ -2814,7 +2814,7 @@ async function submitForms(table) {
     let submitErrorMessage = '';
 
     // Lade die postOrder-Konfiguration
-    const configResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/forms.json');
+    const configResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/includes/forms.json');
     const configData = await configResponse.json();
     const postOrder = configData.forms[table].postOrder;
     const formConfig = configData.forms[table];
@@ -4345,7 +4345,7 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
     try {
         // Errechne absoluten Pfad zum Modul
         const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) + '/';
-        const modulePath = baseUrl + 'js/PortflowViewer3D.js?v=' + Date.now();
+        const modulePath = baseUrl + 'includes/js/PortflowViewer3D.js?v=' + Date.now();
         console.log('[3D-VIEW] Importing from:', modulePath);
         
         const module = await import(modulePath);
