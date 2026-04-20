@@ -42,6 +42,10 @@ export class PortflowViewer3D {
       loaded: false,
       renderLoopId: null,
       resizeObserver: null,
+      raycaster: null,
+      pointer: null,
+      hoverTooltip: null,
+      interactiveMeshes: [],
       
       // Toggles
       showRackEars: true,
@@ -57,6 +61,8 @@ export class PortflowViewer3D {
       cableFilterPower: true,
       cableFilterTrunk: true,
       cableRearAware: false,
+      hoverLabelsOnly: true,
+      renderAllCables: true,
       showComMarker: false,
       axisLockMode: 'free',
       rackTransparent: false,
@@ -71,6 +77,7 @@ export class PortflowViewer3D {
       sceneMode: 'rack',
       roomFocusRackUuid: '',
       roomFocusDevicesOnly: false,
+      selectedDeviceUuids: [],
       currentSceneUuid: null,
       
       lastModelSignature: null
@@ -137,19 +144,19 @@ export class PortflowViewer3D {
         this.statusCallback(`Warnung: Rack-Mismatch (requested ${locationUuid}, selected ${selectedUuid})`, true);
       }
 
-      const devices = await this._fetchAllPages('device', {
-        location: locationUuid,
+      const devices = await this._fetchAllPages('device_details', {
+        device_location: locationUuid,
         limit: 500
       });
 
       const deviceUuids = devices
-        .map(row => String(row?.uuid || '').trim())
+        .map(row => String(row?.device_uuid || row?.uuid || '').trim())
         .filter(Boolean);
 
-      const ports = await this._fetchByInFilter('device_port', 'device', deviceUuids, { limit: 1000 });
+      const ports = await this._fetchByInFilter('device_port_details', 'device_port_device', deviceUuids, { limit: 1000 });
 
       const portUuids = ports
-        .map(row => String(row?.uuid || '').trim())
+        .map(row => String(row?.device_port_uuid || row?.uuid || '').trim())
         .filter(Boolean);
 
       const [connectionsBySource, connectionsByDestination, connectionsByExpectedSource, connectionsByExpectedDestination] = await Promise.all([
@@ -171,14 +178,17 @@ export class PortflowViewer3D {
       for (const portRow of ports) {
         const normalizedPort = this._normalizePort(portRow);
         if (!normalizedPort) continue;
-        const key = String(portRow.device || portRow.device_uuid || portRow.device_id || '').trim();
+        const key = String(portRow.device_port_device || portRow.device || portRow.device_uuid || portRow.device_id || '').trim();
         if (!key) continue;
         if (!portsByDevice.has(key)) portsByDevice.set(key, []);
         portsByDevice.get(key).push(normalizedPort);
       }
 
       const deviceModels = devices
-        .map(d => this._normalizeDevice(d, portsByDevice.get(String(d.uuid || '').trim()) || []))
+        .map(d => {
+          const deviceUuid = String(d?.device_uuid || d?.uuid || '').trim();
+          return this._normalizeDevice(d, portsByDevice.get(deviceUuid) || []);
+        })
         .filter(Boolean);
       const connectionModels = this._normalizeConnections(connections || []);
 
@@ -225,9 +235,9 @@ export class PortflowViewer3D {
         await this._init3D();
       }
 
-      const rackRows = await this._fetchAllPages('location', {
-        parent_location: roomUuid,
-        type: 8,
+      const rackRows = await this._fetchAllPages('location_details', {
+        location_parent_location: roomUuid,
+        location_type: 8,
         limit: 500
       });
 
@@ -242,16 +252,16 @@ export class PortflowViewer3D {
         this.state.roomFocusRackUuid = '';
       }
 
-      const deviceRows = await this._fetchByInFilter('device', 'location', Array.from(rackUuidSet), { limit: 1000 });
+      const deviceRows = await this._fetchByInFilter('device_details', 'device_location', Array.from(rackUuidSet), { limit: 1000 });
 
       const deviceUuids = deviceRows
-        .map(row => String(row?.uuid || '').trim())
+        .map(row => String(row?.device_uuid || row?.uuid || '').trim())
         .filter(Boolean);
 
-      const ports = await this._fetchByInFilter('device_port', 'device', deviceUuids, { limit: 1000 });
+      const ports = await this._fetchByInFilter('device_port_details', 'device_port_device', deviceUuids, { limit: 1000 });
 
       const portUuids = ports
-        .map(row => String(row?.uuid || '').trim())
+        .map(row => String(row?.device_port_uuid || row?.uuid || '').trim())
         .filter(Boolean);
 
       const [connectionsBySource, connectionsByDestination, connectionsByExpectedSource, connectionsByExpectedDestination] = await Promise.all([
@@ -271,14 +281,17 @@ export class PortflowViewer3D {
       for (const portRow of ports) {
         const normalizedPort = this._normalizePort(portRow);
         if (!normalizedPort) continue;
-        const key = String(portRow.device || portRow.device_uuid || portRow.device_id || '').trim();
+        const key = String(portRow.device_port_device || portRow.device || portRow.device_uuid || portRow.device_id || '').trim();
         if (!key) continue;
         if (!portsByDevice.has(key)) portsByDevice.set(key, []);
         portsByDevice.get(key).push(normalizedPort);
       }
 
       const deviceModels = deviceRows
-        .map(d => this._normalizeDevice(d, portsByDevice.get(String(d.uuid || '').trim()) || []))
+        .map(d => {
+          const deviceUuid = String(d?.device_uuid || d?.uuid || '').trim();
+          return this._normalizeDevice(d, portsByDevice.get(deviceUuid) || []);
+        })
         .filter(Boolean);
 
       this.state.liveRacks = rackModels;
@@ -435,6 +448,28 @@ export class PortflowViewer3D {
     this._invalidateCache();
   }
 
+  setHoverLabelsOnly(enabled) {
+    this.state.hoverLabelsOnly = !!enabled;
+    this._hideHoverTooltip();
+    this._invalidateCache();
+  }
+
+  setRenderAllCables(enabled) {
+    this.state.renderAllCables = !!enabled;
+    this._invalidateCache();
+  }
+
+  setSelectedDevices(deviceUuids = []) {
+    const normalized = Array.from(new Set((deviceUuids || [])
+      .map(uuid => String(uuid || '').trim())
+      .filter(Boolean)));
+    this.state.selectedDeviceUuids = normalized;
+    if (typeof this.options.onSelectedDevicesChange === 'function') {
+      this.options.onSelectedDevicesChange(normalized);
+    }
+    this._invalidateCache();
+  }
+
   setComMarkerVisible(visible) {
     this.state.showComMarker = !!visible;
     this._invalidateCache();
@@ -544,6 +579,11 @@ export class PortflowViewer3D {
     if (this.state.controls) {
       this.state.controls.dispose();
     }
+    if (this.state.renderer?.domElement) {
+      this.state.renderer.domElement.removeEventListener('pointermove', this._boundPointerMove);
+      this.state.renderer.domElement.removeEventListener('pointerleave', this._boundPointerLeave);
+      this.state.renderer.domElement.removeEventListener('click', this._boundPointerClick);
+    }
     if (this.container) {
       this.container.innerHTML = '';
     }
@@ -559,6 +599,8 @@ export class PortflowViewer3D {
     this.state.THREE = THREE;
     this.state.scene = new THREE.Scene();
     this.state.scene.background = new THREE.Color(0x111827);
+    this.state.raycaster = new THREE.Raycaster();
+    this.state.pointer = new THREE.Vector2();
 
     // Camera
     const w = this.options.width;
@@ -570,8 +612,21 @@ export class PortflowViewer3D {
     this.state.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.state.renderer.setSize(w, h);
     this.state.renderer.setPixelRatio(window.devicePixelRatio);
+    this.container.style.position = 'relative';
     this.container.appendChild(this.state.renderer.domElement);
     this._attachResizeObserver();
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'pointer-events-none absolute z-20 hidden max-w-xs rounded-md border border-slate-600 bg-slate-900/95 px-2 py-1 text-xs text-slate-100 shadow-lg';
+    this.container.appendChild(tooltip);
+    this.state.hoverTooltip = tooltip;
+
+    this._boundPointerMove = this._handlePointerMove.bind(this);
+    this._boundPointerLeave = this._handlePointerLeave.bind(this);
+    this._boundPointerClick = this._handlePointerClick.bind(this);
+    this.state.renderer.domElement.addEventListener('pointermove', this._boundPointerMove);
+    this.state.renderer.domElement.addEventListener('pointerleave', this._boundPointerLeave);
+    this.state.renderer.domElement.addEventListener('click', this._boundPointerClick);
 
     // Controls
     this.state.controls = new OrbitControls(this.state.camera, this.state.renderer.domElement);
@@ -617,11 +672,16 @@ export class PortflowViewer3D {
       cableFilterPower: this.state.cableFilterPower,
       cableFilterTrunk: this.state.cableFilterTrunk,
       cableRearAware: this.state.cableRearAware,
+      hoverLabelsOnly: this.state.hoverLabelsOnly,
+      renderAllCables: this.state.renderAllCables,
+      selectedDeviceUuids: this.state.selectedDeviceUuids,
       metric: this.state.loadOverlayMetric,
       sceneMode: this.state.sceneMode
     });
     if (this.state.lastModelSignature === sig) return;
     this.state.lastModelSignature = sig;
+    this.state.interactiveMeshes = [];
+    this._hideHoverTooltip();
 
     // Clear scene (except lights/grid)
     while (this.state.scene.children.length > 3) {
@@ -949,7 +1009,7 @@ export class PortflowViewer3D {
           const portSide = String(port.side || '').toLowerCase() === 'rear' ? 'rear' : 'front';
 
           const px = (sizeX / 2000) - (pXmm / 1000) - (pw / 2);
-          const py = -(sizeY / 2000) + (pYmm / 1000) + (ph / 2);
+          const py = (sizeY / 2000) - (pYmm / 1000) - (ph / 2);
           const outsideOffset = 0.0015;
           const pz = portSide === 'rear'
             ? (sizeZ / 2000) + (pZmm / 1000) + (pd / 2) + outsideOffset
@@ -969,40 +1029,26 @@ export class PortflowViewer3D {
             Math.max(-(sizeY / 2000) + (ph / 2), Math.min((sizeY / 2000) - (ph / 2), py)),
             pz
           );
+          pMesh.userData = {
+            hoverType: 'port',
+            label: String(port.name || port.uuid || 'Port'),
+            details: port.type || '',
+            deviceUuid: String(device?.uuid || '').trim()
+          };
+          this._registerInteractiveMesh(pMesh);
           portsGroup.add(pMesh);
-
-          if (this.state.showPortLabels) {
-            const txt = String(port.name || port.uuid || '').trim();
-            if (txt) {
-              const lbl = this._createTextLabelSprite(THREE, txt, {
-                worldWidth: 0.08,
-                fontSize: 28,
-                bgColor: 'rgba(15,23,42,0.78)'
-              });
-              lbl.position.set(pMesh.position.x, pMesh.position.y + Math.max(ph * 0.8, 0.01), pMesh.position.z + (portSide === 'rear' ? 0.006 : -0.006));
-              portsGroup.add(lbl);
-            }
-          }
         }
         deviceGroup.add(portsGroup);
       }
 
-      group.add(deviceGroup);
+      deviceMesh.userData = {
+        hoverType: 'device',
+        deviceUuid: String(device?.uuid || '').trim(),
+        label: String(device.name || device.uuid || 'Device')
+      };
+      this._registerInteractiveMesh(deviceMesh);
 
-      if (this.state.showPortLabels || this.state.showCableLabels) {
-        const labelText = device.name || device.uuid || 'Device';
-        const label = this._createTextLabelSprite(THREE, labelText, {
-          bgColor: 'rgba(15,23,42,0.85)',
-          textColor: '#f8fafc',
-          worldWidth: 0.24
-        });
-        label.position.set(
-          deviceCenterX,
-          deviceCenterY + (sizeY / 1000) * 0.75,
-          deviceCenterZ
-        );
-        group.add(label);
-      }
+      group.add(deviceGroup);
     }
 
     if (this.state.showComMarker && devices.length > 0) {
@@ -1118,7 +1164,7 @@ export class PortflowViewer3D {
 
           const localPos = new THREE.Vector3(
             (sizeX / 2000) - (pXmm / 1000) - (pw / 2),
-            -(sizeY / 2000) + (pYmm / 1000) + (ph / 2),
+            (sizeY / 2000) - (pYmm / 1000) - (ph / 2),
             portSide === 'rear'
               ? (sizeZ / 2000) + (pZmm / 1000) + (pd / 2) + outsideOffset
               : -(sizeZ / 2000) - (pZmm / 1000) - (pd / 2) - outsideOffset
@@ -1159,18 +1205,18 @@ export class PortflowViewer3D {
     let renderedCount = 0;
 
     for (const connection of connections || []) {
-      if (!connection || !this._shouldRenderCable(connection)) continue;
-
+      if (!connection) continue;
       const sourceAnchor = portAnchorMap.get(String(connection.sourcePortUuid || '').trim());
       const destinationAnchor = portAnchorMap.get(String(connection.destinationPortUuid || '').trim());
       if (!sourceAnchor || !destinationAnchor) {
         continue;
       }
+      if (!this._shouldRenderCable(connection, sourceAnchor, destinationAnchor)) continue;
 
       const routePoints = this._buildCableRoutePoints(sourceAnchor, destinationAnchor, connection);
       if (routePoints.length < 2) continue;
 
-      const curve = new THREE.CatmullRomCurve3(routePoints);
+      const curve = this._buildCableCurve(routePoints);
       const cableRadius = connection.cableKind === 'power'
         ? 0.007
         : connection.cableKind === 'fiber'
@@ -1187,23 +1233,15 @@ export class PortflowViewer3D {
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.renderOrder = 3;
+      mesh.userData = {
+        hoverType: 'cable',
+        label: this._connectionLabel(connection),
+        sourceDeviceUuid: String(sourceAnchor.deviceUuid || '').trim(),
+        destinationDeviceUuid: String(destinationAnchor.deviceUuid || '').trim()
+      };
+      this._registerInteractiveMesh(mesh);
       cablesGroup.add(mesh);
       renderedCount += 1;
-
-      if (this.state.showCableLabels) {
-        const labelText = this._connectionLabel(connection);
-        if (labelText) {
-          const label = this._createTextLabelSprite(THREE, labelText, {
-            worldWidth: 0.16,
-            fontSize: 24,
-            bgColor: 'rgba(17,24,39,0.82)'
-          });
-          const midPoint = curve.getPoint(0.5);
-          label.position.copy(midPoint);
-          label.position.y += 0.04;
-          cablesGroup.add(label);
-        }
-      }
     }
 
     if (renderedCount > 0) {
@@ -1219,9 +1257,9 @@ export class PortflowViewer3D {
 
     const isInterRack = sourceAnchor.rackUuid !== destinationAnchor.rackUuid;
     if (isInterRack) {
-      const trayY = Math.max(sourceAnchor.rackTopY, destinationAnchor.rackTopY) + 0.16;
-      points.push(new this.state.THREE.Vector3(sourceOut.x, trayY, sourceOut.z));
-      points.push(new this.state.THREE.Vector3(destinationOut.x, trayY, destinationOut.z));
+      const floorY = Math.max(0.02, Math.min(sourceAnchor.rackBottomY, destinationAnchor.rackBottomY) - 0.015);
+      points.push(new this.state.THREE.Vector3(sourceOut.x, floorY, sourceOut.z));
+      points.push(new this.state.THREE.Vector3(destinationOut.x, floorY, destinationOut.z));
     } else if (this.state.cableRearAware) {
       const bridgeZ = (sourceAnchor.normal.z + destinationAnchor.normal.z) >= 0
         ? Math.max(sourceAnchor.rackRearZ, destinationAnchor.rackRearZ) - 0.08
@@ -1229,19 +1267,86 @@ export class PortflowViewer3D {
       points.push(new this.state.THREE.Vector3(sourceOut.x, sourceOut.y, bridgeZ));
       points.push(new this.state.THREE.Vector3(destinationOut.x, destinationOut.y, bridgeZ));
     } else {
-      const midY = Math.max(sourceOut.y, destinationOut.y) + 0.04;
-      const midX = (sourceOut.x + destinationOut.x) * 0.5;
-      const midZ = (sourceOut.z + destinationOut.z) * 0.5;
-      points.push(new this.state.THREE.Vector3(midX, midY, midZ));
+      const sameFace = (sourceAnchor.normal.z * destinationAnchor.normal.z) > 0;
+      const bridgeZ = sameFace
+        ? (sourceOut.z + destinationOut.z) * 0.5
+        : (sourceAnchor.rackRearZ + sourceAnchor.rackFrontZ) * 0.5;
+      const targetY = destinationOut.y;
+
+      points.push(new this.state.THREE.Vector3(sourceOut.x, sourceOut.y, bridgeZ));
+      if (Math.abs(targetY - sourceOut.y) > 0.002) {
+        points.push(new this.state.THREE.Vector3(sourceOut.x, targetY, bridgeZ));
+      }
+      points.push(new this.state.THREE.Vector3(destinationOut.x, targetY, bridgeZ));
     }
 
     points.push(destinationOut, destinationAnchor.point.clone());
     return points;
   }
 
-  _shouldRenderCable(connection) {
+  _buildCableCurve(routePoints) {
+    const THREE = this.state.THREE;
+    const path = new THREE.CurvePath();
+    const points = (routePoints || []).filter(Boolean).map(point => point.clone());
+    if (points.length < 2) {
+      return path;
+    }
+
+    const cornerRadius = 0.035;
+    let cursor = points[0].clone();
+
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const next = points[index + 1];
+      const toCurrent = current.clone().sub(previous);
+      const toNext = next.clone().sub(current);
+      const previousLength = toCurrent.length();
+      const nextLength = toNext.length();
+
+      if (previousLength < 0.0001 || nextLength < 0.0001) {
+        continue;
+      }
+
+      const previousDirection = toCurrent.clone().normalize();
+      const nextDirection = toNext.clone().normalize();
+      if (previousDirection.dot(nextDirection) > 0.999) {
+        continue;
+      }
+
+      const trimDistance = Math.min(cornerRadius, previousLength * 0.35, nextLength * 0.35);
+      const cornerEntry = current.clone().sub(previousDirection.clone().multiplyScalar(trimDistance));
+      const cornerExit = current.clone().add(nextDirection.clone().multiplyScalar(trimDistance));
+
+      if (cursor.distanceToSquared(cornerEntry) > 0.0000001) {
+        path.add(new THREE.LineCurve3(cursor.clone(), cornerEntry.clone()));
+      }
+      path.add(new THREE.QuadraticBezierCurve3(cornerEntry.clone(), current.clone(), cornerExit.clone()));
+      cursor = cornerExit;
+    }
+
+    const endPoint = points[points.length - 1];
+    if (cursor.distanceToSquared(endPoint) > 0.0000001) {
+      path.add(new THREE.LineCurve3(cursor, endPoint.clone()));
+    }
+    return path;
+  }
+
+  _shouldRenderCable(connection, sourceAnchor = null, destinationAnchor = null) {
     if (!this.state.showCables || !connection) {
       return false;
+    }
+
+    if (!this.state.renderAllCables) {
+      const selected = new Set(this.state.selectedDeviceUuids || []);
+      if (selected.size === 0) {
+        return false;
+      }
+      const sourceDeviceUuid = String(sourceAnchor?.deviceUuid || connection.sourceDeviceUuid || '').trim();
+      const destinationDeviceUuid = String(destinationAnchor?.deviceUuid || connection.destinationDeviceUuid || '').trim();
+      if (!selected.has(sourceDeviceUuid) && !selected.has(destinationDeviceUuid)) {
+        return false;
+      }
     }
 
     if (connection.isTrunk && !this.state.cableFilterTrunk) {
@@ -1270,6 +1375,100 @@ export class PortflowViewer3D {
       if (connection.length) parts.push(`${connection.length}m`);
     }
     return parts.join(' | ');
+  }
+
+  _registerInteractiveMesh(mesh) {
+    if (!mesh) return;
+    this.state.interactiveMeshes.push(mesh);
+  }
+
+  _setPointerFromEvent(event) {
+    if (!this.state.pointer || !this.state.renderer?.domElement) {
+      return false;
+    }
+    const rect = this.state.renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return false;
+    }
+    this.state.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.state.pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+    return true;
+  }
+
+  _handlePointerMove(event) {
+    if (!this._setPointerFromEvent(event) || !this.state.raycaster || !this.state.camera) {
+      return;
+    }
+    this.state.raycaster.setFromCamera(this.state.pointer, this.state.camera);
+    const intersects = this.state.raycaster.intersectObjects(this.state.interactiveMeshes, false);
+    const hit = intersects.find(entry => entry?.object?.userData?.hoverType);
+    if (!hit) {
+      this._hideHoverTooltip();
+      return;
+    }
+
+    const meta = hit.object.userData || {};
+    if ((meta.hoverType === 'port' && !this.state.showPortLabels) || (meta.hoverType === 'cable' && !this.state.showCableLabels)) {
+      this._hideHoverTooltip();
+      return;
+    }
+    if (meta.hoverType === 'device') {
+      this._hideHoverTooltip();
+      return;
+    }
+
+    this._showHoverTooltip(event, meta);
+  }
+
+  _handlePointerLeave() {
+    this._hideHoverTooltip();
+  }
+
+  _handlePointerClick(event) {
+    if (!this._setPointerFromEvent(event) || !this.state.raycaster || !this.state.camera || this.state.renderAllCables) {
+      return;
+    }
+    this.state.raycaster.setFromCamera(this.state.pointer, this.state.camera);
+    const intersects = this.state.raycaster.intersectObjects(this.state.interactiveMeshes, false);
+    const hit = intersects.find(entry => entry?.object?.userData?.hoverType === 'device');
+    const deviceUuid = String(hit?.object?.userData?.deviceUuid || '').trim();
+    if (!deviceUuid) {
+      return;
+    }
+
+    const nextSelection = new Set(this.state.selectedDeviceUuids || []);
+    if (nextSelection.has(deviceUuid)) {
+      nextSelection.delete(deviceUuid);
+    } else {
+      nextSelection.add(deviceUuid);
+    }
+    this.setSelectedDevices(Array.from(nextSelection));
+  }
+
+  _showHoverTooltip(event, meta) {
+    const tooltip = this.state.hoverTooltip;
+    if (!tooltip) {
+      return;
+    }
+    const parts = [String(meta.label || '').trim(), String(meta.details || '').trim()].filter(Boolean);
+    if (parts.length === 0) {
+      this._hideHoverTooltip();
+      return;
+    }
+
+    tooltip.textContent = parts.join(' | ');
+    tooltip.classList.remove('hidden');
+
+    const rect = this.container.getBoundingClientRect();
+    tooltip.style.left = `${Math.max(8, event.clientX - rect.left + 12)}px`;
+    tooltip.style.top = `${Math.max(8, event.clientY - rect.top + 12)}px`;
+  }
+
+  _hideHoverTooltip() {
+    if (!this.state.hoverTooltip) {
+      return;
+    }
+    this.state.hoverTooltip.classList.add('hidden');
   }
 
   _getMetricColor(device, rack) {
@@ -1432,7 +1631,14 @@ export class PortflowViewer3D {
     const map = new Map();
     for (const row of rows || []) {
       if (!row || typeof row !== 'object') continue;
-      const key = String(row.uuid || '').trim();
+      const key = String(
+        row.uuid
+        || row.device_uuid
+        || row.location_uuid
+        || row.connection_uuid
+        || row.device_port_uuid
+        || ''
+      ).trim();
       if (!key) continue;
       if (!map.has(key)) map.set(key, row);
     }
@@ -1633,7 +1839,7 @@ export class PortflowViewer3D {
       const limits = geom.limits || {};
       return {
         uuid: row.uuid || row.location_uuid || 'unknown-rack',
-        name: row.name || row.location_metadata_caption || row.caption || 'Rack',
+        name: row.location_metadata_caption || row.metadata_caption || row.caption || row.name || 'Rack',
         position: this._parseJsonishObject(row.position ?? row.location_position ?? null, { x: 0, y: 0, z: 0 }),
         geometry: {
           outer,
@@ -1648,7 +1854,7 @@ export class PortflowViewer3D {
       console.warn('Failed to normalize rack', row, e);
       return {
         uuid: row?.uuid || 'unknown-rack',
-        name: row?.name || 'Rack',
+        name: row?.location_metadata_caption || row?.metadata_caption || row?.caption || row?.name || 'Rack',
         position: { x: 0, y: 0, z: 0 },
         geometry: { outer: { x: 600, y: 2200, z: 1000 }, inner: { x: 550, y: 2080, z: 920 }, between: { x_left: 25, x_right: 25, y_bottom: 60, y_top: 60, z_front: 40, z_back: 40 } }
       };
@@ -1660,28 +1866,32 @@ export class PortflowViewer3D {
       return null;
     }
     try {
-      const pos = this._parseJsonishObject(row.position, {});
-      const size = this._parseJsonishObject(row.size, {});
-      const rotation = this._parseJsonishObject(row.rotation, {});
+      const pos = this._parseJsonishObject(row.device_position ?? row.position, {});
+      const size = this._parseJsonishObject(row.device_size ?? row.size, {});
+      const rotation = this._parseJsonishObject(row.device_rotation ?? row.rotation, {});
+      const deviceName = row.device_metadata_caption || row.metadata_caption || row.device_caption || row.caption || row.device_name || row.name || null;
+      const locationName = row.device_location_metadata_caption || row.location_metadata_caption || row.location_caption || row.location_name || row.location_label || null;
       return {
-        uuid: row.uuid,
-        name: row.name,
-        location: row.location || null,
+        uuid: row.device_uuid || row.uuid,
+        name: deviceName,
+        location: row.device_location || row.location || null,
+        locationName,
         placement: { x: pos.x || 0, y: pos.y || 0, z: pos.z || 0 },
         rotation: { x: rotation.x || 0, y: rotation.y || 0, z: rotation.z || 0 },
         size: { x: size.x || 445, y: size.y || 44, z: size.z || 300 },
         ports,
-        weightKg: row.weight || size.weightKg || size.weight || 5,
-        powerW: row.power || 100,
-        thermalW: row.thermal || 80,
+        weightKg: row.device_weight || row.weight || size.weightKg || size.weight || 5,
+        powerW: row.device_power || row.power || 100,
+        thermalW: row.device_thermal || row.thermal || 80,
         color: '#' + (Math.random() * 0xFFFFFF << 0).toString(16).padStart(6, '0')
       };
     } catch (e) {
       console.warn('Failed to normalize device', row, e);
       return {
-        uuid: row?.uuid || 'unknown-device',
-        name: row?.name || 'Device',
-        location: row?.location || null,
+        uuid: row?.device_uuid || row?.uuid || 'unknown-device',
+        name: row?.device_metadata_caption || row?.metadata_caption || row?.caption || row?.name || 'Device',
+        location: row?.device_location || row?.location || null,
+        locationName: row?.device_location_metadata_caption || row?.location_metadata_caption || row?.location_caption || row?.location_name || null,
         placement: { x: 0, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         size: { x: 445, y: 44, z: 300 },
@@ -1698,13 +1908,13 @@ export class PortflowViewer3D {
       return null;
     }
     try {
-      const placement = this._parseJsonishObject(row.position || row.device_port_position, {});
-      const size = this._parseJsonishObject(row.size || row.device_port_size, {});
-      const typeCode = this._parsePortTypeCode(row.type ?? row.device_port_type);
+      const placement = this._parseJsonishObject(row.device_port_position || row.position, {});
+      const size = this._parseJsonishObject(row.device_port_size || row.size, {});
+      const typeCode = this._parsePortTypeCode(row.device_port_type ?? row.type);
       const typeMeta = this._portTypeMeta(typeCode);
       return {
-        uuid: row.uuid || row.device_port_uuid || `port-${Math.random().toString(36).slice(2, 8)}`,
-        name: row.name || row.caption || 'Port',
+        uuid: row.device_port_uuid || row.uuid || `port-${Math.random().toString(36).slice(2, 8)}`,
+        name: row.device_port_metadata_caption || row.metadata_caption || row.name || row.caption || 'Port',
         type: typeMeta.label,
         typeCode,
         side: row.side || placement.side || 'front',
@@ -1790,6 +2000,8 @@ export class PortflowViewer3D {
           uuid: row.uuid || 'unknown-connection',
           sourcePortUuid: sourcePortUuid || null,
           destinationPortUuid: destinationPortUuid || null,
+          sourceDeviceUuid: String(row.device_source || row.expected_device_source || '').trim(),
+          destinationDeviceUuid: String(row.device_destination || row.expected_device_destination || '').trim(),
           type: row.type || row.cable_name || 'Copper',
           typeLabel: row.type || row.cable_name || (isPower ? 'Power' : (isFiber ? 'Fiber' : 'Copper')),
           name: row.caption || row.cable_name || '',

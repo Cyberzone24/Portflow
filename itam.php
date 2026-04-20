@@ -510,19 +510,9 @@ async function generateFormFromJSON(table = 'location_details', options = {}) {
 
 function getDefaultDevicePortConfig(deviceType) {
     const normalizedType = (deviceType || '').toLowerCase();
-
-    if (normalizedType === 'patchpanel') {
-        return { count: 24 };
-    }
-
-    if (normalizedType === 'net_outlet') {
-        return { count: 2 };
-    }
-
-    if (normalizedType === 'switch') {
-        return { count: 24 };
-    }
-
+    if (normalizedType === 'patchpanel') return { count: 24 };
+    if (normalizedType === 'net_outlet') return { count: 2 };
+    if (normalizedType === 'switch') return { count: 48 };
     return { count: 0 };
 }
 
@@ -546,175 +536,53 @@ function getPortTypeDefinitions() {
 function getPortTypeCodeByFamily(typeFamily) {
     const normalized = String(typeFamily || '').trim().toLowerCase();
     const map = {
-        'copper': 10,
-        'sfp': 11,
-        'qsfp': 12,
-        'power': 0,
-        'mgmt': 20,
-        'console': 21
+        'copper': 10, 'sfp': 11, 'qsfp': 12, 'power': 0,
+        'mgmt': 20, 'console': 21, 'fiber': 30, 'coax': 40
     };
-
     return map[normalized] ?? 10;
 }
 
-function getAutoPortProfileCount(profile) {
-    const normalized = String(profile || '').trim().toLowerCase();
-    const map = {
-        'none': 0,
-        'switch-24': 24,
-        'switch-48': 48,
-        'switch-2x12': 24,
-        'switch-2x24': 48,
-        'psu-dual': 2
+/**
+ * Real-world port dimensions in mm per type code.
+ */
+function getPortTypeSizeMm(typeCode) {
+    const sizes = {
+        0:  { w: 25, h: 32 },  // C14
+        1:  { w: 25, h: 32 },  // C20
+        10: { w: 14, h: 14 },  // RJ45
+        11: { w: 14, h:  8 },  // SFP / SFP+
+        12: { w: 18, h:  9 },  // QSFP
+        13: { w: 14, h: 10 },  // MPO
+        20: { w: 14, h: 14 },  // Management RJ45
+        21: { w: 14, h: 14 },  // Console RJ45
+        30: { w:  8, h:  8 },  // Fiber LC
+        31: { w: 10, h: 10 },  // Fiber SC
+        40: { w: 12, h: 12 },  // Coax BNC
+        99: { w: 14, h: 14 }   // Other
     };
-
-    return map[normalized] || 0;
+    return sizes[typeCode] || sizes[10];
 }
 
-function getDefaultPortLayoutPresetFromProfile(profile) {
-    const normalized = String(profile || '').trim().toLowerCase();
-    const map = {
-        'switch-24': 'front-24',
-        'switch-48': 'front-48',
-        'switch-2x12': 'front-2x12',
-        'switch-2x24': 'front-2x24',
-        'psu-dual': 'rear-psu-dual'
+function getPortLayoutPreviewColor(typeCode) {
+    const definitions = getPortTypeDefinitions();
+    const typeFamily = (definitions[typeCode] || {}).family || 'other';
+    const colors = {
+        power: '#f59e0b', copper: '#60a5fa', sfp: '#22d3ee',
+        qsfp: '#14b8a6', mgmt: '#84cc16', console: '#f97316',
+        fiber: '#a78bfa', coax: '#fb923c', other: '#94a3b8'
     };
-
-    return map[normalized] || 'none';
-}
-
-function getPortLayoutPresetDefinitions() {
-    return {
-        'none': {
-            rows: null,
-            cols: null,
-            pitchX: null,
-            pitchY: null,
-            side: 'front',
-            anchor: 'center',
-            mirror: false,
-            count: 0,
-            labelPattern: ''
-        },
-        'front-24': {
-            rows: 1,
-            cols: 24,
-            pitchX: 18,
-            pitchY: 14,
-            side: 'front',
-            anchor: 'center',
-            mirror: false,
-            count: 24,
-            labelPattern: '{prefix}{index}'
-        },
-        'front-2x12': {
-            rows: 2,
-            cols: 12,
-            pitchX: 34,
-            pitchY: 14,
-            side: 'front',
-            anchor: 'center',
-            mirror: false,
-            count: 24,
-            labelPattern: '{prefix}{index}'
-        },
-        'front-48': {
-            rows: 1,
-            cols: 48,
-            pitchX: 8.8,
-            pitchY: 14,
-            side: 'front',
-            anchor: 'center',
-            mirror: false,
-            count: 48,
-            labelPattern: '{prefix}{index}'
-        },
-        'front-2x24': {
-            rows: 2,
-            cols: 24,
-            pitchX: 18,
-            pitchY: 14,
-            side: 'front',
-            anchor: 'center',
-            mirror: false,
-            count: 48,
-            labelPattern: '{prefix}{index}'
-        },
-        'rear-psu-dual': {
-            rows: 1,
-            cols: 2,
-            pitchX: 150,
-            pitchY: 0,
-            side: 'rear',
-            anchor: 'center',
-            mirror: false,
-            count: 2,
-            labelPattern: '{prefix}{index}'
-        }
-    };
-}
-
-function getPortLayoutPresetDefinition(preset) {
-    const definitions = getPortLayoutPresetDefinitions();
-    const normalized = String(preset || 'none').trim().toLowerCase();
-    return definitions[normalized] || definitions.none;
-}
-
-function getPortLayoutPresetCount(preset) {
-    return getNumericOrDefault(getPortLayoutPresetDefinition(preset).count, 0);
-}
-
-function getPortLayoutRules(options = {}) {
-    const presetName = String(options.layoutPreset || options.preset || 'none').trim().toLowerCase();
-    const preset = getPortLayoutPresetDefinition(presetName);
-    const requestedCount = Math.max(0, parseInt(options.count || preset.count || 0, 10) || 0);
-
-    let rows = Math.max(0, parseInt(options.layoutRows || preset.rows || 0, 10) || 0);
-    let cols = Math.max(0, parseInt(options.layoutCols || preset.cols || 0, 10) || 0);
-
-    if (rows <= 0 && cols <= 0) {
-        cols = Math.max(1, requestedCount || 1);
-        rows = 1;
-    } else if (rows <= 0 && cols > 0) {
-        rows = Math.max(1, Math.ceil(Math.max(1, requestedCount) / cols));
-    } else if (cols <= 0 && rows > 0) {
-        cols = Math.max(1, Math.ceil(Math.max(1, requestedCount) / rows));
-    }
-
-    if ((rows * cols) < Math.max(1, requestedCount)) {
-        rows = Math.max(rows, Math.ceil(Math.max(1, requestedCount) / Math.max(1, cols)));
-    }
-
-    return {
-        preset: presetName,
-        rows: Math.max(1, rows),
-        cols: Math.max(1, cols),
-        pitchX: Math.max(1, getNumericOrDefault(options.layoutPitchX, preset.pitchX || 18)),
-        pitchY: Math.max(0, getNumericOrDefault(options.layoutPitchY, preset.pitchY || 14)),
-        side: String(options.layoutSide || preset.side || 'front').trim().toLowerCase() === 'rear' ? 'rear' : 'front',
-        anchor: String(options.layoutAnchor || preset.anchor || 'center').trim().toLowerCase() || 'center',
-        mirror: typeof options.layoutMirror === 'boolean' ? options.layoutMirror : isTruthyTemplateValue(options.layoutMirror ?? preset.mirror),
-        labelPattern: String(options.labelPattern || preset.labelPattern || '').trim()
-    };
+    return colors[typeFamily] || colors.other;
 }
 
 function buildPortLabelFromPattern(baseLabel, offset, pattern, layoutContext = {}) {
     const input = String(baseLabel || '').trim();
-    if (!input) {
-        return '';
-    }
-
+    if (!input) return '';
     const normalizedPattern = String(pattern || '').trim();
-    if (!normalizedPattern) {
-        return buildPortLabel(input, offset);
-    }
-
+    if (!normalizedPattern) return buildPortLabel(input, offset);
     const match = input.match(/^(.*?)(\d+)$/);
     const prefix = match ? match[1] : input;
     const startNumber = match ? parseInt(match[2], 10) : 1;
     const nextNumber = startNumber + offset;
-
     return normalizedPattern
         .replace(/\{prefix\}/g, prefix)
         .replace(/\{index\}|\{n\}/g, String(nextNumber))
@@ -723,116 +591,112 @@ function buildPortLabelFromPattern(baseLabel, offset, pattern, layoutContext = {
         .replace(/\{col\}/g, String(layoutContext.col != null ? layoutContext.col + 1 : offset + 1));
 }
 
-function computeAutoPortLayoutPosition(layoutRules, index, totalCount = 0) {
-    const panelWidth = 445;
-    const panelHeight = 44.45;
-    const zOffset = 2;
-    const rules = layoutRules || getPortLayoutRules({ count: totalCount });
-
-    const cols = Math.max(1, parseInt(rules.cols || 1, 10) || 1);
-    const rows = Math.max(1, parseInt(rules.rows || 1, 10) || 1);
-    const safeIndex = Math.max(0, parseInt(index || 0, 10) || 0);
-    const row = Math.floor(safeIndex / cols);
-    const col = safeIndex % cols;
-    const colIndex = rules.mirror ? (cols - 1 - col) : col;
-
-    const contentWidth = (cols - 1) * rules.pitchX;
-    const contentHeight = (rows - 1) * rules.pitchY;
-    const marginX = 12;
-    const marginY = 8;
-    const anchor = String(rules.anchor || 'center').toLowerCase();
-
-    let centerX = panelWidth * 0.5;
-    if (anchor.includes('left')) {
-        centerX = marginX + (contentWidth * 0.5);
-    } else if (anchor.includes('right')) {
-        centerX = panelWidth - marginX - (contentWidth * 0.5);
-    }
-
-    let centerY = panelHeight * 0.5;
-    if (anchor.includes('bottom')) {
-        centerY = marginY + (contentHeight * 0.5);
-    } else if (anchor.includes('top')) {
-        centerY = panelHeight - marginY - (contentHeight * 0.5);
-    }
-
-    const x = centerX + ((colIndex - ((cols - 1) / 2)) * rules.pitchX);
-    const y = centerY + ((row - ((rows - 1) / 2)) * rules.pitchY);
-
+/**
+ * Device preset definitions for common switch/patchpanel configurations.
+ */
+function getDevicePresetDefinitions() {
     return {
-        x: Math.max(marginX, Math.min(panelWidth - marginX, x)),
-        y: Math.max(marginY, Math.min(panelHeight - marginY, y)),
-        z: zOffset,
-        side: rules.side,
-        row,
-        col: colIndex
-    };
-}
-
-function getAutoPortStartLabelDefault(typeFamily) {
-    const normalized = String(typeFamily || '').trim().toLowerCase();
-    const map = {
-        'copper': 'Gi1',
-        'sfp': 'SFP1',
-        'qsfp': 'QSFP1',
-        'power': 'PWR1',
-        'mgmt': 'MGMT1',
-        'console': 'CON1'
-    };
-
-    return map[normalized] || 'Port1';
-}
-
-function getAutoPortTypeTemplate(typeFamily) {
-    const normalized = String(typeFamily || '').trim().toLowerCase();
-    const typeCode = getPortTypeCodeByFamily(normalized);
-
-    const templates = {
-        copper: {
-            typeCode,
-            size: { x: 12, y: 12, z: 10 },
-            position: { x: 20, y: 10, z: 2 },
-            rotation: { x: 0, y: 0, z: 0 }
+        'none': { label: '-- Kein Preset --', groups: [] },
+        'switch-24-l2': {
+            label: 'Switch 24-Port L2 (24x RJ45, 4x SFP+)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 10, count: 24, rows: 2, startLabel: 'GE1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 20, offsetY: 5, gapX: 2, gapY: 2, numbering: 'column-first' },
+                { typeCode: 11, count: 4, rows: 1, startLabel: 'SFP1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 340, offsetY: 14, gapX: 3, gapY: 2, numbering: 'column-first' },
+                { typeCode: 0,  count: 1, rows: 1, startLabel: 'PSU1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 180, offsetY: 6, gapX: 10, gapY: 2, numbering: 'row-first' },
+                { typeCode: 20, count: 1, rows: 1, startLabel: 'MGMT1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 230, offsetY: 15, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 21, count: 1, rows: 1, startLabel: 'CON1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 260, offsetY: 15, gapX: 5, gapY: 2, numbering: 'row-first' }
+            ]
         },
-        sfp: {
-            typeCode,
-            size: { x: 13, y: 8, z: 12 },
-            position: { x: 20, y: 10, z: 2 },
-            rotation: { x: 0, y: 0, z: 0 }
+        'switch-48-l3': {
+            label: 'Switch 48-Port L3 (48x RJ45, 4x SFP+, 2x QSFP)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 10, count: 48, rows: 2, startLabel: 'MultiGE1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 18, offsetY: 3, gapX: 1, gapY: 2, numbering: 'column-first' },
+                { typeCode: 11, count: 4,  rows: 1, startLabel: '25GE1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 370, offsetY: 5, gapX: 3, gapY: 2, numbering: 'column-first' },
+                { typeCode: 12, count: 2,  rows: 1, startLabel: '100GE1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 370, offsetY: 24, gapX: 3, gapY: 2, numbering: 'column-first' },
+                { typeCode: 0,  count: 2,  rows: 1, startLabel: 'PSU1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 140, offsetY: 4, gapX: 10, gapY: 2, numbering: 'row-first' },
+                { typeCode: 20, count: 2,  rows: 1, startLabel: 'MGMT1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 260, offsetY: 15, gapX: 5, gapY: 2, numbering: 'row-first' }
+            ]
         },
-        qsfp: {
-            typeCode,
-            size: { x: 16, y: 9, z: 12 },
-            position: { x: 20, y: 10, z: 2 },
-            rotation: { x: 0, y: 0, z: 0 }
+        'switch-24-poe': {
+            label: 'Switch 24-Port PoE (24x RJ45, 4x SFP+, 2x PSU)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 10, count: 24, rows: 2, startLabel: 'GE1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 20, offsetY: 5, gapX: 2, gapY: 2, numbering: 'column-first' },
+                { typeCode: 11, count: 4,  rows: 1, startLabel: 'SFP1/0/1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 340, offsetY: 14, gapX: 3, gapY: 2, numbering: 'column-first' },
+                { typeCode: 0,  count: 2,  rows: 1, startLabel: 'PSU1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 140, offsetY: 4, gapX: 10, gapY: 2, numbering: 'row-first' },
+                { typeCode: 20, count: 1,  rows: 1, startLabel: 'MGMT1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 260, offsetY: 15, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 21, count: 1,  rows: 1, startLabel: 'CON1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 290, offsetY: 15, gapX: 5, gapY: 2, numbering: 'row-first' }
+            ]
         },
-        power: {
-            typeCode,
-            size: { x: 14, y: 14, z: 14 },
-            position: { x: 20, y: 10, z: 2 },
-            rotation: { x: 0, y: 0, z: 0 }
+        'patchpanel-24': {
+            label: 'Patchpanel 24-Port (24x RJ45)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 10, count: 24, rows: 2, startLabel: 'Port1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 20, offsetY: 5, gapX: 2, gapY: 2, numbering: 'column-first' }
+            ]
         },
-        mgmt: {
-            typeCode,
-            size: { x: 12, y: 12, z: 10 },
-            position: { x: 20, y: 10, z: 2 },
-            rotation: { x: 0, y: 0, z: 0 }
-        },
-        console: {
-            typeCode,
-            size: { x: 12, y: 12, z: 10 },
-            position: { x: 20, y: 10, z: 2 },
-            rotation: { x: 0, y: 0, z: 0 }
+        'patchpanel-48': {
+            label: 'Patchpanel 48-Port (48x RJ45)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 10, count: 48, rows: 2, startLabel: 'Port1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 18, offsetY: 3, gapX: 1, gapY: 2, numbering: 'column-first' }
+            ]
         }
     };
-
-    return templates[normalized] || templates.copper;
 }
 
-function getAutoPortProfileLayout(profile, index, totalCount = 0) {
-    const preset = getDefaultPortLayoutPresetFromProfile(profile);
-    const rules = getPortLayoutRules({ layoutPreset: preset, count: totalCount });
-    return computeAutoPortLayoutPosition(rules, index, totalCount);
+/**
+ * Compute positions for all ports in a single group.
+ * numbering: 'column-first' = top 1 bottom 2 then right; 'row-first' = left to right, top to bottom.
+ */
+function computeGroupPortPositions(group) {
+    const typeSize = getPortTypeSizeMm(group.typeCode);
+    const w = typeSize.w;
+    const h = typeSize.h;
+    const count = Math.max(0, parseInt(group.count || 0, 10));
+    if (count <= 0) return [];
+
+    const rows = Math.max(1, parseInt(group.rows || 1, 10));
+    const cols = Math.ceil(count / rows);
+    const gapX = getNumericOrDefault(group.gapX, 2);
+    const gapY = getNumericOrDefault(group.gapY, 2);
+    const offsetX = getNumericOrDefault(group.offsetX, 0);
+    const offsetY = getNumericOrDefault(group.offsetY, 0);
+    const numbering = (group.numbering || 'column-first').toLowerCase();
+    const startLabel = (group.startLabel || 'Port1').trim();
+    const labelPattern = group.labelPattern || '{prefix}{index}';
+
+    const ports = [];
+    for (let i = 0; i < count; i++) {
+        let row, col;
+        if (numbering === 'column-first') {
+            col = Math.floor(i / rows);
+            row = i % rows;
+        } else {
+            row = Math.floor(i / cols);
+            col = i % cols;
+        }
+        const x = offsetX + col * (w + gapX);
+        const y = offsetY + row * (h + gapY);
+        const label = buildPortLabelFromPattern(startLabel, i, labelPattern, { row, col });
+        ports.push({ x, y, w, h, label, typeCode: group.typeCode, side: group.side || 'front', row, col, groupIndex: 0 });
+    }
+    return ports;
+}
+
+/**
+ * Compute all port positions from a groups config array.
+ */
+function computeAllPortPositions(groups) {
+    const allPorts = [];
+    (groups || []).forEach((group, gi) => {
+        const ports = computeGroupPortPositions(group);
+        ports.forEach(p => { p.groupIndex = gi; });
+        allPorts.push(...ports);
+    });
+    return allPorts;
 }
 
 let currentDeviceCreateMode = 'new';
@@ -1661,6 +1525,10 @@ function applyDeviceTemplateToForms(templateRow) {
         setFieldValue(deviceForm, fieldName, getDeviceTemplateFieldValue(templateRow, fieldName));
     });
 
+    // Port layout config is embedded in the size field (portLayout property)
+    // When size is applied above, the builder will pick it up on re-init
+    setupDevicePortAutomation();
+
     // Saving from template should create a normal device by default.
     setFieldValue(deviceForm, 'template', false);
 }
@@ -2170,336 +2038,397 @@ async function createSuggestedConnection(suggestion, buttonElement) {
     }
 }
 
+/**
+ * Port Layout Builder - Multi-Group visual editor for device ports.
+ * Supports drag & drop of groups, real mm sizing, presets, and column-first numbering.
+ */
 function setupDevicePortAutomation() {
     const form = document.getElementById('device');
-    if (!form) {
-        return;
-    }
+    if (!form) return;
 
     const typeField = form.querySelector('[name="type"]');
     const templateField = form.querySelector('[name="template"]');
-    const portCountField = form.querySelector('[name="port_count"]');
-    const portStartLabelField = form.querySelector('[name="port_start_label"]');
-    const portProfileField = form.querySelector('[name="port_profile"]');
-    const portTypeFamilyField = form.querySelector('[name="port_type_family"]');
-    const portLayoutPresetField = form.querySelector('[name="port_layout_preset"]');
-    const portLayoutRowsField = form.querySelector('[name="port_layout_rows"]');
-    const portLayoutColsField = form.querySelector('[name="port_layout_cols"]');
-    const portLayoutPitchXField = form.querySelector('[name="port_layout_pitch_x"]');
-    const portLayoutPitchYField = form.querySelector('[name="port_layout_pitch_y"]');
-    const portLayoutSideField = form.querySelector('[name="port_layout_side"]');
-    const portLayoutAnchorField = form.querySelector('[name="port_layout_anchor"]');
-    const portLayoutMirrorField = form.querySelector('[name="port_layout_mirror"]');
-    const portLabelPatternField = form.querySelector('[name="port_label_pattern"]');
+    const sizeField = form.querySelector('[name="size"]');
 
-    let previewContainer = null;
+    // Port groups state
+    let portGroups = [];
+    let builderContainer = null;
 
-    const ensurePreviewPanel = () => {
-        if (previewContainer) {
-            return previewContainer;
+    const getDeviceDimensions = () => {
+        let dw = 440, dh = 44;
+        const sizeVal = sizeField ? sizeField.value : '';
+        if (sizeVal) {
+            const parsed = parseJsonObjectOrDefault(sizeVal, {});
+            if (parsed.x) dw = parseFloat(parsed.x) || 440;
+            if (parsed.y) dh = parseFloat(parsed.y) || 44;
         }
+        return { w: dw, h: dh };
+    };
 
-        previewContainer = document.createElement('div');
-        previewContainer.className = 'pb-6';
-        previewContainer.innerHTML = `
-            <div class="rounded-xl border border-slate-300 bg-slate-50 p-3">
-                <div class="mb-1 text-sm font-bold text-slate-800">Port Layout Preview</div>
-                <div class="mb-3 text-xs text-slate-600">Live-Vorschau fuer Auto-Ports auf Basis von Preset und Regelwerten.</div>
-                <div class="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px]">
-                    <div class="rounded-lg border border-slate-300 bg-slate-900 p-3">
-                        <div id="devicePortLayoutPreviewStage" class="relative h-28 overflow-hidden rounded-md border border-slate-700 bg-slate-950"></div>
+    const syncConfigField = () => {
+        if (!sizeField) return;
+        const dim = getDeviceDimensions();
+        const parsed = parseJsonObjectOrDefault(sizeField.value || '{}', {});
+        parsed.portLayout = { deviceWidth: dim.w, deviceHeight: dim.h, groups: portGroups };
+        sizeField.value = JSON.stringify(parsed);
+    };
+
+    const typeOptions = Object.entries(getPortTypeDefinitions()).map(([code, def]) => {
+        return `<option value="${code}">${def.label}</option>`;
+    }).join('');
+
+    const numberingOptions = `<option value="column-first">Column-first (Switch)</option><option value="row-first">Row-first</option>`;
+
+    const sideOptions = `<option value="front">Front</option><option value="rear">Rear</option>`;
+
+    const ensureBuilder = () => {
+        if (builderContainer) return builderContainer;
+
+        // Remove any existing builder from a previous call (e.g. template apply)
+        const existing = document.getElementById('portLayoutBuilder');
+        if (existing) existing.remove();
+
+        builderContainer = document.createElement('div');
+        builderContainer.id = 'portLayoutBuilder';
+        builderContainer.className = 'col-span-2 pb-6';
+        builderContainer.innerHTML = `
+            <div class="rounded-xl border border-slate-300 bg-slate-50 p-4">
+                <div class="mb-1 flex items-center justify-between">
+                    <div>
+                        <div class="text-lg font-bold text-slate-800">Port Layout Builder</div>
+                        <div class="text-xs text-slate-500">Port-Gruppen definieren und visuell anordnen. Maße in mm.</div>
                     </div>
-                    <div id="devicePortLayoutPreviewMeta" class="rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-600"></div>
+                    <div class="flex gap-2">
+                        <select id="plbPresetSelect" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs" title="Preset laden">
+                            ${Object.entries(getDevicePresetDefinitions()).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}
+                        </select>
+                        <button type="button" id="plbApplyPreset" class="h-8 w-8 rounded-full bg-blue-500 hover:bg-blue-700 text-white flex items-center justify-center" title="Preset anwenden"><i data-lucide="download"></i></button>
+                        <button type="button" id="plbAddGroup" class="h-8 w-8 rounded-full bg-green-500 hover:bg-green-700 text-white flex items-center justify-center" title="Gruppe hinzufügen"><i data-lucide="plus"></i></button>
+                    </div>
                 </div>
+                <div id="plbGroupList" class="mt-3 space-y-2"></div>
+                <div class="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div class="rounded-lg border border-slate-300 bg-slate-900 p-3">
+                        <div class="mb-1 text-xs font-semibold text-slate-400">Front</div>
+                        <div id="plbCanvasFront" class="relative overflow-hidden rounded border border-slate-700 bg-slate-950" style="min-height:60px"></div>
+                    </div>
+                    <div class="rounded-lg border border-slate-300 bg-slate-900 p-3">
+                        <div class="mb-1 text-xs font-semibold text-slate-400">Rear</div>
+                        <div id="plbCanvasRear" class="relative overflow-hidden rounded border border-slate-700 bg-slate-950" style="min-height:60px"></div>
+                    </div>
+                </div>
+                <div id="plbStats" class="mt-2 text-xs text-slate-500"></div>
             </div>
         `;
 
-        const anchorField = portLabelPatternField?.closest('.pb-6') || portLayoutMirrorField?.closest('.pb-6') || portLayoutAnchorField?.closest('.pb-6');
-        if (anchorField && anchorField.parentNode) {
-            anchorField.parentNode.insertBefore(previewContainer, anchorField.nextSibling);
+        const sizeFieldWrapper = sizeField ? sizeField.closest('.pb-6') : null;
+        if (sizeFieldWrapper && sizeFieldWrapper.parentNode) {
+            sizeFieldWrapper.parentNode.insertBefore(builderContainer, sizeFieldWrapper.nextSibling);
         } else {
-            form.appendChild(previewContainer);
-        }
-
-        return previewContainer;
-    };
-
-    const renderLayoutPreview = () => {
-        const panel = ensurePreviewPanel();
-        const stage = panel.querySelector('#devicePortLayoutPreviewStage');
-        const meta = panel.querySelector('#devicePortLayoutPreviewMeta');
-        if (!stage || !meta) {
-            return;
-        }
-
-        const profile = portProfileField ? portProfileField.value : '';
-        const typeFamily = portTypeFamilyField ? (portTypeFamilyField.value || 'copper') : 'copper';
-        const explicitCount = parseInt(portCountField?.value || 0, 10) || 0;
-        const resolvedCount = explicitCount > 0
-            ? explicitCount
-            : Math.max(
-                getAutoPortProfileCount(profile),
-                getPortLayoutPresetCount(portLayoutPresetField?.value || getDefaultPortLayoutPresetFromProfile(profile))
-            );
-        const startLabel = (portStartLabelField?.value || getAutoPortStartLabelDefault(typeFamily)).trim();
-        const rules = getPortLayoutRules({
-            count: resolvedCount,
-            layoutPreset: portLayoutPresetField?.value || getDefaultPortLayoutPresetFromProfile(profile),
-            layoutRows: portLayoutRowsField?.value,
-            layoutCols: portLayoutColsField?.value,
-            layoutPitchX: portLayoutPitchXField?.value,
-            layoutPitchY: portLayoutPitchYField?.value,
-            layoutSide: portLayoutSideField?.value,
-            layoutAnchor: portLayoutAnchorField?.value,
-            layoutMirror: !!portLayoutMirrorField?.checked,
-            labelPattern: portLabelPatternField?.value
-        });
-        const portType = getAutoPortTypeTemplate(typeFamily);
-        const typeColor = `#${getPortLayoutPreviewColor(portType.typeCode)}`;
-
-        stage.innerHTML = '';
-
-        if (!resolvedCount || resolvedCount <= 0) {
-            stage.innerHTML = '<div class="flex h-full items-center justify-center text-xs text-slate-500">Keine Auto-Ports konfiguriert.</div>';
-            meta.innerHTML = '<div>Count: 0</div><div>Preset: none</div>';
-            return;
-        }
-
-        const gridLines = document.createElement('div');
-        gridLines.className = 'absolute inset-0 opacity-30';
-        gridLines.style.backgroundImage = 'linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to top, rgba(148,163,184,0.18) 1px, transparent 1px)';
-        gridLines.style.backgroundSize = '8.333% 25%';
-        stage.appendChild(gridLines);
-
-        const maxPreviewPorts = Math.min(resolvedCount, 96);
-        for (let index = 0; index < maxPreviewPorts; index++) {
-            const position = computeAutoPortLayoutPosition(rules, index, resolvedCount);
-            const label = buildPortLabelFromPattern(startLabel, index, rules.labelPattern, position);
-            const portEl = document.createElement('div');
-            portEl.className = 'absolute flex h-3.5 min-w-[12px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[3px] border text-[8px] font-bold';
-            portEl.style.left = `${(position.x / 445) * 100}%`;
-            portEl.style.bottom = `${(position.y / 44.45) * 100}%`;
-            portEl.style.backgroundColor = `${typeColor}22`;
-            portEl.style.borderColor = typeColor;
-            portEl.style.color = typeColor;
-            portEl.title = `${label} | row ${position.row + 1} | col ${position.col + 1} | ${position.side}`;
-            portEl.textContent = resolvedCount <= 24 ? label.replace(startLabel.replace(/\d+$/, ''), '') : String(index + 1);
-            stage.appendChild(portEl);
-        }
-
-        meta.innerHTML = `
-            <div><span class="font-semibold text-slate-700">Count:</span> ${resolvedCount}</div>
-            <div><span class="font-semibold text-slate-700">Preset:</span> ${rules.preset || 'none'}</div>
-            <div><span class="font-semibold text-slate-700">Grid:</span> ${rules.rows} x ${rules.cols}</div>
-            <div><span class="font-semibold text-slate-700">Pitch:</span> ${rules.pitchX} / ${rules.pitchY} mm</div>
-            <div><span class="font-semibold text-slate-700">Side:</span> ${rules.side}</div>
-            <div><span class="font-semibold text-slate-700">Anchor:</span> ${rules.anchor}</div>
-            <div><span class="font-semibold text-slate-700">Mirror:</span> ${rules.mirror ? 'ja' : 'nein'}</div>
-        `;
-    };
-
-    const applyDefaults = () => {
-        const defaults = getDefaultDevicePortConfig(typeField ? typeField.value : '');
-        const profileCount = getAutoPortProfileCount(portProfileField ? portProfileField.value : '');
-        const effectiveDefaultCount = profileCount > 0 ? profileCount : defaults.count;
-        const defaultStartLabel = getAutoPortStartLabelDefault(portTypeFamilyField ? portTypeFamilyField.value : '');
-        const defaultLayoutPreset = getDefaultPortLayoutPresetFromProfile(portProfileField ? portProfileField.value : '');
-        const layoutPreset = portLayoutPresetField ? (portLayoutPresetField.value || defaultLayoutPreset) : defaultLayoutPreset;
-        const layoutPresetDefinition = getPortLayoutPresetDefinition(layoutPreset);
-
-        if (portCountField && (!portCountField.value || portCountField.dataset.autoFilled === 'true')) {
-            portCountField.value = effectiveDefaultCount;
-            portCountField.dataset.autoFilled = 'true';
-        }
-
-        if (portStartLabelField && (!portStartLabelField.value || portStartLabelField.dataset.autoFilled === 'true')) {
-            portStartLabelField.value = defaultStartLabel;
-            portStartLabelField.dataset.autoFilled = 'true';
-        }
-
-        if (portLayoutPresetField && (!portLayoutPresetField.value || portLayoutPresetField.dataset.autoFilled === 'true')) {
-            portLayoutPresetField.value = defaultLayoutPreset;
-            portLayoutPresetField.dataset.autoFilled = 'true';
-        }
-
-        const ruleFields = [
-            [portLayoutRowsField, layoutPresetDefinition.rows],
-            [portLayoutColsField, layoutPresetDefinition.cols],
-            [portLayoutPitchXField, layoutPresetDefinition.pitchX],
-            [portLayoutPitchYField, layoutPresetDefinition.pitchY]
-        ];
-        ruleFields.forEach(([field, value]) => {
-            if (field && value != null && (!field.value || field.dataset.autoFilled === 'true')) {
-                field.value = String(value);
-                field.dataset.autoFilled = 'true';
+            const deviceForm = document.getElementById('device');
+            if (deviceForm) {
+                const grid = deviceForm.querySelector('.grid');
+                if (grid) grid.appendChild(builderContainer);
             }
+        }
+
+        // Events
+        builderContainer.querySelector('#plbApplyPreset').addEventListener('click', applyPreset);
+        builderContainer.querySelector('#plbAddGroup').addEventListener('click', () => {
+            portGroups.push({ typeCode: 10, count: 1, rows: 1, startLabel: 'Port1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 10, offsetY: 10, gapX: 2, gapY: 2, numbering: 'column-first' });
+            renderGroupList();
+            renderCanvas();
         });
 
-        if (portLayoutSideField && (!portLayoutSideField.value || portLayoutSideField.dataset.autoFilled === 'true')) {
-            portLayoutSideField.value = layoutPresetDefinition.side || 'front';
-            portLayoutSideField.dataset.autoFilled = 'true';
-        }
+        if (window.lucide) window.lucide.createIcons({ nodes: [builderContainer] });
 
-        if (portLayoutAnchorField && (!portLayoutAnchorField.value || portLayoutAnchorField.dataset.autoFilled === 'true')) {
-            portLayoutAnchorField.value = layoutPresetDefinition.anchor || 'center';
-            portLayoutAnchorField.dataset.autoFilled = 'true';
-        }
-
-        if (portLayoutMirrorField && (!portLayoutMirrorField.dataset.userChanged || portLayoutMirrorField.dataset.autoFilled === 'true')) {
-            portLayoutMirrorField.checked = !!layoutPresetDefinition.mirror;
-            portLayoutMirrorField.dataset.autoFilled = 'true';
-        }
-
-        if (portLabelPatternField && (!portLabelPatternField.value || portLabelPatternField.dataset.autoFilled === 'true')) {
-            portLabelPatternField.value = layoutPresetDefinition.labelPattern || '{prefix}{index}';
-            portLabelPatternField.dataset.autoFilled = 'true';
-        }
-
+        return builderContainer;
     };
 
+    const applyPreset = () => {
+        const select = builderContainer.querySelector('#plbPresetSelect');
+        const presetKey = select ? select.value : 'none';
+        const presets = getDevicePresetDefinitions();
+        const preset = presets[presetKey];
+        if (!preset || !preset.groups || preset.groups.length === 0) return;
+
+        portGroups = JSON.parse(JSON.stringify(preset.groups));
+
+        if (preset.deviceWidth && preset.deviceHeight && sizeField) {
+            const parsed = parseJsonObjectOrDefault(sizeField.value || '{}', {});
+            parsed.x = preset.deviceWidth;
+            parsed.y = preset.deviceHeight;
+            if (!parsed.z) parsed.z = 300;
+            sizeField.value = JSON.stringify(parsed);
+        }
+
+        renderGroupList();
+        renderCanvas();
+    };
+
+    const renderGroupList = () => {
+        const list = builderContainer.querySelector('#plbGroupList');
+        if (!list) return;
+        list.innerHTML = '';
+
+        portGroups.forEach((group, idx) => {
+            const typeDefs = getPortTypeDefinitions();
+            const typeLabel = (typeDefs[group.typeCode] || {}).label || 'Unknown';
+            const color = getPortLayoutPreviewColor(group.typeCode);
+            const portSize = getPortTypeSizeMm(group.typeCode);
+
+            const row = document.createElement('div');
+            row.className = 'rounded-lg border border-slate-200 bg-white p-3 text-xs';
+            row.setAttribute('data-group-index', idx);
+            row.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-block h-3 w-3 rounded-sm" style="background:${color}"></span>
+                        <span class="font-bold text-slate-700">Gruppe ${idx + 1}: ${typeLabel}</span>
+                        <span class="text-slate-400">(${portSize.w}×${portSize.h} mm)</span>
+                    </div>
+                    <div class="flex gap-1">
+                        ${idx > 0 ? `<button type="button" data-action="move-up" data-idx="${idx}" class="h-6 w-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="Nach oben"><i data-lucide="chevron-up" class="w-3 h-3"></i></button>` : ''}
+                        ${idx < portGroups.length - 1 ? `<button type="button" data-action="move-down" data-idx="${idx}" class="h-6 w-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="Nach unten"><i data-lucide="chevron-down" class="w-3 h-3"></i></button>` : ''}
+                        <button type="button" data-action="remove" data-idx="${idx}" class="h-6 w-6 rounded bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center" title="Entfernen"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                    <label class="block"><span class="text-slate-500">Typ</span>
+                        <select data-field="typeCode" data-idx="${idx}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs">${typeOptions}</select></label>
+                    <label class="block"><span class="text-slate-500">Anzahl</span>
+                        <input type="number" data-field="count" data-idx="${idx}" min="1" max="200" value="${group.count}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Reihen</span>
+                        <input type="number" data-field="rows" data-idx="${idx}" min="1" max="10" value="${group.rows}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Start-Label</span>
+                        <input type="text" data-field="startLabel" data-idx="${idx}" value="${group.startLabel}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Label-Pattern</span>
+                        <input type="text" data-field="labelPattern" data-idx="${idx}" value="${group.labelPattern || '{prefix}{index}'}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Seite</span>
+                        <select data-field="side" data-idx="${idx}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs">${sideOptions}</select></label>
+                    <label class="block"><span class="text-slate-500">Offset X (mm)</span>
+                        <input type="number" data-field="offsetX" data-idx="${idx}" min="0" step="1" value="${group.offsetX}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Offset Y (mm)</span>
+                        <input type="number" data-field="offsetY" data-idx="${idx}" min="0" step="1" value="${group.offsetY}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Gap X (mm)</span>
+                        <input type="number" data-field="gapX" data-idx="${idx}" min="0" step="0.5" value="${group.gapX}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Gap Y (mm)</span>
+                        <input type="number" data-field="gapY" data-idx="${idx}" min="0" step="0.5" value="${group.gapY}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
+                    <label class="block"><span class="text-slate-500">Nummerierung</span>
+                        <select data-field="numbering" data-idx="${idx}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs">${numberingOptions}</select></label>
+                </div>
+            `;
+
+            // Set select values after DOM creation
+            list.appendChild(row);
+            const typeSelect = row.querySelector(`[data-field="typeCode"][data-idx="${idx}"]`);
+            if (typeSelect) typeSelect.value = String(group.typeCode);
+            const sideSelect = row.querySelector(`[data-field="side"][data-idx="${idx}"]`);
+            if (sideSelect) sideSelect.value = group.side || 'front';
+            const numSelect = row.querySelector(`[data-field="numbering"][data-idx="${idx}"]`);
+            if (numSelect) numSelect.value = group.numbering || 'column-first';
+        });
+
+        // Attach events
+        list.querySelectorAll('[data-action="remove"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.idx, 10);
+                portGroups.splice(idx, 1);
+                renderGroupList();
+                renderCanvas();
+            });
+        });
+
+        list.querySelectorAll('[data-action="move-up"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.idx, 10);
+                if (idx > 0) { [portGroups[idx - 1], portGroups[idx]] = [portGroups[idx], portGroups[idx - 1]]; }
+                renderGroupList();
+                renderCanvas();
+            });
+        });
+
+        list.querySelectorAll('[data-action="move-down"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.idx, 10);
+                if (idx < portGroups.length - 1) { [portGroups[idx + 1], portGroups[idx]] = [portGroups[idx], portGroups[idx + 1]]; }
+                renderGroupList();
+                renderCanvas();
+            });
+        });
+
+        list.querySelectorAll('[data-field]').forEach(field => {
+            const handler = () => {
+                const idx = parseInt(field.dataset.idx, 10);
+                const key = field.dataset.field;
+                if (!portGroups[idx]) return;
+                const numFields = ['count', 'rows', 'offsetX', 'offsetY', 'gapX', 'gapY', 'typeCode'];
+                portGroups[idx][key] = numFields.includes(key) ? parseFloat(field.value) || 0 : field.value;
+                renderCanvas();
+                syncConfigField();
+            };
+            field.addEventListener('input', handler);
+            field.addEventListener('change', handler);
+        });
+
+        if (window.lucide) window.lucide.createIcons({ nodes: [list] });
+        syncConfigField();
+    };
+
+    // --- 2D Canvas Rendering ---
+    const renderCanvas = () => {
+        const dim = getDeviceDimensions();
+        const frontCanvas = builderContainer.querySelector('#plbCanvasFront');
+        const rearCanvas = builderContainer.querySelector('#plbCanvasRear');
+        if (!frontCanvas || !rearCanvas) return;
+
+        const allPorts = computeAllPortPositions(portGroups);
+        const frontPorts = allPorts.filter(p => p.side === 'front');
+        const rearPorts = allPorts.filter(p => p.side === 'rear');
+
+        renderSide(frontCanvas, frontPorts, dim, 'front');
+        renderSide(rearCanvas, rearPorts, dim, 'rear');
+
+        // Stats
+        const stats = builderContainer.querySelector('#plbStats');
+        if (stats) {
+            const totalPorts = allPorts.length;
+            const byType = {};
+            allPorts.forEach(p => {
+                const def = getPortTypeDefinitions()[p.typeCode] || {};
+                const l = def.label || 'Unknown';
+                byType[l] = (byType[l] || 0) + 1;
+            });
+            const typeInfo = Object.entries(byType).map(([l, c]) => `${c}× ${l}`).join(', ');
+            stats.textContent = `Gesamt: ${totalPorts} Ports` + (typeInfo ? ` (${typeInfo})` : '') + ` | Gerät: ${dim.w}×${dim.h} mm`;
+        }
+    };
+
+    const renderSide = (container, ports, dim, sideName) => {
+        // Use parent width for scale calculation before clearing content
+        const parentWidth = container.parentElement ? container.parentElement.clientWidth - 24 : 400;
+        container.innerHTML = '';
+        const scale = Math.min(parentWidth / dim.w, 200 / dim.h, 6);
+        const canvasW = dim.w * scale;
+        const canvasH = dim.h * scale;
+        container.style.width = canvasW + 'px';
+        container.style.height = canvasH + 'px';
+        container.style.position = 'relative';
+        const isRear = sideName === 'rear';
+
+        // Device outline
+        const outline = document.createElement('div');
+        outline.className = 'absolute inset-0 rounded-sm border border-slate-600';
+        outline.style.background = 'linear-gradient(180deg, rgba(71,85,105,0.15) 0%, rgba(51,65,85,0.08) 100%)';
+        container.appendChild(outline);
+
+        // Dimension labels
+        const wLabel = document.createElement('div');
+        wLabel.className = 'absolute text-[9px] text-slate-500 select-none';
+        wLabel.style.cssText = `bottom:-14px;left:50%;transform:translateX(-50%)`;
+        wLabel.textContent = `${dim.w} mm`;
+        container.appendChild(wLabel);
+
+        const hLabel = document.createElement('div');
+        hLabel.className = 'absolute text-[9px] text-slate-500 select-none';
+        hLabel.style.cssText = `right:-28px;top:50%;transform:translateY(-50%) rotate(90deg)`;
+        hLabel.textContent = `${dim.h} mm`;
+        container.appendChild(hLabel);
+
+        // Group drag state
+        let dragState = null;
+
+        ports.forEach((port, portIdx) => {
+            const color = getPortLayoutPreviewColor(port.typeCode);
+            const el = document.createElement('div');
+            el.className = 'absolute flex items-center justify-center text-[7px] font-bold leading-none select-none';
+            const drawX = isRear ? (dim.w - port.x - port.w) * scale : port.x * scale;
+            el.style.cssText = `
+                left:${drawX}px; top:${port.y * scale}px;
+                width:${port.w * scale}px; height:${port.h * scale}px;
+                background:${color}33; border:1px solid ${color}; color:${color};
+                border-radius:2px; cursor:grab; box-sizing:border-box;
+            `;
+            el.title = `${port.label} | Gruppe ${port.groupIndex + 1} | ${port.side} | ${port.x.toFixed(1)}, ${port.y.toFixed(1)} mm`;
+
+            // Show short label
+            const labelText = port.label.replace(/^.*?(\d+)$/, '$1') || port.label;
+            if (port.w * scale > 10 && port.h * scale > 8) {
+                el.textContent = labelText.length > 4 ? labelText.slice(-3) : labelText;
+            }
+
+            // Drag & Drop for whole group
+            el.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const gi = port.groupIndex;
+                dragState = { groupIndex: gi, startMouseX: e.clientX, startMouseY: e.clientY, startOffsetX: portGroups[gi].offsetX, startOffsetY: portGroups[gi].offsetY };
+                document.body.style.cursor = 'grabbing';
+            });
+
+            container.appendChild(el);
+        });
+
+        const onMouseMove = (e) => {
+            if (!dragState) return;
+            const dx = (e.clientX - dragState.startMouseX) / scale;
+            const dy = (e.clientY - dragState.startMouseY) / scale;
+            const gi = dragState.groupIndex;
+            if (!portGroups[gi]) return;
+            portGroups[gi].offsetX = Math.max(0, Math.round(dragState.startOffsetX + dx));
+            portGroups[gi].offsetY = Math.max(0, Math.round(dragState.startOffsetY + dy));
+            renderCanvas();
+        };
+
+        const onMouseUp = () => {
+            if (!dragState) return;
+            dragState = null;
+            document.body.style.cursor = '';
+            // Update input fields
+            renderGroupList();
+        };
+
+        container.addEventListener('mousemove', onMouseMove);
+        container.addEventListener('mouseleave', onMouseUp);
+        document.addEventListener('mouseup', onMouseUp);
+    };
+
+    // --- Template sync ---
     const syncTemplatePortRules = () => {
-        const templateChecked = !!(templateField && templateField.checked);
+        // Builder stays visible for templates so the layout can be configured
+    };
 
-        if (portCountField) {
-            if (templateChecked) {
-                portCountField.value = '0';
+    // --- Init ---
+    const initBuilder = () => {
+        ensureBuilder();
+
+        // Load existing config from size field's portLayout property
+        if (sizeField && sizeField.value) {
+            const parsed = parseJsonObjectOrDefault(sizeField.value, {});
+            if (parsed.portLayout && Array.isArray(parsed.portLayout.groups)) {
+                portGroups = parsed.portLayout.groups;
             }
-            portCountField.disabled = templateChecked;
         }
 
-        if (portStartLabelField) {
-            if (templateChecked) {
-                portStartLabelField.value = '';
-            }
-            portStartLabelField.disabled = templateChecked;
-        }
-
-        if (portProfileField) {
-            if (templateChecked) {
-                portProfileField.value = 'none';
-            }
-            portProfileField.disabled = templateChecked;
-        }
-
-        if (portTypeFamilyField) {
-            if (templateChecked) {
-                portTypeFamilyField.value = 'copper';
-            }
-            portTypeFamilyField.disabled = templateChecked;
-        }
-
-        [
-            portLayoutPresetField,
-            portLayoutRowsField,
-            portLayoutColsField,
-            portLayoutPitchXField,
-            portLayoutPitchYField,
-            portLayoutSideField,
-            portLayoutAnchorField,
-            portLayoutMirrorField,
-            portLabelPatternField
-        ].forEach(field => {
-            if (!field) return;
-            if (templateChecked) {
-                if (field.type === 'checkbox') {
-                    field.checked = false;
-                } else {
-                    field.value = field === portLayoutPresetField ? 'none' : '';
-                }
-            }
-            field.disabled = templateChecked;
-        });
+        renderGroupList();
+        renderCanvas();
     };
 
     if (typeField) {
-        typeField.addEventListener('change', applyDefaults);
-        typeField.addEventListener('input', applyDefaults);
+        typeField.addEventListener('change', () => { renderCanvas(); });
     }
 
-    if (portCountField) {
-        portCountField.addEventListener('input', () => {
-            portCountField.dataset.autoFilled = 'false';
-        });
+    if (sizeField) {
+        sizeField.addEventListener('input', () => { renderCanvas(); });
+        sizeField.addEventListener('change', () => { renderCanvas(); });
     }
-
-    if (portStartLabelField) {
-        portStartLabelField.addEventListener('input', () => {
-            portStartLabelField.dataset.autoFilled = 'false';
-        });
-    }
-
-    if (portProfileField) {
-        portProfileField.addEventListener('change', applyDefaults);
-        portProfileField.addEventListener('input', applyDefaults);
-    }
-
-    if (portTypeFamilyField) {
-        portTypeFamilyField.addEventListener('change', applyDefaults);
-        portTypeFamilyField.addEventListener('input', applyDefaults);
-    }
-
-    [
-        portLayoutPresetField,
-        portLayoutRowsField,
-        portLayoutColsField,
-        portLayoutPitchXField,
-        portLayoutPitchYField,
-        portLayoutSideField,
-        portLayoutAnchorField,
-        portLabelPatternField
-    ].forEach(field => {
-        if (!field) return;
-        field.addEventListener('input', () => {
-            field.dataset.autoFilled = 'false';
-            renderLayoutPreview();
-        });
-        field.addEventListener('change', () => {
-            field.dataset.autoFilled = 'false';
-            if (field === portLayoutPresetField) {
-                applyDefaults();
-            }
-            renderLayoutPreview();
-        });
-    });
-
-    if (portLayoutMirrorField) {
-        portLayoutMirrorField.addEventListener('change', () => {
-            portLayoutMirrorField.dataset.autoFilled = 'false';
-            portLayoutMirrorField.dataset.userChanged = 'true';
-            renderLayoutPreview();
-        });
-    }
-
-    [portCountField, portStartLabelField, portProfileField, portTypeFamilyField, typeField].forEach(field => {
-        if (!field) return;
-        field.addEventListener('input', renderLayoutPreview);
-        field.addEventListener('change', renderLayoutPreview);
-    });
 
     if (templateField) {
         templateField.addEventListener('change', syncTemplatePortRules);
         templateField.addEventListener('input', syncTemplatePortRules);
     }
 
-    applyDefaults();
+    initBuilder();
     syncTemplatePortRules();
-    renderLayoutPreview();
-}
-
-function getPortLayoutPreviewColor(typeCode) {
-    const definitions = getPortTypeDefinitions();
-    const typeFamily = definitions[typeCode]?.family || 'other';
-    const colors = {
-        power: 'f59e0b',
-        copper: '60a5fa',
-        sfp: '22d3ee',
-        qsfp: '14b8a6',
-        mgmt: '84cc16',
-        console: 'f97316',
-        other: '94a3b8'
-    };
-
-    return colors[typeFamily] || colors.other;
 }
 
 async function loadExistingSwitchItemGroups() {
@@ -2644,34 +2573,25 @@ function setupItemGroupHelper() {
     fillSelect();
 }
 
-async function createAutoPortsForDevice(deviceUuid, options = {}, onProgress = null) {
-    const count = parseInt(options.count || 0, 10);
-    if (!deviceUuid || !count || count <= 0) {
-        return;
-    }
+async function createAutoPortsForDevice(deviceUuid, groups = [], onProgress = null) {
+    if (!deviceUuid || !Array.isArray(groups) || groups.length === 0) return;
 
-    const startLabel = (options.startLabel || '').trim();
-    if (!startLabel) {
-        return;
-    }
-
-    const metadataStatus = '6';
-    const portTemplate = getAutoPortTypeTemplate(options.typeFamily || 'copper');
-    const layoutRules = getPortLayoutRules({
-        ...options,
-        layoutPreset: options.layoutPreset || getDefaultPortLayoutPresetFromProfile(options.profile || '')
-    });
+    const allPorts = computeAllPortPositions(groups);
+    const total = allPorts.length;
+    if (total === 0) return;
 
     if (typeof onProgress === 'function') {
-        onProgress({ current: 0, total: count, label: 'Auto-Ports werden erstellt ...' });
+        onProgress({ current: 0, total, label: 'Auto-Ports werden erstellt ...' });
     }
 
-    for (let index = 1; index <= count; index++) {
-        const autoPosition = computeAutoPortLayoutPosition(layoutRules, index - 1, count);
-        const label = buildPortLabelFromPattern(startLabel, index - 1, options.labelPattern || layoutRules.labelPattern, autoPosition);
+    for (let i = 0; i < total; i++) {
+        const port = allPorts[i];
+        const portSize = getPortTypeSizeMm(port.typeCode);
+        const depthMm = 2;
+
         const metadataPayload = {
-            status: metadataStatus,
-            caption: label,
+            status: '6',
+            caption: port.label,
             description: '',
             specification: '',
             tags: ''
@@ -2686,7 +2606,7 @@ async function createAutoPortsForDevice(deviceUuid, options = {}, onProgress = n
         const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
 
         if (!metadataUuid) {
-            throw new Error(`Metadata fuer Port ${index} konnte nicht erstellt werden.`);
+            throw new Error(`Metadata für Port ${i + 1} (${port.label}) konnte nicht erstellt werden.`);
         }
 
         const devicePortResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port/', {
@@ -2695,25 +2615,20 @@ async function createAutoPortsForDevice(deviceUuid, options = {}, onProgress = n
             body: JSON.stringify({
                 metadata: metadataUuid,
                 device: deviceUuid,
-                type: portTemplate.typeCode,
-                size: JSON.stringify(portTemplate.size),
-                position: JSON.stringify({
-                    x: autoPosition.x,
-                    y: autoPosition.y,
-                    z: autoPosition.z,
-                    side: autoPosition.side || layoutRules.side || 'front'
-                }),
-                rotation: JSON.stringify(portTemplate.rotation)
+                type: port.typeCode,
+                size: JSON.stringify({ x: portSize.w, y: portSize.h, z: depthMm }),
+                position: JSON.stringify({ x: port.x, y: port.y, z: 0, side: port.side }),
+                rotation: JSON.stringify({ x: 0, y: 0, z: 0 })
             })
         });
         const devicePortResult = await devicePortResponse.json();
 
         if (!devicePortResult || !devicePortResult[0] || !devicePortResult[0].uuid) {
-            throw new Error(`Device-Port fuer Port ${index} konnte nicht erstellt werden.`);
+            throw new Error(`Device-Port für Port ${i + 1} (${port.label}) konnte nicht erstellt werden.`);
         }
 
         if (typeof onProgress === 'function') {
-            onProgress({ current: index, total: count, label: `Port ${index} von ${count} erstellt (${label})` });
+            onProgress({ current: i + 1, total, label: `Port ${i + 1} von ${total} erstellt (${port.label})` });
         }
     }
 }
@@ -2793,6 +2708,13 @@ function generateField(name, config) {
             field = document.createElement('input');
             field.type = 'checkbox';
             break;
+        case 'hidden':
+            wrapper.classList.add('hidden');
+            field = document.createElement('input');
+            field.type = 'hidden';
+            field.name = name;
+            wrapper.appendChild(field);
+            return wrapper;
         case 'searchDropdown':
             const textInput = document.createElement('input');
             textInput.type = 'text';
@@ -3004,38 +2926,11 @@ async function submitForms(table) {
         const postData = buildPostDataFromConfig(form, postConfig);
 
         if (postConfig.table === 'device') {
-            let parsedCount = parseInt(postData.port_count || 0, 10) || 0;
-            let parsedStartLabel = (postData.port_start_label || '').trim();
             const parsedItemGroup = (postData.item_group || '').trim();
-            const parsedPortProfile = (postData.port_profile || '').trim().toLowerCase();
-            const parsedPortTypeFamily = (postData.port_type_family || '').trim().toLowerCase();
-            const parsedPortLayoutPreset = (postData.port_layout_preset || '').trim().toLowerCase();
-            const parsedPortLayoutRows = parseInt(postData.port_layout_rows || 0, 10) || 0;
-            const parsedPortLayoutCols = parseInt(postData.port_layout_cols || 0, 10) || 0;
-            const parsedPortLayoutPitchX = getNumericOrDefault(postData.port_layout_pitch_x, 0);
-            const parsedPortLayoutPitchY = getNumericOrDefault(postData.port_layout_pitch_y, 0);
-            const parsedPortLayoutSide = (postData.port_layout_side || '').trim().toLowerCase();
-            const parsedPortLayoutAnchor = (postData.port_layout_anchor || '').trim().toLowerCase();
-            const parsedPortLayoutMirror = isTruthyTemplateValue(postData.port_layout_mirror);
-            const parsedPortLabelPattern = (postData.port_label_pattern || '').trim();
 
             if (parsedItemGroup && !isValidPostgresUuid(parsedItemGroup)) {
                 submitErrorMessage = 'Item Group muss eine gueltige UUID sein.';
                 break;
-            }
-
-            const profileDefaultCount = getAutoPortProfileCount(parsedPortProfile);
-            if (parsedCount <= 0 && profileDefaultCount > 0) {
-                parsedCount = profileDefaultCount;
-            }
-
-            const presetDefaultCount = getPortLayoutPresetCount(parsedPortLayoutPreset);
-            if (parsedCount <= 0 && presetDefaultCount > 0) {
-                parsedCount = presetDefaultCount;
-            }
-
-            if (parsedCount > 0 && !parsedStartLabel) {
-                parsedStartLabel = getAutoPortStartLabelDefault(parsedPortTypeFamily || 'copper');
             }
 
             postData.item_group = parsedItemGroup || null;
@@ -3046,47 +2941,23 @@ async function submitForms(table) {
 
             const isTemplateDevice = isTruthyTemplateValue(postData.template);
 
-            autoPortConfig = {
-                count: parsedCount,
-                startLabel: parsedStartLabel,
-                profile: parsedPortProfile,
-                typeFamily: parsedPortTypeFamily || 'copper',
-                layoutPreset: parsedPortLayoutPreset || getDefaultPortLayoutPresetFromProfile(parsedPortProfile),
-                layoutRows: parsedPortLayoutRows,
-                layoutCols: parsedPortLayoutCols,
-                layoutPitchX: parsedPortLayoutPitchX,
-                layoutPitchY: parsedPortLayoutPitchY,
-                layoutSide: parsedPortLayoutSide || 'front',
-                layoutAnchor: parsedPortLayoutAnchor || 'center',
-                layoutMirror: parsedPortLayoutMirror,
-                labelPattern: parsedPortLabelPattern
-            };
+            // Parse port layout config from size field's portLayout property
+            let portLayoutConfig = null;
+            const sizeObj = parseJsonObjectOrDefault(postData.size || '{}', {});
+            if (sizeObj && sizeObj.portLayout) {
+                portLayoutConfig = sizeObj.portLayout;
+            }
+
+            if (portLayoutConfig && Array.isArray(portLayoutConfig.groups) && portLayoutConfig.groups.length > 0) {
+                autoPortConfig = { groups: portLayoutConfig.groups };
+            } else {
+                autoPortConfig = { groups: [] };
+            }
 
             if (isTemplateDevice) {
-                autoPortConfig.count = 0;
-                autoPortConfig.startLabel = '';
+                // Templates: save config in size but don't create ports
+                autoPortConfig = { groups: [] };
             }
-
-            // Do not block device creation if automatic port generation is incomplete.
-            // Only run auto-port creation when both values are present.
-            if (autoPortConfig.count > 0 && !autoPortConfig.startLabel) {
-                console.warn('Auto port creation skipped: missing first port label.');
-                autoPortConfig.count = 0;
-            }
-
-            delete postData.port_count;
-            delete postData.port_start_label;
-            delete postData.port_profile;
-            delete postData.port_type_family;
-            delete postData.port_layout_preset;
-            delete postData.port_layout_rows;
-            delete postData.port_layout_cols;
-            delete postData.port_layout_pitch_x;
-            delete postData.port_layout_pitch_y;
-            delete postData.port_layout_side;
-            delete postData.port_layout_anchor;
-            delete postData.port_layout_mirror;
-            delete postData.port_label_pattern;
         }
 
         // UUIDs aus vorherigen POSTs einfügen, falls benötigt
@@ -3156,12 +3027,13 @@ async function submitForms(table) {
             if (postConfig.table === 'device_port_vlan') responseUuids.device_port_vlan = effectiveUuid;
             if (postConfig.table === 'device_port_ip') responseUuids.device_port_ip = effectiveUuid;
 
-            if (!editMode && postConfig.table === 'device' && autoPortConfig && autoPortConfig.count > 0) {
+            if (!editMode && postConfig.table === 'device' && autoPortConfig && autoPortConfig.groups && autoPortConfig.groups.length > 0) {
+                const totalPorts = computeAllPortPositions(autoPortConfig.groups).length;
                 setProgressOverlayState(true);
-                updateProgressOverlay('Auto-Ports werden erstellt ...', 0, autoPortConfig.count);
+                updateProgressOverlay('Auto-Ports werden erstellt ...', 0, totalPorts);
 
-                await createAutoPortsForDevice(effectiveUuid, autoPortConfig, (progress) => {
-                    updateProgressOverlay(progress.label || 'Auto-Ports werden erstellt ...', progress.current || 0, progress.total || autoPortConfig.count);
+                await createAutoPortsForDevice(effectiveUuid, autoPortConfig.groups, (progress) => {
+                    updateProgressOverlay(progress.label || 'Auto-Ports werden erstellt ...', progress.current || 0, progress.total || totalPorts);
                 });
             }
         } catch (error) {
@@ -4390,6 +4262,22 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
             </label>
 
             <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dHoverLabelsOnlyToggle" checked onchange="toggle3DFeature('hoverLabelsOnly', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Beschriftung nur bei Hover</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dRenderAllCablesToggle" checked onchange="toggle3DFeature('renderAllCables', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Alle Kabel rendern</span>
+            </label>
+
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Kabel nur fuer Geraete</span>
+                <select id="viewer3dSelectedDevices" multiple size="6" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onchange="set3DSelectedDevices()"></select>
+                <span class="text-xs text-slate-500">Mehrfachauswahl moeglich. Alternativ im Viewer auf ein Geraet klicken, wenn nicht alle Kabel gerendert werden.</span>
+            </label>
+
+            <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableMetaLabelsToggle" checked onchange="toggle3DFeature('cableMetaLabels', this.checked)" class="h-4 w-4">
                 <span class="text-sm font-semibold text-slate-700">Kabel-Metadaten</span>
             </label>
@@ -4457,17 +4345,60 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
     try {
         // Errechne absoluten Pfad zum Modul
         const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) + '/';
-        const modulePath = baseUrl + 'js/PortflowViewer3D.js';
+        const modulePath = baseUrl + 'js/PortflowViewer3D.js?v=' + Date.now();
         console.log('[3D-VIEW] Importing from:', modulePath);
         
         const module = await import(modulePath);
         const PortflowViewer3D = module.PortflowViewer3D;
+
+        const syncSelectedDevicesUi = (selectedUuids = []) => {
+            const selectEl = document.getElementById('viewer3dSelectedDevices');
+            if (!selectEl) return;
+            const selectedSet = new Set((selectedUuids || []).map(uuid => String(uuid || '')));
+            Array.from(selectEl.options).forEach((option) => {
+                option.selected = selectedSet.has(option.value);
+            });
+        };
+
+        const refreshSelectedDevicesAvailability = () => {
+            const selectEl = document.getElementById('viewer3dSelectedDevices');
+            const renderAllToggle = document.getElementById('viewer3dRenderAllCablesToggle');
+            if (!selectEl || !renderAllToggle) return;
+            selectEl.disabled = renderAllToggle.checked;
+            selectEl.classList.toggle('opacity-60', renderAllToggle.checked);
+        };
+
+        const populateDeviceSelection = (devices = []) => {
+            const selectEl = document.getElementById('viewer3dSelectedDevices');
+            if (!selectEl) return;
+            const selectedSet = new Set(window.current3DViewer?.state?.selectedDeviceUuids || []);
+            const rackNameByUuid = new Map((window.current3DViewer?.state?.liveRacks || []).map((rack) => [String(rack?.uuid || ''), String(rack?.name || '').trim()]));
+            selectEl.innerHTML = '';
+
+            const sortedDevices = [...devices].sort((left, right) => String(left?.name || left?.uuid || '').localeCompare(String(right?.name || right?.uuid || '')));
+            sortedDevices.forEach((device) => {
+                const uuid = String(device?.uuid || '').trim();
+                if (!uuid) return;
+                const deviceName = String(device?.name || '').trim() || `Geraet ${uuid.slice(0, 8)}`;
+                const locationLabel = String(device?.locationName || rackNameByUuid.get(String(device?.location || '').trim()) || '').trim();
+                const option = document.createElement('option');
+                option.value = uuid;
+                option.textContent = locationLabel ? `${deviceName} | ${locationLabel}` : deviceName;
+                option.selected = selectedSet.has(uuid);
+                selectEl.appendChild(option);
+            });
+
+            refreshSelectedDevicesAvailability();
+        };
         
         const viewer = new PortflowViewer3D('#viewer3dContainer', {
             apiUrl: './api/',
             debug: true,
             width: document.getElementById('viewer3dContainer').clientWidth,
             height: document.getElementById('viewer3dContainer').clientHeight || 720,
+            onSelectedDevicesChange: (selectedUuids) => {
+                syncSelectedDevicesUi(selectedUuids || []);
+            },
             onStatus: (msg, isError) => {
                 const statusEl = document.getElementById('viewer3dStatus');
                 if (statusEl) {
@@ -4503,6 +4434,9 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
         } else {
             await viewer.loadRack(locationUuid, rackSeedRow || currentDetailsRowData || null);
         }
+
+        populateDeviceSelection(viewer.state?.liveDevices || []);
+        refreshSelectedDevicesAvailability();
 
         if (viewer && viewer.state && viewer.state.activeRack) {
             const rack = viewer.state.activeRack;
@@ -4589,7 +4523,16 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
 
             if (isRoomMode && window.current3DViewer.state?.currentSceneUuid) {
                 await window.current3DViewer.loadRoom(window.current3DViewer.state.currentSceneUuid);
+                populateDeviceSelection(window.current3DViewer.state?.liveDevices || []);
             }
+        };
+
+        window.set3DSelectedDevices = () => {
+            if (!window.current3DViewer) return;
+            const selectEl = document.getElementById('viewer3dSelectedDevices');
+            if (!selectEl) return;
+            const selectedUuids = Array.from(selectEl.selectedOptions).map((option) => option.value);
+            window.current3DViewer.setSelectedDevices?.(selectedUuids);
         };
         
         window.toggle3DFeature = (feature, enabled) => {
@@ -4630,6 +4573,17 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                     break;
                 case 'cableRearAware':
                     window.current3DViewer.setRearAware?.(enabled);
+                    break;
+                case 'hoverLabelsOnly':
+                    window.current3DViewer.setHoverLabelsOnly?.(enabled);
+                    break;
+                case 'renderAllCables':
+                    window.current3DViewer.setRenderAllCables?.(enabled);
+                    if (!enabled && (window.current3DViewer.state?.selectedDeviceUuids || []).length === 0) {
+                        const allVisibleDevices = (window.current3DViewer.state?.liveDevices || []).map((device) => String(device?.uuid || '').trim()).filter(Boolean);
+                        window.current3DViewer.setSelectedDevices?.(allVisibleDevices);
+                    }
+                    refreshSelectedDevicesAvailability();
                     break;
                 case 'comMarker':
                     window.current3DViewer.setComMarkerVisible?.(enabled);

@@ -348,110 +348,6 @@
                     "label": "Template",
                     "type": "boolean",
                     "required": false
-                },
-                "port_count": {
-                    "label": "Auto Port Count",
-                    "type": "number",
-                    "required": false
-                },
-                "port_start_label": {
-                    "label": "First Port Label",
-                    "type": "text",
-                    "required": false
-                },
-                "port_profile": {
-                    "label": "Auto Port Profile",
-                    "type": "dropdown",
-                    "options": [
-                        { "value": "none", "label": "None" },
-                        { "value": "switch-24", "label": "Switch 24x1" },
-                        { "value": "switch-2x12", "label": "Switch 2x12" },
-                        { "value": "switch-48", "label": "Switch 48x1" },
-                        { "value": "switch-2x24", "label": "Switch 2x24" },
-                        { "value": "psu-dual", "label": "Rear PSU (Dual)" }
-                    ],
-                    "required": false
-                },
-                "port_type_family": {
-                    "label": "Auto Port Type Family",
-                    "type": "dropdown",
-                    "options": [
-                        { "value": "copper", "label": "Copper / RJ45" },
-                        { "value": "sfp", "label": "SFP / SFP+" },
-                        { "value": "qsfp", "label": "QSFP" },
-                        { "value": "power", "label": "Power" },
-                        { "value": "mgmt", "label": "Management" },
-                        { "value": "console", "label": "Console" }
-                    ],
-                    "required": false
-                },
-                "port_layout_preset": {
-                    "label": "Port Layout Preset",
-                    "type": "dropdown",
-                    "options": [
-                        { "value": "none", "label": "None" },
-                        { "value": "front-24", "label": "Front 24x1" },
-                        { "value": "front-2x12", "label": "Front 2x12" },
-                        { "value": "front-48", "label": "Front 48x1" },
-                        { "value": "front-2x24", "label": "Front 2x24" },
-                        { "value": "rear-psu-dual", "label": "Rear PSU Dual" }
-                    ],
-                    "required": false
-                },
-                "port_layout_rows": {
-                    "label": "Port Layout Rows",
-                    "type": "number",
-                    "required": false
-                },
-                "port_layout_cols": {
-                    "label": "Port Layout Cols",
-                    "type": "number",
-                    "required": false
-                },
-                "port_layout_pitch_x": {
-                    "label": "Port Pitch X (mm)",
-                    "type": "number",
-                    "required": false
-                },
-                "port_layout_pitch_y": {
-                    "label": "Port Pitch Y (mm)",
-                    "type": "number",
-                    "required": false
-                },
-                "port_layout_side": {
-                    "label": "Port Side",
-                    "type": "dropdown",
-                    "options": [
-                        { "value": "front", "label": "Front" },
-                        { "value": "rear", "label": "Rear" }
-                    ],
-                    "required": false
-                },
-                "port_layout_anchor": {
-                    "label": "Port Anchor",
-                    "type": "dropdown",
-                    "options": [
-                        { "value": "center", "label": "Center" },
-                        { "value": "top-left", "label": "Top Left" },
-                        { "value": "top-center", "label": "Top Center" },
-                        { "value": "top-right", "label": "Top Right" },
-                        { "value": "middle-left", "label": "Middle Left" },
-                        { "value": "middle-right", "label": "Middle Right" },
-                        { "value": "bottom-left", "label": "Bottom Left" },
-                        { "value": "bottom-center", "label": "Bottom Center" },
-                        { "value": "bottom-right", "label": "Bottom Right" }
-                    ],
-                    "required": false
-                },
-                "port_layout_mirror": {
-                    "label": "Mirror Port Columns",
-                    "type": "boolean",
-                    "required": false
-                },
-                "port_label_pattern": {
-                    "label": "Port Label Pattern",
-                    "type": "text",
-                    "required": false
                 }
             },
             "postOrder": [
@@ -463,7 +359,7 @@
                 {
                     "table": "device",
                     "sectionTitle": "Device",
-                    "fields": ["location", "expected_location", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template", "port_count", "port_start_label", "port_profile", "port_type_family", "port_layout_preset", "port_layout_rows", "port_layout_cols", "port_layout_pitch_x", "port_layout_pitch_y", "port_layout_side", "port_layout_anchor", "port_layout_mirror", "port_label_pattern"],
+                    "fields": ["location", "expected_location", "serial", "asset", "manufacturer", "model", "type", "anc", "position", "rotation", "size", "item_group", "template"],
                     "useMetadataUUID": true
                 }
             ]
