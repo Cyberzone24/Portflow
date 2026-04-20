@@ -311,6 +311,12 @@ class API {
                 return $column['column_name'];
             }, $columns);
             $validColumnSet = array_flip($validColumns);
+            $columnTypeMap = [];
+            foreach ($columns as $column) {
+                if (isset($column['column_name'])) {
+                    $columnTypeMap[$column['column_name']] = $column['data_type'] ?? 'text';
+                }
+            }
 
             // Initialisiere Bedingungsliste
             $conditions = [];
@@ -335,6 +341,57 @@ class API {
             // Überprüfe auf zusätzliche WHERE-Parameter
             foreach ($data as $key => $value) {
                 if (!in_array($key, ['limit', 'page', 'search'])) {
+                    if (preg_match('/^(.*)In$/', $key, $inMatches)) {
+                        $column = $inMatches[1];
+                        if (!isset($validColumnSet[$column])) {
+                            continue;
+                        }
+
+                        $rawValues = array_map('trim', explode(',', (string)$value));
+                        $rawValues = array_values(array_filter($rawValues, static function($entry) {
+                            return $entry !== '';
+                        }));
+
+                        if (empty($rawValues)) {
+                            continue;
+                        }
+
+                        $dataType = $columnTypeMap[$column] ?? 'text';
+                        $isNumericType = in_array($dataType, ['smallint', 'integer', 'bigint', 'real', 'double precision', 'numeric'], true);
+                        $isBooleanType = $dataType === 'boolean';
+
+                        $encodedValues = [];
+                        foreach ($rawValues as $rawValue) {
+                            if ($isNumericType) {
+                                if (!is_numeric($rawValue)) {
+                                    continue;
+                                }
+                                $encodedValues[] = (string)(0 + $rawValue);
+                                continue;
+                            }
+
+                            if ($isBooleanType) {
+                                $normalized = strtolower($rawValue);
+                                if (in_array($normalized, ['1', 'true', 't', 'yes', 'y'], true)) {
+                                    $encodedValues[] = 'TRUE';
+                                } elseif (in_array($normalized, ['0', 'false', 'f', 'no', 'n'], true)) {
+                                    $encodedValues[] = 'FALSE';
+                                }
+                                continue;
+                            }
+
+                            $escaped = str_replace("'", "''", $rawValue);
+                            $encodedValues[] = "'{$escaped}'";
+                        }
+
+                        if (empty($encodedValues)) {
+                            continue;
+                        }
+
+                        $conditions[] = "$column IN (" . implode(', ', $encodedValues) . ")";
+                        continue;
+                    }
+
                     // Überprüfe auf Vergleichsparameter
                     if (preg_match('/^(.*?)(Min|Max)$/', $key, $matches)) {
                         $column = $matches[1];

@@ -171,6 +171,29 @@ Proceed with the next open expansion block (post-Phase-7 cable foundation):
 
 ## 11. Status Log
 
+### 2026-04-19 - Control Expansion (Snap Views + Axis Lock + Cable Presets)
+- ITAM 3D-Control-Panel erweitert:
+  - Neue Kamera-Presets: `Right`, `Top` (zusätzlich zu Front/Rear/Left/Iso).
+  - Neuer Achsen-Lock-Modus: `Frei` oder `Horizontal Orbit`.
+  - Neues Kabel-Preset: `Alle`, `Nur Power`, `Nur Fiber`, `Nur Copper`, `Minimal Fokus`.
+- Viewer-Core erweitert:
+  - `setCameraPreset` unterstützt jetzt `right` und `top`.
+  - `setAxisLock(mode)` setzt Orbit-Einschränkungen dynamisch.
+  - `setCablePreset(preset)` bündelt Kabelfilter in einem UI-tauglichen Preset-Interface.
+- Ziel: schnellere Diagnose/Navigation in der Rack-Ansicht bei konsistentem Bedienmodell.
+
+### 2026-04-19 - Stability + Placement + Mockup-Control Parity Fixes
+- Runtime-Fix: `too much recursion` behoben (ursächlich war ein versehentlicher Selbstaufruf in `setAxisLock`).
+- Placement-Fix: Device-Placement auf Mockup-Semantik umgestellt:
+  - `x` als zentrierter Offset,
+  - `y` als bottom-origin,
+  - `z` als front-origin.
+- Geometrie-Fix: Front/Back-Offets (`z_front`, `z_back`) korrekt auf Innenraumgrenzen gemappt.
+- Visual-Parity:
+  - Rackohren wieder im ITAM-Viewer aktivierbar.
+  - Label-Toggles (Port/Kabel) wieder als Schalter vorhanden.
+  - Zusätzliche Mockup-nahe Schalter integriert (Cable-Meta/Fiber/Copper/Power/Trunk/rear-aware/CoM-Marker).
+
 ### 2026-04-17 - Phase 1 Mockup Implemented
 - `Mockup.html` erstellt/überschrieben mit Rack+Device-Preview.
 - JSON-basierte Testdaten integriert.
@@ -501,18 +524,55 @@ Proceed with the next open expansion block (post-Phase-7 cable foundation):
   - Segmentausgabe zeigt pro Segment: `kg`, `W`, `thermal W`.
   - Segment-Peaks als schnelle Hotspot-Kennzahl ergänzt.
 
-## 12. Open Points (as of 2026-04-18)
+### 2026-04-19 - Phase 5 Debug Presets & Trunk Waypoints
+- **Debug Presets** in `Mockup.html` implementiert:
+  - Vier vordefinierte Ansichten hinzugefügt: `Full`, `Debug Trunks`, `Power Only`, `Minimal`.
+  - Presets setzen alle Filter-, Label-, Overlay-Toggles atomar mit `applyPreset()`.
+  - Ermöglicht schnelles Umschalten zwischen Debugging-Ansichten bei komplexen Room-Layouts.
+- **Trunk Waypoints** jetzt einstellbar:
+  - Neue UI-Eingabefelder im `Trunk Waypoints`-Abschnitt:
+    - `downward floor (mm)`: Höhe des Unterschleif-Trays (default: 6 mm).
+    - `downward clearance (mm)`: Abstand zu Geräten nach unten (default: 260 mm).
+    - `overhead height (mm)`: Höhe über Rack-Oberseite für overhead-Trunks (default: 260 mm).
+  - Änderungen triggern sofortiges Re-Rendering ohne Scene-Cache-Bypass.
+  - Tray-Höhe wird direkt in `createCableRoutingGroup()` genutzt (sowohl Single-Rack als auch Room-Mode).
+
+## 12. Open Points (as of 2026-04-19)
+
+### Program Goal (authoritative)
+- **Portflow soll die komplette Funktionalität aus `Mockup.html` abbilden** (Feature-Parity, nicht nur Teilintegration).
+- Umsetzung erfolgt schrittweise mit priorisiertem Backlog, damit bestehende Workflows stabil bleiben.
 
 ### High Priority
 - Cable Routing QoL:
-  - Presets für schnelle Filter-/Debug-Ansichten fehlen noch.
-  - Trunk-Waypoint/Tray-Parameter sind noch nicht als UI-Regler verfügbar.
+  - ✅ Presets für schnelle Filter-/Debug-Ansichten: **DONE** - Full, Debug Trunks, Power Only, Minimal.
+  - ✅ Trunk-Waypoint/Tray-Parameter als UI-Regler: **DONE** - downward floor, clearance, overhead height.
   - Automatische Kollisionsvermeidung auf Segment-Ebene (Segment-vs-AABB) ist noch nicht implementiert.
+
+### High Priority - Device & Port Modeling UX (new)
+- Device 3D-Maske in Portflow analog zur Location-Maske:
+  - [x] Gefuehrte Eingaben fuer `size`, `position`, `rotation` statt manueller JSON-Pflege.
+  - [x] RU-basierte Eingabe (`startRU`, `heightRU`) inkl. automatischer Umrechnung nach mm.
+  - [x] Live-Writeback in bestehende JSON-Felder (backward-kompatibel).
+- Port-Layout als Hybrid (Preset + Regeln):
+  - [ ] Presets als Schnellstart (24x1, 2x12, 48x1, 2x24, rear PSU etc.).
+  - [ ] Regelbasierte Gruppen-Layout-Engine (rows/cols/pitch/anchor/side/mirror/label pattern).
+  - [ ] Front/Rear-Side pro Port-Gruppe konsistent im Viewer sichtbar.
+- Auto-Port-Funktion erhalten und erweitern:
+  - [x] Bestehende Auto-Port-Erstellung beibehalten.
+  - [x] Erweiterung um Port-Typfamilien: copper/RJ45, SFP/SFP+, QSFP, power-in/out, mgmt/console.
+  - [x] Optionale Typ-spezifische Defaults (size/depth/color/labeling).
 
 ### Medium Priority
 - Engineering Extensions (Phase 5):
   - Thermal/Power-Overlay ist noch rudimentär bzw. nicht vollständig datengetrieben.
   - Port-/Kabel-Metadaten (z. B. Länge, Typ, Speed) als optionale In-Scene-Legend/Tooltip können erweitert werden.
+
+### Medium Priority - Port Authoring UX (new)
+- 2D-Panel-Editor für Gerätefront/-rückseite:
+  - [ ] Port-Gruppen visuell auf Front/Rear platzieren (Grid/Canvas).
+  - [ ] Numerische Feineingabe + Snap/Grid + Preview.
+  - [ ] Speicherung als layoutbasierte Definition, daraus Generierung einzelner `device_port`-Einträge.
 
 ### Medium/Long Term
 - Visual Extensions (Phase 6):
@@ -526,7 +586,181 @@ Proceed with the next open expansion block (post-Phase-7 cable foundation):
   - Walkway-/Pathway-Analyse jenseits rack-rack clearance ist noch offen.
 
 ## 13. Recommended Next Build Step
-Implement "Cable View Presets" in `Mockup.html`:
-- Buttons/Select für: `Debug Trunks`, `Power only`, `Full`, `Minimal Focus`.
-- Presets setzen bestehende Filter- und Label-Toggles atomar.
-- Ergebnis: deutlich schnelleres Debugging/Review bei großen Room-Szenen.
+Strategie fuer die naechste Umsetzungsphase (priorisiert):
+
+1. **Device-3D-Maske + RU-Workflow (Portflow Forms)**
+  - Guided Inputs fuer Device-Geometrie, Position und Rotation.
+  - RU-zu-mm Mapping fuer hoehenbezogene Platzierung im Rack.
+2. **Auto-Port 2.0 (typed)**
+  - Bestehende Auto-Port-Logik erweitern um Typfamilien inkl. SFP/Power.
+  - Presets fuer haeufige Portanordnungen in einem Schritt erzeugen.
+3. **Port-Layout-Engine (Preset + Regeln)**
+  - Gruppenbasierte Regeldefinitionen fuer wiederverwendbare Front/Rear-Layouts.
+4. **2D Front/Rear Editor (Ausbaustufe)**
+  - Visuelle Platzierung als Authoring-UI, JSON/Port-Generierung automatisiert.
+
+Danach optional:
+- Segment-level Collision Avoidance
+- glTF/Real-Assets
+- Hybrid Mode
+
+## 14. Integration Details (2026-04-19)
+
+### Architecture
+- **PortflowViewer3D.js**: Standalone ES6 module in `js/PortflowViewer3D.js`
+- **Mockup.html**: Remains as development/testing tool
+- **itam.php**: Location-Details include 3D tab for type=8 (Rack) **und** type=6 (Room)
+
+### Integration Points
+
+**In itam.php (Location Details):**
+1. Details popup structure extended with tab navigation
+2. New Tab: "3D Ansicht" (appears for type=8 and type=6 locations)
+3. `switchDetailsTab()` function handles tab switching
+4. `initiate3DViewer()` dynamically imports and initializes the viewer
+5. Room mode uses `loadRoom(...)`, rack mode uses `loadRack(...)`
+5. Tab state reset on close to prevent stale viewer instances
+
+### Usage Flow
+1. User opens Location Details for a Rack (type=8) oder Room (type=6)
+2. "3D Ansicht" tab appears automatically
+3. Click tab → 3D Viewer loads rack data oder multi-rack room data
+4. Controls:
+   - Overlay-Metrik selector (Gewicht/Power/Thermal)
+   - Toggle Ports/Cables visibility
+   - Orbit camera controls in 3D view
+
+### File Changes
+- Created: `/js/PortflowViewer3D.js` (ES6 module, ~250 lines)
+- Created: `/includes/3d-viewer-modal.html` (reference template)
+- Modified: `/itam.php` (added tab navigation, viewer initialization)
+
+### Why This Approach
+✅ **Modular**: PortflowViewer3D can be reused in other Portflow pages  
+✅ **Non-intrusive**: No breaking changes to existing ITAM workflow  
+✅ **Lazy-loaded**: 3D module only imported when 3D tab is clicked  
+✅ **Responsive**: Works on desktop; collapse on mobile  
+✅ **Maintainable**: UI logic separated from 3D viewer logic
+
+## 15. Mockup Parity Audit & Implementation Todo (2026-04-19)
+
+### Current State Comment
+- Rack-Viewer is integrated in ITAM and functional, but visual/UX parity with the mockup is incomplete.
+- Main gaps observed in current integration:
+  - Editing masks did not always reflect persisted rack values reliably.
+  - Rack appeared as a simplified outer shell without strong inner-volume readback.
+  - Viewer viewport was too small compared to mockup layout.
+  - Camera UX lacked explicit middle-mouse pan behavior.
+  - Performance felt degraded due to repeated redraw pressure and suboptimal viewport sizing.
+
+### ToDo List to Reach Mockup Feature Parity
+- Data fidelity & form mapping:
+  - [ ] Ensure edit mode always preloads persisted JSON (`position`, `rotation`, `size`) regardless of source shape.
+  - [ ] Keep backward compatibility for older `between` key naming (`y_front/y_back/z_bottom/z_top`).
+  - [ ] Keep rack limits editable in form and available to overlay logic.
+- Rack geometry fidelity:
+  - [ ] Render both outer and inner rack boundaries from saved dimensions.
+  - [ ] Respect offsets from `between` consistently for device placement.
+  - [ ] Improve material contrast on dark background (grey/translucent defaults).
+  - [ ] Provide interactive open/close states for doors and side panels.
+- Viewer UX/layout parity:
+  - [ ] Move controls to left sidebar and maximize viewer height.
+  - [ ] Add explicit camera control hints and middle-mouse pan mapping.
+  - [ ] Keep responsive behavior for smaller screens.
+- Performance hardening:
+  - [ ] Avoid unnecessary full rerenders when possible.
+  - [ ] Improve resize handling (observer-based renderer/camera resize sync).
+  - [ ] Keep render cache signature aligned with all geometry-affecting toggles.
+- Remaining open points (next execution queue):
+  - [~] Room chunking controls from mockup as real ITAM controls (chunk sizing / target chunks / concurrency now in ITAM; nearby count, render limits, min clearance still open).
+  - [~] Port layout engine with reusable rules (rows/cols/pitch/anchor/side/mirror/label patterns) plus presets. Device form + auto-port rule engine now implemented; visual editor and richer presets still open.
+  - [~] Visual 2D front/rear port editor for authoring with snap/grid and numeric fine-tuning. Live 2D preview is now available in the device form; direct drag/drop editing is still open.
+  - [ ] Segment-based cable collision avoidance (segment-vs-obstacle) to reduce visual overlap in dense rooms.
+  - [ ] Optional real assets mode (glTF/component models) and hybrid rendering (parametric + asset).
+
+### 2026-04-20 - Bugfix: Empty Details Popup Overlay
+- ITAM fix in `itam.php`:
+  - Added robust guard in `openDetailsPopup(...)` for empty/invalid row payloads.
+  - Forced deterministic tab reset to `info` on popup open to avoid stale hidden-content states.
+  - Cleared stale 3D panel content when opening/closing details popup.
+  - Explicitly hide tab navigation/3D button on close to prevent ghost UI state.
+  - Added `#detailsPopup.hidden { display: none; }` CSS fallback to guarantee hidden behavior.
+
+### 2026-04-20 - Viewer Height + Cable Rendering
+- ITAM 3D panel updated:
+  - Redundant headline above the viewer removed.
+  - Viewer layout corrected so the canvas fills the available content-box height on desktop.
+  - Room expert controls for fetch tuning added (`chunk size`, `target chunks`, `max concurrency`) and trigger room reload.
+- `PortflowViewer3D.js` updated:
+  - Real cable geometry is now rendered from normalized connection data.
+  - Connections now fall back to `expected_device_port_source` / `expected_device_port_destination` when direct endpoints are empty.
+  - Cable routing works across neighboring racks using computed port anchors and visible tube geometry.
+
+### 2026-04-20 - Port Layout Engine (Rule-Based Auto Ports)
+- Device form extended with layout controls:
+  - `port_layout_preset`, `rows`, `cols`, `pitch_x`, `pitch_y`, `side`, `anchor`, `mirror`, `label_pattern`.
+- Auto-port generation now uses a reusable ruleset instead of profile-only placement.
+- Layout side is persisted schema-compatible inside the port `position` JSON and read back by the 3D viewer.
+- Existing `port_profile` flow remains compatible and maps to default layout presets automatically.
+- Device form now also includes a live 2D port-layout preview so front/rear distribution and mirroring are visible before saving.
+
+### Implementation Progress (started)
+- [x] Form extended with `position` in `location_details` flow (`forms.json`).
+- [x] Location Room/Rack masks extended with position + rack limits and JSON writeback.
+- [x] Viewer layout changed to mockup-like split: left controls, large right viewport.
+- [x] Orbit controls now include middle-mouse panning.
+- [x] Rack renderer now draws inner frame boundary and improved material contrast.
+- [x] Viewer resize observer added to keep canvas/camera synced to container size.
+- [x] Legacy `between` key compatibility added in rack normalization.
+
+### Next Steps
+- Finalize geometry readback validation against a real saved rack dataset (inner/outer/between exactness).
+- Add optional perspective presets (front/rear/isometric) and camera-reset utility.
+- Continue reducing redraw overhead for large device counts.
+
+### 2026-04-19 - Strategy Sync (Mockup -> Portflow Full Parity)
+- Zielbild festgelegt: Portflow soll den kompletten Mockup-Funktionsumfang erhalten.
+- Umsetzungsstrategie in priorisierten ToDo-Block ueberfuehrt:
+  1) Device-3D-Maske mit RU-Eingabe,
+  2) Auto-Port-Erweiterung fuer SFP/Power/typed ports,
+  3) Port-Layout-Hybrid aus Presets + Regel-Engine,
+  4) optionaler 2D Front/Rear Port-Editor als Authoring-Stufe.
+- Bestehende Auto-Port-Funktion bleibt explizit erhalten und wird kompatibel erweitert.
+
+### 2026-04-19 - Phase 1 Started (Device 3D Mask)
+- In `itam.php` wurde fuer `device_details` eine Device-3D-Maske aktiviert.
+- JSON-Textfelder `size`, `position`, `rotation` werden im Formular ausgeblendet und durch gefuehrte Eingaben ersetzt.
+- RU-Workflow implementiert: `startRU` + `heightRU` werden automatisch in mm nach `position.y` und `size.y` umgerechnet.
+- Bestehende Datensaetze (Edit Mode, Templates) werden rueckwaertskompatibel aus vorhandenen JSON-Werten in die Maske eingelesen.
+
+### 2026-04-19 - Phase 2 Started (Auto-Port typed scaffolding)
+- In `forms.json` wurden additive Felder fuer Auto-Port-Profile und Port-Typfamilien eingefuehrt.
+- In `itam.php` nutzt der Auto-Port-Flow nun Profile (`switch-24`, `switch-48`, `switch-2x12`, `switch-2x24`, `psu-dual`) als Count-Defaults.
+- Typfamilien (`copper`, `sfp`, `qsfp`, `power`, `mgmt`, `console`) setzen initiale `device_port`-Defaults (`type`, `size`, `position`, `rotation`) bei der automatischen Port-Erzeugung.
+- Backward-Kompatibilitaet bleibt erhalten: bestehende Felder `port_count`/`port_start_label` funktionieren weiterhin.
+
+### 2026-04-19 - Continued Implementation (Mockup Parity Workstream)
+- Form prefill reliability improved:
+  - Object-valued fields are now serialized to JSON before being written into form inputs.
+  - Prevents `[object Object]` regressions when loading existing rack/location data.
+- Viewer UX upgraded:
+  - Left control sidebar now includes camera preset buttons (`Front`, `Rear`, `Left`, `Iso`).
+  - Middle mouse panning is explicitly mapped in OrbitControls.
+  - Large viewer viewport retained (`72vh`, min-height guard).
+- Rack rendering fidelity improved:
+  - Added clearer frame representation with corner posts and top/bottom rails.
+  - Inner rack frame remains visible for dimension readback and placement context.
+- Performance/robustness updates:
+  - API debug logging is now gated behind `options.debug`.
+  - ResizeObserver keeps renderer and camera in sync with container size changes.
+
+### 2026-04-19 - DB Data Source Fix for Rack Viewer
+- Root cause identified for wrong rack dimensions in 3D view:
+  - Viewer used `where=uuid=...` style query strings that were not reliably interpreted by API filtering.
+  - Result: potentially unfiltered/first-row rack data used in rendering.
+- Fix in `js/PortflowViewer3D.js`:
+  - Rack load now uses explicit UUID parameter: `location?uuid=<rackUuid>`.
+  - Device load now uses explicit column filter: `device?location=<rackUuid>`.
+  - `_toRowsArray` now also accepts single-object API responses as one-row arrays.
+- Expected outcome:
+  - 3D viewer uses the exact selected rack dataset (including `location_size` geometry) instead of fallback/foreign rows.

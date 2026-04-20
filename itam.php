@@ -55,6 +55,44 @@
             align-items: start;
         }
     }
+
+    #detailsPopup:not(.hidden) {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    #detailsPopup.hidden {
+        display: none;
+    }
+
+    #detailsPopupHeader {
+        flex: 0 0 auto;
+    }
+
+    #detailsContent,
+    #detailsContent3d {
+        min-height: 0;
+        overflow-y: auto;
+    }
+        #detailsContent3d {
+            width: 100%;
+        }
+        #detailsContent3d > .viewer3d-layout {
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+        }
+
+    .viewer-expert-menu summary {
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+    }
+
+    .viewer-expert-menu summary::-webkit-details-marker {
+        display: none;
+    }
 </style>
 <div class="itam-shell mx-4 mb-4 mt-0 grid min-h-0 grid-cols-1 gap-4" id="itamShell">
     <aside class="itam-sidebar relative hidden min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white p-4 lg:flex lg:flex-col" id="itamSidebar">  
@@ -131,14 +169,44 @@
         </div>
         
         <!-- Details Popup -->
-        <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden overflow-y-auto">
-            <div class="flex justify-between pb-6">
-                <div class="text-xl font-bold">Details</div>
-                <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
-                    <button type="button" onclick="closeDetailsPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
+        <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full rounded-lg bg-white p-4 z-2 hidden">
+            <div class="absolute right-4 top-4 z-20 h-10 w-10 rounded-full bg-red-500 shadow-md hover:bg-red-700 flex justify-center">
+                <button type="button" onclick="closeDetailsPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
+            </div>
+
+            <div id="detailsPopupHeader" class="mb-3 pr-14">
+                <div class="flex items-center justify-between pb-2">
+                    <div class="text-xl font-bold">Details</div>
+                </div>
+                <!-- Tab Navigation für Location/Rack Details -->
+                <!-- Tab Navigation für Location/Rack Details -->
+                <div id="detailsTabNav" class="flex gap-2 border-b border-slate-200 mt-2" style="display: none;">
+                    <button 
+                        type="button"
+                        data-tab="info"
+                        class="details-tab active px-3 py-2 text-sm font-semibold text-slate-600 border-b-2 border-blue-600 transition"
+                        onclick="switchDetailsTab('info')"
+                    >
+                        <i data-lucide="info" class="inline mr-1 h-4 w-4"></i>Informationen
+                    </button>
+                    <button 
+                        type="button"
+                        data-tab="3d"
+                        id="detailsTab3dBtn"
+                        class="details-tab px-3 py-2 text-sm font-semibold text-slate-600 border-b-2 border-transparent transition hover:border-slate-300"
+                        onclick="switchDetailsTab('3d')"
+                        style="display: none;"
+                    >
+                        <i data-lucide="cube" class="inline mr-1 h-4 w-4"></i>3D Ansicht
+                    </button>
                 </div>
             </div>
-            <div id="detailsContent" class="space-y-2"></div>
+            
+            <!-- Tab Content: Info (Standard) -->
+            <div id="detailsContent" class="space-y-2 details-tab-content flex-1" data-tab="info" style="display: block;"></div>
+            
+            <!-- Tab Content: 3D View (wird per Include eingefügt) -->
+            <div id="detailsContent3d" class="space-y-2 details-tab-content flex-1" data-tab="3d" style="display: none;"></div>
         </div>
 
         <!-- New Location -->
@@ -421,10 +489,15 @@ async function generateFormFromJSON(table = 'location_details', options = {}) {
             }
             setupDevicePortAutomation();
             setupItemGroupHelper();
+            setupDevice3DMasks(container);
         }
 
         if (table === 'connection_details') {
             setupConnectionSuggestions(container, generatedForms);
+        }
+
+        if (table === 'location_details') {
+            setupLocationTypeMasks(container);
         }
 
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -451,6 +524,315 @@ function getDefaultDevicePortConfig(deviceType) {
     }
 
     return { count: 0 };
+}
+
+function getPortTypeDefinitions() {
+    return {
+        0: { key: 'power_c14', label: 'C14 (Power)', family: 'power' },
+        1: { key: 'power_c20', label: 'C20 (Power)', family: 'power' },
+        10: { key: 'rj45', label: 'RJ45', family: 'copper' },
+        11: { key: 'sfp', label: 'SFP / SFP+', family: 'sfp' },
+        12: { key: 'qsfp', label: 'QSFP', family: 'qsfp' },
+        13: { key: 'mpo', label: 'MPO', family: 'fiber' },
+        20: { key: 'mgmt_rj45', label: 'Management (RJ45)', family: 'mgmt' },
+        21: { key: 'console_rj45', label: 'Console (RJ45)', family: 'console' },
+        30: { key: 'fiber_lc', label: 'Fiber LC', family: 'fiber' },
+        31: { key: 'fiber_sc', label: 'Fiber SC', family: 'fiber' },
+        40: { key: 'coax_bnc', label: 'Coax BNC', family: 'coax' },
+        99: { key: 'other', label: 'Other', family: 'other' }
+    };
+}
+
+function getPortTypeCodeByFamily(typeFamily) {
+    const normalized = String(typeFamily || '').trim().toLowerCase();
+    const map = {
+        'copper': 10,
+        'sfp': 11,
+        'qsfp': 12,
+        'power': 0,
+        'mgmt': 20,
+        'console': 21
+    };
+
+    return map[normalized] ?? 10;
+}
+
+function getAutoPortProfileCount(profile) {
+    const normalized = String(profile || '').trim().toLowerCase();
+    const map = {
+        'none': 0,
+        'switch-24': 24,
+        'switch-48': 48,
+        'switch-2x12': 24,
+        'switch-2x24': 48,
+        'psu-dual': 2
+    };
+
+    return map[normalized] || 0;
+}
+
+function getDefaultPortLayoutPresetFromProfile(profile) {
+    const normalized = String(profile || '').trim().toLowerCase();
+    const map = {
+        'switch-24': 'front-24',
+        'switch-48': 'front-48',
+        'switch-2x12': 'front-2x12',
+        'switch-2x24': 'front-2x24',
+        'psu-dual': 'rear-psu-dual'
+    };
+
+    return map[normalized] || 'none';
+}
+
+function getPortLayoutPresetDefinitions() {
+    return {
+        'none': {
+            rows: null,
+            cols: null,
+            pitchX: null,
+            pitchY: null,
+            side: 'front',
+            anchor: 'center',
+            mirror: false,
+            count: 0,
+            labelPattern: ''
+        },
+        'front-24': {
+            rows: 1,
+            cols: 24,
+            pitchX: 18,
+            pitchY: 14,
+            side: 'front',
+            anchor: 'center',
+            mirror: false,
+            count: 24,
+            labelPattern: '{prefix}{index}'
+        },
+        'front-2x12': {
+            rows: 2,
+            cols: 12,
+            pitchX: 34,
+            pitchY: 14,
+            side: 'front',
+            anchor: 'center',
+            mirror: false,
+            count: 24,
+            labelPattern: '{prefix}{index}'
+        },
+        'front-48': {
+            rows: 1,
+            cols: 48,
+            pitchX: 8.8,
+            pitchY: 14,
+            side: 'front',
+            anchor: 'center',
+            mirror: false,
+            count: 48,
+            labelPattern: '{prefix}{index}'
+        },
+        'front-2x24': {
+            rows: 2,
+            cols: 24,
+            pitchX: 18,
+            pitchY: 14,
+            side: 'front',
+            anchor: 'center',
+            mirror: false,
+            count: 48,
+            labelPattern: '{prefix}{index}'
+        },
+        'rear-psu-dual': {
+            rows: 1,
+            cols: 2,
+            pitchX: 150,
+            pitchY: 0,
+            side: 'rear',
+            anchor: 'center',
+            mirror: false,
+            count: 2,
+            labelPattern: '{prefix}{index}'
+        }
+    };
+}
+
+function getPortLayoutPresetDefinition(preset) {
+    const definitions = getPortLayoutPresetDefinitions();
+    const normalized = String(preset || 'none').trim().toLowerCase();
+    return definitions[normalized] || definitions.none;
+}
+
+function getPortLayoutPresetCount(preset) {
+    return getNumericOrDefault(getPortLayoutPresetDefinition(preset).count, 0);
+}
+
+function getPortLayoutRules(options = {}) {
+    const presetName = String(options.layoutPreset || options.preset || 'none').trim().toLowerCase();
+    const preset = getPortLayoutPresetDefinition(presetName);
+    const requestedCount = Math.max(0, parseInt(options.count || preset.count || 0, 10) || 0);
+
+    let rows = Math.max(0, parseInt(options.layoutRows || preset.rows || 0, 10) || 0);
+    let cols = Math.max(0, parseInt(options.layoutCols || preset.cols || 0, 10) || 0);
+
+    if (rows <= 0 && cols <= 0) {
+        cols = Math.max(1, requestedCount || 1);
+        rows = 1;
+    } else if (rows <= 0 && cols > 0) {
+        rows = Math.max(1, Math.ceil(Math.max(1, requestedCount) / cols));
+    } else if (cols <= 0 && rows > 0) {
+        cols = Math.max(1, Math.ceil(Math.max(1, requestedCount) / rows));
+    }
+
+    if ((rows * cols) < Math.max(1, requestedCount)) {
+        rows = Math.max(rows, Math.ceil(Math.max(1, requestedCount) / Math.max(1, cols)));
+    }
+
+    return {
+        preset: presetName,
+        rows: Math.max(1, rows),
+        cols: Math.max(1, cols),
+        pitchX: Math.max(1, getNumericOrDefault(options.layoutPitchX, preset.pitchX || 18)),
+        pitchY: Math.max(0, getNumericOrDefault(options.layoutPitchY, preset.pitchY || 14)),
+        side: String(options.layoutSide || preset.side || 'front').trim().toLowerCase() === 'rear' ? 'rear' : 'front',
+        anchor: String(options.layoutAnchor || preset.anchor || 'center').trim().toLowerCase() || 'center',
+        mirror: typeof options.layoutMirror === 'boolean' ? options.layoutMirror : isTruthyTemplateValue(options.layoutMirror ?? preset.mirror),
+        labelPattern: String(options.labelPattern || preset.labelPattern || '').trim()
+    };
+}
+
+function buildPortLabelFromPattern(baseLabel, offset, pattern, layoutContext = {}) {
+    const input = String(baseLabel || '').trim();
+    if (!input) {
+        return '';
+    }
+
+    const normalizedPattern = String(pattern || '').trim();
+    if (!normalizedPattern) {
+        return buildPortLabel(input, offset);
+    }
+
+    const match = input.match(/^(.*?)(\d+)$/);
+    const prefix = match ? match[1] : input;
+    const startNumber = match ? parseInt(match[2], 10) : 1;
+    const nextNumber = startNumber + offset;
+
+    return normalizedPattern
+        .replace(/\{prefix\}/g, prefix)
+        .replace(/\{index\}|\{n\}/g, String(nextNumber))
+        .replace(/\{offset\}/g, String(offset + 1))
+        .replace(/\{row\}/g, String(layoutContext.row != null ? layoutContext.row + 1 : 1))
+        .replace(/\{col\}/g, String(layoutContext.col != null ? layoutContext.col + 1 : offset + 1));
+}
+
+function computeAutoPortLayoutPosition(layoutRules, index, totalCount = 0) {
+    const panelWidth = 445;
+    const panelHeight = 44.45;
+    const zOffset = 2;
+    const rules = layoutRules || getPortLayoutRules({ count: totalCount });
+
+    const cols = Math.max(1, parseInt(rules.cols || 1, 10) || 1);
+    const rows = Math.max(1, parseInt(rules.rows || 1, 10) || 1);
+    const safeIndex = Math.max(0, parseInt(index || 0, 10) || 0);
+    const row = Math.floor(safeIndex / cols);
+    const col = safeIndex % cols;
+    const colIndex = rules.mirror ? (cols - 1 - col) : col;
+
+    const contentWidth = (cols - 1) * rules.pitchX;
+    const contentHeight = (rows - 1) * rules.pitchY;
+    const marginX = 12;
+    const marginY = 8;
+    const anchor = String(rules.anchor || 'center').toLowerCase();
+
+    let centerX = panelWidth * 0.5;
+    if (anchor.includes('left')) {
+        centerX = marginX + (contentWidth * 0.5);
+    } else if (anchor.includes('right')) {
+        centerX = panelWidth - marginX - (contentWidth * 0.5);
+    }
+
+    let centerY = panelHeight * 0.5;
+    if (anchor.includes('bottom')) {
+        centerY = marginY + (contentHeight * 0.5);
+    } else if (anchor.includes('top')) {
+        centerY = panelHeight - marginY - (contentHeight * 0.5);
+    }
+
+    const x = centerX + ((colIndex - ((cols - 1) / 2)) * rules.pitchX);
+    const y = centerY + ((row - ((rows - 1) / 2)) * rules.pitchY);
+
+    return {
+        x: Math.max(marginX, Math.min(panelWidth - marginX, x)),
+        y: Math.max(marginY, Math.min(panelHeight - marginY, y)),
+        z: zOffset,
+        side: rules.side,
+        row,
+        col: colIndex
+    };
+}
+
+function getAutoPortStartLabelDefault(typeFamily) {
+    const normalized = String(typeFamily || '').trim().toLowerCase();
+    const map = {
+        'copper': 'Gi1',
+        'sfp': 'SFP1',
+        'qsfp': 'QSFP1',
+        'power': 'PWR1',
+        'mgmt': 'MGMT1',
+        'console': 'CON1'
+    };
+
+    return map[normalized] || 'Port1';
+}
+
+function getAutoPortTypeTemplate(typeFamily) {
+    const normalized = String(typeFamily || '').trim().toLowerCase();
+    const typeCode = getPortTypeCodeByFamily(normalized);
+
+    const templates = {
+        copper: {
+            typeCode,
+            size: { x: 12, y: 12, z: 10 },
+            position: { x: 20, y: 10, z: 2 },
+            rotation: { x: 0, y: 0, z: 0 }
+        },
+        sfp: {
+            typeCode,
+            size: { x: 13, y: 8, z: 12 },
+            position: { x: 20, y: 10, z: 2 },
+            rotation: { x: 0, y: 0, z: 0 }
+        },
+        qsfp: {
+            typeCode,
+            size: { x: 16, y: 9, z: 12 },
+            position: { x: 20, y: 10, z: 2 },
+            rotation: { x: 0, y: 0, z: 0 }
+        },
+        power: {
+            typeCode,
+            size: { x: 14, y: 14, z: 14 },
+            position: { x: 20, y: 10, z: 2 },
+            rotation: { x: 0, y: 0, z: 0 }
+        },
+        mgmt: {
+            typeCode,
+            size: { x: 12, y: 12, z: 10 },
+            position: { x: 20, y: 10, z: 2 },
+            rotation: { x: 0, y: 0, z: 0 }
+        },
+        console: {
+            typeCode,
+            size: { x: 12, y: 12, z: 10 },
+            position: { x: 20, y: 10, z: 2 },
+            rotation: { x: 0, y: 0, z: 0 }
+        }
+    };
+
+    return templates[normalized] || templates.copper;
+}
+
+function getAutoPortProfileLayout(profile, index, totalCount = 0) {
+    const preset = getDefaultPortLayoutPresetFromProfile(profile);
+    const rules = getPortLayoutRules({ layoutPreset: preset, count: totalCount });
+    return computeAutoPortLayoutPosition(rules, index, totalCount);
 }
 
 let currentDeviceCreateMode = 'new';
@@ -642,11 +1024,620 @@ function setFieldValue(form, fieldName, value, options = {}) {
     if (field.type === 'checkbox') {
         field.checked = isTruthyTemplateValue(value);
     } else {
-        field.value = value == null ? '' : String(value);
+        if (value == null) {
+            field.value = '';
+        } else if (typeof value === 'object') {
+            field.value = JSON.stringify(value);
+        } else {
+            field.value = String(value);
+        }
     }
 
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function parseJsonObjectOrDefault(rawValue, fallback = {}) {
+    if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+        return { ...fallback, ...rawValue };
+    }
+
+    if (!rawValue || typeof rawValue !== 'string') {
+        return { ...fallback };
+    }
+
+    const attempts = [];
+    const source = String(rawValue || '').trim();
+    attempts.push(source);
+
+    const htmlDecoded = source
+        .replace(/&quot;/g, '"')
+        .replace(/&#34;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+    if (htmlDecoded !== source) {
+        attempts.push(htmlDecoded);
+    }
+
+    // DB/legacy tolerant parsing:
+    // 1) single quotes -> double quotes
+    // 2) quote bare object keys: {x:1} => {"x":1}
+    // 3) remove trailing commas
+    // 4) convert => to : (legacy map style)
+    const normalized = htmlDecoded
+        .replace(/=>/g, ':')
+        .replace(/'/g, '"')
+        .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3')
+        .replace(/,\s*([}\]])/g, '$1');
+    if (normalized !== htmlDecoded) {
+        attempts.push(normalized);
+    }
+
+    for (const candidate of attempts) {
+        try {
+            const parsed = JSON.parse(candidate);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return { ...fallback, ...parsed };
+            }
+        } catch (error) {
+            // try next candidate
+        }
+    }
+
+    console.warn('JSON parse failed, fallback used:', { rawValue });
+
+    return { ...fallback };
+}
+
+function getNumericOrDefault(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function createMaskNumberInput(id, labelText, defaultValue = 0, step = '1') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'grid gap-1';
+
+    const label = document.createElement('label');
+    label.className = 'text-xs font-semibold text-slate-600';
+    label.setAttribute('for', id);
+    label.textContent = labelText;
+
+    const input = document.createElement('input');
+    input.id = id;
+    input.type = 'number';
+    input.step = step;
+    input.value = String(defaultValue);
+    input.className = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm';
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(input);
+    return { wrapper, input };
+}
+
+function createMaskGroup(title) {
+    const group = document.createElement('div');
+    group.className = 'rounded-xl border border-slate-300 bg-slate-50 p-3';
+
+    const heading = document.createElement('div');
+    heading.className = 'mb-2 text-sm font-bold text-slate-800';
+    heading.textContent = title;
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-3 gap-2';
+
+    group.appendChild(heading);
+    group.appendChild(grid);
+
+    return { group, grid };
+}
+
+function setupLocationTypeMasks(container) {
+    const locationForm = container.querySelector('form#location');
+    if (!locationForm) {
+        return;
+    }
+
+    const typeField = locationForm.querySelector('[name="type"]');
+    const positionField = locationForm.querySelector('[name="position"]');
+    const sizeField = locationForm.querySelector('[name="size"]');
+    const rotationField = locationForm.querySelector('[name="rotation"]');
+
+    if (!typeField || !sizeField || !rotationField) {
+        return;
+    }
+
+    const sizeWrapper = sizeField.closest('.pb-6');
+    const rotationWrapper = rotationField.closest('.pb-6');
+    const positionWrapper = positionField ? positionField.closest('.pb-6') : null;
+
+    const maskContainer = document.createElement('div');
+    maskContainer.id = 'locationTypeMaskContainer';
+    maskContainer.className = 'pb-6';
+
+    const maskTitle = document.createElement('div');
+    maskTitle.className = 'mb-2 text-sm font-bold text-slate-800';
+    maskTitle.textContent = 'Geometrie-Maske';
+
+    const maskHint = document.createElement('div');
+    maskHint.className = 'mb-3 text-xs text-slate-600';
+    maskHint.textContent = 'Einfache Eingabe, Speicherung erfolgt automatisch als JSON.';
+
+    const roomPanel = document.createElement('div');
+    roomPanel.className = 'grid gap-3';
+
+    const rackPanel = document.createElement('div');
+    rackPanel.className = 'grid gap-3';
+
+    const roomSize = createMaskGroup('Room Size (x/y/z)');
+    const roomSizeX = createMaskNumberInput('room-size-x', 'X', 10000);
+    const roomSizeY = createMaskNumberInput('room-size-y', 'Y', 3000);
+    const roomSizeZ = createMaskNumberInput('room-size-z', 'Z', 8000);
+    roomSize.grid.appendChild(roomSizeX.wrapper);
+    roomSize.grid.appendChild(roomSizeY.wrapper);
+    roomSize.grid.appendChild(roomSizeZ.wrapper);
+
+    const roomRotation = createMaskGroup('Room Rotation (x/y/z)');
+    const roomRotX = createMaskNumberInput('room-rot-x', 'X', 0, '0.1');
+    const roomRotY = createMaskNumberInput('room-rot-y', 'Y', 0, '0.1');
+    const roomRotZ = createMaskNumberInput('room-rot-z', 'Z', 0, '0.1');
+    roomRotation.grid.appendChild(roomRotX.wrapper);
+    roomRotation.grid.appendChild(roomRotY.wrapper);
+    roomRotation.grid.appendChild(roomRotZ.wrapper);
+
+    roomPanel.appendChild(roomSize.group);
+    roomPanel.appendChild(roomRotation.group);
+
+    const roomPosition = createMaskGroup('Room Position (x/y/z)');
+    const roomPosX = createMaskNumberInput('room-pos-x', 'X', 0);
+    const roomPosY = createMaskNumberInput('room-pos-y', 'Y', 0);
+    const roomPosZ = createMaskNumberInput('room-pos-z', 'Z', 0);
+    roomPosition.grid.appendChild(roomPosX.wrapper);
+    roomPosition.grid.appendChild(roomPosY.wrapper);
+    roomPosition.grid.appendChild(roomPosZ.wrapper);
+    roomPanel.appendChild(roomPosition.group);
+
+    const rackOuter = createMaskGroup('Rack Outer (x/y/z)');
+    const rackOuterX = createMaskNumberInput('rack-outer-x', 'X', 600);
+    const rackOuterY = createMaskNumberInput('rack-outer-y', 'Y', 2200);
+    const rackOuterZ = createMaskNumberInput('rack-outer-z', 'Z', 1000);
+    rackOuter.grid.appendChild(rackOuterX.wrapper);
+    rackOuter.grid.appendChild(rackOuterY.wrapper);
+    rackOuter.grid.appendChild(rackOuterZ.wrapper);
+
+    const rackInner = createMaskGroup('Rack Inner (x/y/z)');
+    const rackInnerX = createMaskNumberInput('rack-inner-x', 'X', 550);
+    const rackInnerY = createMaskNumberInput('rack-inner-y', 'Y', 2080);
+    const rackInnerZ = createMaskNumberInput('rack-inner-z', 'Z', 920);
+    rackInner.grid.appendChild(rackInnerX.wrapper);
+    rackInner.grid.appendChild(rackInnerY.wrapper);
+    rackInner.grid.appendChild(rackInnerZ.wrapper);
+
+    const rackBetween = createMaskGroup('Rack Between');
+    const betweenXL = createMaskNumberInput('rack-between-xl', 'x_left', 25);
+    const betweenXR = createMaskNumberInput('rack-between-xr', 'x_right', 25);
+    const betweenYB = createMaskNumberInput('rack-between-yb', 'y_bottom', 60);
+    const betweenYT = createMaskNumberInput('rack-between-yt', 'y_top', 60);
+    const betweenZF = createMaskNumberInput('rack-between-zf', 'z_front', 40);
+    const betweenZB = createMaskNumberInput('rack-between-zb', 'z_back', 40);
+    rackBetween.grid.className = 'grid grid-cols-2 gap-2';
+    rackBetween.grid.appendChild(betweenXL.wrapper);
+    rackBetween.grid.appendChild(betweenXR.wrapper);
+    rackBetween.grid.appendChild(betweenYB.wrapper);
+    rackBetween.grid.appendChild(betweenYT.wrapper);
+    rackBetween.grid.appendChild(betweenZF.wrapper);
+    rackBetween.grid.appendChild(betweenZB.wrapper);
+
+    const rackRotation = createMaskGroup('Rack Rotation (x/y/z)');
+    const rackRotX = createMaskNumberInput('rack-rot-x', 'X', 0, '0.1');
+    const rackRotY = createMaskNumberInput('rack-rot-y', 'Y', 0, '0.1');
+    const rackRotZ = createMaskNumberInput('rack-rot-z', 'Z', 0, '0.1');
+    rackRotation.grid.appendChild(rackRotX.wrapper);
+    rackRotation.grid.appendChild(rackRotY.wrapper);
+    rackRotation.grid.appendChild(rackRotZ.wrapper);
+
+    rackPanel.appendChild(rackOuter.group);
+    rackPanel.appendChild(rackInner.group);
+    rackPanel.appendChild(rackBetween.group);
+    rackPanel.appendChild(rackRotation.group);
+
+    const rackPosition = createMaskGroup('Rack Position im Raum (x/y/z)');
+    const rackPosX = createMaskNumberInput('rack-pos-x', 'X', 0);
+    const rackPosY = createMaskNumberInput('rack-pos-y', 'Y', 0);
+    const rackPosZ = createMaskNumberInput('rack-pos-z', 'Z', 0);
+    rackPosition.grid.appendChild(rackPosX.wrapper);
+    rackPosition.grid.appendChild(rackPosY.wrapper);
+    rackPosition.grid.appendChild(rackPosZ.wrapper);
+    rackPanel.appendChild(rackPosition.group);
+
+    const rackLimits = createMaskGroup('Rack Limits');
+    rackLimits.grid.className = 'grid grid-cols-3 gap-2';
+    const rackLimitWeight = createMaskNumberInput('rack-limit-weight', 'Gewicht (kg)', 120);
+    const rackLimitPower = createMaskNumberInput('rack-limit-power', 'Power (W)', 1200);
+    const rackLimitThermal = createMaskNumberInput('rack-limit-thermal', 'Thermal (W)', 1100);
+    rackLimits.grid.appendChild(rackLimitWeight.wrapper);
+    rackLimits.grid.appendChild(rackLimitPower.wrapper);
+    rackLimits.grid.appendChild(rackLimitThermal.wrapper);
+    rackPanel.appendChild(rackLimits.group);
+
+    maskContainer.appendChild(maskTitle);
+    maskContainer.appendChild(maskHint);
+    maskContainer.appendChild(roomPanel);
+    maskContainer.appendChild(rackPanel);
+
+    if (rotationWrapper && rotationWrapper.parentNode) {
+        rotationWrapper.parentNode.insertBefore(maskContainer, rotationWrapper.nextSibling);
+    } else {
+        locationForm.appendChild(maskContainer);
+    }
+
+    const initialSize = parseJsonObjectOrDefault(sizeField.value, {});
+    const initialRotation = parseJsonObjectOrDefault(rotationField.value, { x: 0, y: 0, z: 0 });
+    const initialPosition = parseJsonObjectOrDefault(positionField ? positionField.value : '', { x: 0, y: 0, z: 0 });
+
+    if (initialSize.outer || initialSize.inner || initialSize.between) {
+        const outer = initialSize.outer || {};
+        const inner = initialSize.inner || {};
+        const between = initialSize.between || {};
+        rackOuterX.input.value = String(getNumericOrDefault(outer.x, 600));
+        rackOuterY.input.value = String(getNumericOrDefault(outer.y, 2200));
+        rackOuterZ.input.value = String(getNumericOrDefault(outer.z, 1000));
+        rackInnerX.input.value = String(getNumericOrDefault(inner.x, 550));
+        rackInnerY.input.value = String(getNumericOrDefault(inner.y, 2080));
+        rackInnerZ.input.value = String(getNumericOrDefault(inner.z, 920));
+        betweenXL.input.value = String(getNumericOrDefault(between.x_left, 25));
+        betweenXR.input.value = String(getNumericOrDefault(between.x_right, 25));
+        betweenYB.input.value = String(getNumericOrDefault(between.y_bottom, 60));
+        betweenYT.input.value = String(getNumericOrDefault(between.y_top, 60));
+        betweenZF.input.value = String(getNumericOrDefault(between.z_front, 40));
+        betweenZB.input.value = String(getNumericOrDefault(between.z_back, 40));
+        const limits = initialSize.limits || {};
+        rackLimitWeight.input.value = String(getNumericOrDefault(limits.weightKg, 120));
+        rackLimitPower.input.value = String(getNumericOrDefault(limits.powerW, 1200));
+        rackLimitThermal.input.value = String(getNumericOrDefault(limits.thermalW, 1100));
+    } else {
+        roomSizeX.input.value = String(getNumericOrDefault(initialSize.x, 10000));
+        roomSizeY.input.value = String(getNumericOrDefault(initialSize.y, 3000));
+        roomSizeZ.input.value = String(getNumericOrDefault(initialSize.z, 8000));
+    }
+
+    roomPosX.input.value = String(getNumericOrDefault(initialPosition.x, 0));
+    roomPosY.input.value = String(getNumericOrDefault(initialPosition.y, 0));
+    roomPosZ.input.value = String(getNumericOrDefault(initialPosition.z, 0));
+    rackPosX.input.value = String(getNumericOrDefault(initialPosition.x, 0));
+    rackPosY.input.value = String(getNumericOrDefault(initialPosition.y, 0));
+    rackPosZ.input.value = String(getNumericOrDefault(initialPosition.z, 0));
+
+    roomRotX.input.value = String(getNumericOrDefault(initialRotation.x, 0));
+    roomRotY.input.value = String(getNumericOrDefault(initialRotation.y, 0));
+    roomRotZ.input.value = String(getNumericOrDefault(initialRotation.z, 0));
+    rackRotX.input.value = String(getNumericOrDefault(initialRotation.x, 0));
+    rackRotY.input.value = String(getNumericOrDefault(initialRotation.y, 0));
+    rackRotZ.input.value = String(getNumericOrDefault(initialRotation.z, 0));
+
+    const writeRoomJsonToFields = () => {
+        const roomSizeJson = {
+            x: getNumericOrDefault(roomSizeX.input.value, 10000),
+            y: getNumericOrDefault(roomSizeY.input.value, 3000),
+            z: getNumericOrDefault(roomSizeZ.input.value, 8000)
+        };
+
+        const roomRotationJson = {
+            x: getNumericOrDefault(roomRotX.input.value, 0),
+            y: getNumericOrDefault(roomRotY.input.value, 0),
+            z: getNumericOrDefault(roomRotZ.input.value, 0)
+        };
+
+        sizeField.value = JSON.stringify(roomSizeJson);
+        rotationField.value = JSON.stringify(roomRotationJson);
+        if (positionField) {
+            positionField.value = JSON.stringify({
+                x: getNumericOrDefault(roomPosX.input.value, 0),
+                y: getNumericOrDefault(roomPosY.input.value, 0),
+                z: getNumericOrDefault(roomPosZ.input.value, 0)
+            });
+        }
+    };
+
+    const writeRackJsonToFields = () => {
+        const rackSizeJson = {
+            outer: {
+                x: getNumericOrDefault(rackOuterX.input.value, 600),
+                y: getNumericOrDefault(rackOuterY.input.value, 2200),
+                z: getNumericOrDefault(rackOuterZ.input.value, 1000)
+            },
+            inner: {
+                x: getNumericOrDefault(rackInnerX.input.value, 550),
+                y: getNumericOrDefault(rackInnerY.input.value, 2080),
+                z: getNumericOrDefault(rackInnerZ.input.value, 920)
+            },
+            between: {
+                x_left: getNumericOrDefault(betweenXL.input.value, 25),
+                x_right: getNumericOrDefault(betweenXR.input.value, 25),
+                y_bottom: getNumericOrDefault(betweenYB.input.value, 60),
+                y_top: getNumericOrDefault(betweenYT.input.value, 60),
+                z_front: getNumericOrDefault(betweenZF.input.value, 40),
+                z_back: getNumericOrDefault(betweenZB.input.value, 40)
+            },
+            limits: {
+                weightKg: getNumericOrDefault(rackLimitWeight.input.value, 120),
+                powerW: getNumericOrDefault(rackLimitPower.input.value, 1200),
+                thermalW: getNumericOrDefault(rackLimitThermal.input.value, 1100)
+            }
+        };
+
+        const rackRotationJson = {
+            x: getNumericOrDefault(rackRotX.input.value, 0),
+            y: getNumericOrDefault(rackRotY.input.value, 0),
+            z: getNumericOrDefault(rackRotZ.input.value, 0)
+        };
+
+        sizeField.value = JSON.stringify(rackSizeJson);
+        rotationField.value = JSON.stringify(rackRotationJson);
+        if (positionField) {
+            positionField.value = JSON.stringify({
+                x: getNumericOrDefault(rackPosX.input.value, 0),
+                y: getNumericOrDefault(rackPosY.input.value, 0),
+                z: getNumericOrDefault(rackPosZ.input.value, 0)
+            });
+        }
+    };
+
+    const syncMaskVisibilityAndJson = () => {
+        const typeValue = String(typeField.value || '').trim();
+        const isRoom = typeValue === '6';
+        const isRack = typeValue === '8';
+
+        if (sizeWrapper) {
+            sizeWrapper.classList.toggle('hidden', true);
+        }
+        if (rotationWrapper) {
+            rotationWrapper.classList.toggle('hidden', true);
+        }
+        if (positionWrapper) {
+            positionWrapper.classList.toggle('hidden', true);
+        }
+
+        maskContainer.classList.toggle('hidden', !(isRoom || isRack));
+        roomPanel.classList.toggle('hidden', !isRoom);
+        rackPanel.classList.toggle('hidden', !isRack);
+
+        if (isRoom) {
+            writeRoomJsonToFields();
+        } else if (isRack) {
+            writeRackJsonToFields();
+        }
+    };
+
+    [
+        roomSizeX.input, roomSizeY.input, roomSizeZ.input,
+        roomRotX.input, roomRotY.input, roomRotZ.input,
+        rackOuterX.input, rackOuterY.input, rackOuterZ.input,
+        rackInnerX.input, rackInnerY.input, rackInnerZ.input,
+        betweenXL.input, betweenXR.input, betweenYB.input, betweenYT.input, betweenZF.input, betweenZB.input,
+        rackRotX.input, rackRotY.input, rackRotZ.input,
+        roomPosX.input, roomPosY.input, roomPosZ.input,
+        rackPosX.input, rackPosY.input, rackPosZ.input,
+        rackLimitWeight.input, rackLimitPower.input, rackLimitThermal.input
+    ].forEach(input => {
+        input.addEventListener('input', syncMaskVisibilityAndJson);
+        input.addEventListener('change', syncMaskVisibilityAndJson);
+    });
+
+    typeField.addEventListener('change', syncMaskVisibilityAndJson);
+    syncMaskVisibilityAndJson();
+}
+
+function setupDevice3DMasks(container) {
+    const deviceForm = container.querySelector('form#device');
+    if (!deviceForm) {
+        return;
+    }
+
+    const sizeField = deviceForm.querySelector('[name="size"]');
+    const positionField = deviceForm.querySelector('[name="position"]');
+    const rotationField = deviceForm.querySelector('[name="rotation"]');
+
+    if (!sizeField || !positionField || !rotationField) {
+        return;
+    }
+
+    const sizeWrapper = sizeField.closest('.pb-6');
+    const positionWrapper = positionField.closest('.pb-6');
+    const rotationWrapper = rotationField.closest('.pb-6');
+
+    const maskContainer = document.createElement('div');
+    maskContainer.id = 'device3DMaskContainer';
+    maskContainer.className = 'pb-6';
+
+    const maskTitle = document.createElement('div');
+    maskTitle.className = 'mb-2 text-sm font-bold text-slate-800';
+    maskTitle.textContent = 'Device 3D-Maske';
+
+    const maskHint = document.createElement('div');
+    maskHint.className = 'mb-3 text-xs text-slate-600';
+    maskHint.textContent = 'Gefuehrte Eingabe fuer RU-Position und Geometrie, Speicherung erfolgt automatisch als JSON.';
+
+    const ruInfo = document.createElement('div');
+    ruInfo.className = 'mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900';
+    ruInfo.textContent = '1 RU = 44.45 mm';
+
+    const ruGroup = createMaskGroup('RU Placement');
+    const startRu = createMaskNumberInput('device-ru-start', 'Start RU', 1, '1');
+    const heightRu = createMaskNumberInput('device-ru-height', 'Hoehe RU', 1, '0.5');
+    ruGroup.grid.className = 'grid grid-cols-2 gap-2';
+    ruGroup.grid.appendChild(startRu.wrapper);
+    ruGroup.grid.appendChild(heightRu.wrapper);
+
+    const sizeGroup = createMaskGroup('Device Size (mm)');
+    const sizeX = createMaskNumberInput('device-size-x', 'X (Breite)', 445, '1');
+    const sizeY = createMaskNumberInput('device-size-y', 'Y (Hoehe)', 44.45, '0.01');
+    const sizeZ = createMaskNumberInput('device-size-z', 'Z (Tiefe)', 300, '1');
+    const weightKg = createMaskNumberInput('device-weight-kg', 'Gewicht (kg)', 5, '0.1');
+    sizeY.input.readOnly = true;
+    sizeY.input.classList.add('bg-slate-100');
+    sizeGroup.grid.className = 'grid grid-cols-2 gap-2';
+    sizeGroup.grid.appendChild(sizeX.wrapper);
+    sizeGroup.grid.appendChild(sizeY.wrapper);
+    sizeGroup.grid.appendChild(sizeZ.wrapper);
+    sizeGroup.grid.appendChild(weightKg.wrapper);
+
+    const positionGroup = createMaskGroup('Device Position (mm)');
+    const posX = createMaskNumberInput('device-pos-x', 'X', 0, '1');
+    const posY = createMaskNumberInput('device-pos-y', 'Y (aus RU)', 0, '0.01');
+    const posZ = createMaskNumberInput('device-pos-z', 'Z', 0, '1');
+    posY.input.readOnly = true;
+    posY.input.classList.add('bg-slate-100');
+    positionGroup.grid.appendChild(posX.wrapper);
+    positionGroup.grid.appendChild(posY.wrapper);
+    positionGroup.grid.appendChild(posZ.wrapper);
+
+    const rotationGroup = createMaskGroup('Device Rotation (x/y/z)');
+    const rotX = createMaskNumberInput('device-rot-x', 'X', 0, '0.1');
+    const rotY = createMaskNumberInput('device-rot-y', 'Y', 0, '0.1');
+    const rotZ = createMaskNumberInput('device-rot-z', 'Z', 0, '0.1');
+    rotationGroup.grid.appendChild(rotX.wrapper);
+    rotationGroup.grid.appendChild(rotY.wrapper);
+    rotationGroup.grid.appendChild(rotZ.wrapper);
+
+    const panel = document.createElement('div');
+    panel.className = 'grid gap-3';
+    panel.appendChild(ruGroup.group);
+    panel.appendChild(sizeGroup.group);
+    panel.appendChild(positionGroup.group);
+    panel.appendChild(rotationGroup.group);
+
+    maskContainer.appendChild(maskTitle);
+    maskContainer.appendChild(maskHint);
+    maskContainer.appendChild(ruInfo);
+    maskContainer.appendChild(panel);
+
+    if (rotationWrapper && rotationWrapper.parentNode) {
+        rotationWrapper.parentNode.insertBefore(maskContainer, rotationWrapper.nextSibling);
+    } else {
+        deviceForm.appendChild(maskContainer);
+    }
+
+    const mmPerRu = 44.45;
+    let isSyncing = false;
+
+    const roundTo = (value, decimals = 2) => {
+        const factor = 10 ** decimals;
+        return Math.round(value * factor) / factor;
+    };
+
+    const applyRuToDerivedFields = () => {
+        const start = Math.max(1, getNumericOrDefault(startRu.input.value, 1));
+        const height = Math.max(0.5, getNumericOrDefault(heightRu.input.value, 1));
+
+        const mmY = roundTo((start - 1) * mmPerRu, 2);
+        const mmHeight = roundTo(height * mmPerRu, 2);
+
+        posY.input.value = String(mmY);
+        sizeY.input.value = String(mmHeight);
+    };
+
+    const writeMaskToJsonFields = () => {
+        applyRuToDerivedFields();
+
+        sizeField.value = JSON.stringify({
+            x: getNumericOrDefault(sizeX.input.value, 445),
+            y: getNumericOrDefault(sizeY.input.value, 44.45),
+            z: getNumericOrDefault(sizeZ.input.value, 300),
+            weightKg: getNumericOrDefault(weightKg.input.value, 5)
+        });
+
+        positionField.value = JSON.stringify({
+            x: getNumericOrDefault(posX.input.value, 0),
+            y: getNumericOrDefault(posY.input.value, 0),
+            z: getNumericOrDefault(posZ.input.value, 0)
+        });
+
+        rotationField.value = JSON.stringify({
+            x: getNumericOrDefault(rotX.input.value, 0),
+            y: getNumericOrDefault(rotY.input.value, 0),
+            z: getNumericOrDefault(rotZ.input.value, 0)
+        });
+    };
+
+    const syncMaskFromJsonFields = () => {
+        if (isSyncing) {
+            return;
+        }
+
+        const sizeJson = parseJsonObjectOrDefault(sizeField.value, {});
+        const positionJson = parseJsonObjectOrDefault(positionField.value, {});
+        const rotationJson = parseJsonObjectOrDefault(rotationField.value, {});
+
+        const currentSizeY = getNumericOrDefault(sizeJson.y, 44.45);
+        const currentPosY = getNumericOrDefault(positionJson.y, 0);
+
+        sizeX.input.value = String(getNumericOrDefault(sizeJson.x, 445));
+        sizeZ.input.value = String(getNumericOrDefault(sizeJson.z, 300));
+        weightKg.input.value = String(getNumericOrDefault(sizeJson.weightKg ?? sizeJson.weight, 5));
+        posX.input.value = String(getNumericOrDefault(positionJson.x, 0));
+        posZ.input.value = String(getNumericOrDefault(positionJson.z, 0));
+        rotX.input.value = String(getNumericOrDefault(rotationJson.x, 0));
+        rotY.input.value = String(getNumericOrDefault(rotationJson.y, 0));
+        rotZ.input.value = String(getNumericOrDefault(rotationJson.z, 0));
+
+        const derivedHeightRu = Math.max(0.5, roundTo(currentSizeY / mmPerRu, 2));
+        const derivedStartRu = Math.max(1, roundTo((currentPosY / mmPerRu) + 1, 2));
+        heightRu.input.value = String(derivedHeightRu);
+        startRu.input.value = String(derivedStartRu);
+
+        applyRuToDerivedFields();
+    };
+
+    const syncAll = () => {
+        if (isSyncing) {
+            return;
+        }
+
+        isSyncing = true;
+        try {
+            writeMaskToJsonFields();
+        } finally {
+            isSyncing = false;
+        }
+    };
+
+    [
+        startRu.input,
+        heightRu.input,
+        sizeX.input,
+        sizeZ.input,
+        weightKg.input,
+        posX.input,
+        posZ.input,
+        rotX.input,
+        rotY.input,
+        rotZ.input
+    ].forEach(input => {
+        input.addEventListener('input', syncAll);
+        input.addEventListener('change', syncAll);
+    });
+
+    [sizeField, positionField, rotationField].forEach(field => {
+        field.addEventListener('input', syncMaskFromJsonFields);
+        field.addEventListener('change', syncMaskFromJsonFields);
+    });
+
+    if (sizeWrapper) {
+        sizeWrapper.classList.add('hidden');
+    }
+    if (positionWrapper) {
+        positionWrapper.classList.add('hidden');
+    }
+    if (rotationWrapper) {
+        rotationWrapper.classList.add('hidden');
+    }
+
+    syncMaskFromJsonFields();
+    syncAll();
 }
 
 function applyDeviceTemplateToForms(templateRow) {
@@ -1189,13 +2180,179 @@ function setupDevicePortAutomation() {
     const templateField = form.querySelector('[name="template"]');
     const portCountField = form.querySelector('[name="port_count"]');
     const portStartLabelField = form.querySelector('[name="port_start_label"]');
+    const portProfileField = form.querySelector('[name="port_profile"]');
+    const portTypeFamilyField = form.querySelector('[name="port_type_family"]');
+    const portLayoutPresetField = form.querySelector('[name="port_layout_preset"]');
+    const portLayoutRowsField = form.querySelector('[name="port_layout_rows"]');
+    const portLayoutColsField = form.querySelector('[name="port_layout_cols"]');
+    const portLayoutPitchXField = form.querySelector('[name="port_layout_pitch_x"]');
+    const portLayoutPitchYField = form.querySelector('[name="port_layout_pitch_y"]');
+    const portLayoutSideField = form.querySelector('[name="port_layout_side"]');
+    const portLayoutAnchorField = form.querySelector('[name="port_layout_anchor"]');
+    const portLayoutMirrorField = form.querySelector('[name="port_layout_mirror"]');
+    const portLabelPatternField = form.querySelector('[name="port_label_pattern"]');
+
+    let previewContainer = null;
+
+    const ensurePreviewPanel = () => {
+        if (previewContainer) {
+            return previewContainer;
+        }
+
+        previewContainer = document.createElement('div');
+        previewContainer.className = 'pb-6';
+        previewContainer.innerHTML = `
+            <div class="rounded-xl border border-slate-300 bg-slate-50 p-3">
+                <div class="mb-1 text-sm font-bold text-slate-800">Port Layout Preview</div>
+                <div class="mb-3 text-xs text-slate-600">Live-Vorschau fuer Auto-Ports auf Basis von Preset und Regelwerten.</div>
+                <div class="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px]">
+                    <div class="rounded-lg border border-slate-300 bg-slate-900 p-3">
+                        <div id="devicePortLayoutPreviewStage" class="relative h-28 overflow-hidden rounded-md border border-slate-700 bg-slate-950"></div>
+                    </div>
+                    <div id="devicePortLayoutPreviewMeta" class="rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-600"></div>
+                </div>
+            </div>
+        `;
+
+        const anchorField = portLabelPatternField?.closest('.pb-6') || portLayoutMirrorField?.closest('.pb-6') || portLayoutAnchorField?.closest('.pb-6');
+        if (anchorField && anchorField.parentNode) {
+            anchorField.parentNode.insertBefore(previewContainer, anchorField.nextSibling);
+        } else {
+            form.appendChild(previewContainer);
+        }
+
+        return previewContainer;
+    };
+
+    const renderLayoutPreview = () => {
+        const panel = ensurePreviewPanel();
+        const stage = panel.querySelector('#devicePortLayoutPreviewStage');
+        const meta = panel.querySelector('#devicePortLayoutPreviewMeta');
+        if (!stage || !meta) {
+            return;
+        }
+
+        const profile = portProfileField ? portProfileField.value : '';
+        const typeFamily = portTypeFamilyField ? (portTypeFamilyField.value || 'copper') : 'copper';
+        const explicitCount = parseInt(portCountField?.value || 0, 10) || 0;
+        const resolvedCount = explicitCount > 0
+            ? explicitCount
+            : Math.max(
+                getAutoPortProfileCount(profile),
+                getPortLayoutPresetCount(portLayoutPresetField?.value || getDefaultPortLayoutPresetFromProfile(profile))
+            );
+        const startLabel = (portStartLabelField?.value || getAutoPortStartLabelDefault(typeFamily)).trim();
+        const rules = getPortLayoutRules({
+            count: resolvedCount,
+            layoutPreset: portLayoutPresetField?.value || getDefaultPortLayoutPresetFromProfile(profile),
+            layoutRows: portLayoutRowsField?.value,
+            layoutCols: portLayoutColsField?.value,
+            layoutPitchX: portLayoutPitchXField?.value,
+            layoutPitchY: portLayoutPitchYField?.value,
+            layoutSide: portLayoutSideField?.value,
+            layoutAnchor: portLayoutAnchorField?.value,
+            layoutMirror: !!portLayoutMirrorField?.checked,
+            labelPattern: portLabelPatternField?.value
+        });
+        const portType = getAutoPortTypeTemplate(typeFamily);
+        const typeColor = `#${getPortLayoutPreviewColor(portType.typeCode)}`;
+
+        stage.innerHTML = '';
+
+        if (!resolvedCount || resolvedCount <= 0) {
+            stage.innerHTML = '<div class="flex h-full items-center justify-center text-xs text-slate-500">Keine Auto-Ports konfiguriert.</div>';
+            meta.innerHTML = '<div>Count: 0</div><div>Preset: none</div>';
+            return;
+        }
+
+        const gridLines = document.createElement('div');
+        gridLines.className = 'absolute inset-0 opacity-30';
+        gridLines.style.backgroundImage = 'linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to top, rgba(148,163,184,0.18) 1px, transparent 1px)';
+        gridLines.style.backgroundSize = '8.333% 25%';
+        stage.appendChild(gridLines);
+
+        const maxPreviewPorts = Math.min(resolvedCount, 96);
+        for (let index = 0; index < maxPreviewPorts; index++) {
+            const position = computeAutoPortLayoutPosition(rules, index, resolvedCount);
+            const label = buildPortLabelFromPattern(startLabel, index, rules.labelPattern, position);
+            const portEl = document.createElement('div');
+            portEl.className = 'absolute flex h-3.5 min-w-[12px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[3px] border text-[8px] font-bold';
+            portEl.style.left = `${(position.x / 445) * 100}%`;
+            portEl.style.bottom = `${(position.y / 44.45) * 100}%`;
+            portEl.style.backgroundColor = `${typeColor}22`;
+            portEl.style.borderColor = typeColor;
+            portEl.style.color = typeColor;
+            portEl.title = `${label} | row ${position.row + 1} | col ${position.col + 1} | ${position.side}`;
+            portEl.textContent = resolvedCount <= 24 ? label.replace(startLabel.replace(/\d+$/, ''), '') : String(index + 1);
+            stage.appendChild(portEl);
+        }
+
+        meta.innerHTML = `
+            <div><span class="font-semibold text-slate-700">Count:</span> ${resolvedCount}</div>
+            <div><span class="font-semibold text-slate-700">Preset:</span> ${rules.preset || 'none'}</div>
+            <div><span class="font-semibold text-slate-700">Grid:</span> ${rules.rows} x ${rules.cols}</div>
+            <div><span class="font-semibold text-slate-700">Pitch:</span> ${rules.pitchX} / ${rules.pitchY} mm</div>
+            <div><span class="font-semibold text-slate-700">Side:</span> ${rules.side}</div>
+            <div><span class="font-semibold text-slate-700">Anchor:</span> ${rules.anchor}</div>
+            <div><span class="font-semibold text-slate-700">Mirror:</span> ${rules.mirror ? 'ja' : 'nein'}</div>
+        `;
+    };
 
     const applyDefaults = () => {
         const defaults = getDefaultDevicePortConfig(typeField ? typeField.value : '');
+        const profileCount = getAutoPortProfileCount(portProfileField ? portProfileField.value : '');
+        const effectiveDefaultCount = profileCount > 0 ? profileCount : defaults.count;
+        const defaultStartLabel = getAutoPortStartLabelDefault(portTypeFamilyField ? portTypeFamilyField.value : '');
+        const defaultLayoutPreset = getDefaultPortLayoutPresetFromProfile(portProfileField ? portProfileField.value : '');
+        const layoutPreset = portLayoutPresetField ? (portLayoutPresetField.value || defaultLayoutPreset) : defaultLayoutPreset;
+        const layoutPresetDefinition = getPortLayoutPresetDefinition(layoutPreset);
 
         if (portCountField && (!portCountField.value || portCountField.dataset.autoFilled === 'true')) {
-            portCountField.value = defaults.count;
+            portCountField.value = effectiveDefaultCount;
             portCountField.dataset.autoFilled = 'true';
+        }
+
+        if (portStartLabelField && (!portStartLabelField.value || portStartLabelField.dataset.autoFilled === 'true')) {
+            portStartLabelField.value = defaultStartLabel;
+            portStartLabelField.dataset.autoFilled = 'true';
+        }
+
+        if (portLayoutPresetField && (!portLayoutPresetField.value || portLayoutPresetField.dataset.autoFilled === 'true')) {
+            portLayoutPresetField.value = defaultLayoutPreset;
+            portLayoutPresetField.dataset.autoFilled = 'true';
+        }
+
+        const ruleFields = [
+            [portLayoutRowsField, layoutPresetDefinition.rows],
+            [portLayoutColsField, layoutPresetDefinition.cols],
+            [portLayoutPitchXField, layoutPresetDefinition.pitchX],
+            [portLayoutPitchYField, layoutPresetDefinition.pitchY]
+        ];
+        ruleFields.forEach(([field, value]) => {
+            if (field && value != null && (!field.value || field.dataset.autoFilled === 'true')) {
+                field.value = String(value);
+                field.dataset.autoFilled = 'true';
+            }
+        });
+
+        if (portLayoutSideField && (!portLayoutSideField.value || portLayoutSideField.dataset.autoFilled === 'true')) {
+            portLayoutSideField.value = layoutPresetDefinition.side || 'front';
+            portLayoutSideField.dataset.autoFilled = 'true';
+        }
+
+        if (portLayoutAnchorField && (!portLayoutAnchorField.value || portLayoutAnchorField.dataset.autoFilled === 'true')) {
+            portLayoutAnchorField.value = layoutPresetDefinition.anchor || 'center';
+            portLayoutAnchorField.dataset.autoFilled = 'true';
+        }
+
+        if (portLayoutMirrorField && (!portLayoutMirrorField.dataset.userChanged || portLayoutMirrorField.dataset.autoFilled === 'true')) {
+            portLayoutMirrorField.checked = !!layoutPresetDefinition.mirror;
+            portLayoutMirrorField.dataset.autoFilled = 'true';
+        }
+
+        if (portLabelPatternField && (!portLabelPatternField.value || portLabelPatternField.dataset.autoFilled === 'true')) {
+            portLabelPatternField.value = layoutPresetDefinition.labelPattern || '{prefix}{index}';
+            portLabelPatternField.dataset.autoFilled = 'true';
         }
 
     };
@@ -1216,6 +2373,42 @@ function setupDevicePortAutomation() {
             }
             portStartLabelField.disabled = templateChecked;
         }
+
+        if (portProfileField) {
+            if (templateChecked) {
+                portProfileField.value = 'none';
+            }
+            portProfileField.disabled = templateChecked;
+        }
+
+        if (portTypeFamilyField) {
+            if (templateChecked) {
+                portTypeFamilyField.value = 'copper';
+            }
+            portTypeFamilyField.disabled = templateChecked;
+        }
+
+        [
+            portLayoutPresetField,
+            portLayoutRowsField,
+            portLayoutColsField,
+            portLayoutPitchXField,
+            portLayoutPitchYField,
+            portLayoutSideField,
+            portLayoutAnchorField,
+            portLayoutMirrorField,
+            portLabelPatternField
+        ].forEach(field => {
+            if (!field) return;
+            if (templateChecked) {
+                if (field.type === 'checkbox') {
+                    field.checked = false;
+                } else {
+                    field.value = field === portLayoutPresetField ? 'none' : '';
+                }
+            }
+            field.disabled = templateChecked;
+        });
     };
 
     if (typeField) {
@@ -1235,6 +2428,54 @@ function setupDevicePortAutomation() {
         });
     }
 
+    if (portProfileField) {
+        portProfileField.addEventListener('change', applyDefaults);
+        portProfileField.addEventListener('input', applyDefaults);
+    }
+
+    if (portTypeFamilyField) {
+        portTypeFamilyField.addEventListener('change', applyDefaults);
+        portTypeFamilyField.addEventListener('input', applyDefaults);
+    }
+
+    [
+        portLayoutPresetField,
+        portLayoutRowsField,
+        portLayoutColsField,
+        portLayoutPitchXField,
+        portLayoutPitchYField,
+        portLayoutSideField,
+        portLayoutAnchorField,
+        portLabelPatternField
+    ].forEach(field => {
+        if (!field) return;
+        field.addEventListener('input', () => {
+            field.dataset.autoFilled = 'false';
+            renderLayoutPreview();
+        });
+        field.addEventListener('change', () => {
+            field.dataset.autoFilled = 'false';
+            if (field === portLayoutPresetField) {
+                applyDefaults();
+            }
+            renderLayoutPreview();
+        });
+    });
+
+    if (portLayoutMirrorField) {
+        portLayoutMirrorField.addEventListener('change', () => {
+            portLayoutMirrorField.dataset.autoFilled = 'false';
+            portLayoutMirrorField.dataset.userChanged = 'true';
+            renderLayoutPreview();
+        });
+    }
+
+    [portCountField, portStartLabelField, portProfileField, portTypeFamilyField, typeField].forEach(field => {
+        if (!field) return;
+        field.addEventListener('input', renderLayoutPreview);
+        field.addEventListener('change', renderLayoutPreview);
+    });
+
     if (templateField) {
         templateField.addEventListener('change', syncTemplatePortRules);
         templateField.addEventListener('input', syncTemplatePortRules);
@@ -1242,6 +2483,23 @@ function setupDevicePortAutomation() {
 
     applyDefaults();
     syncTemplatePortRules();
+    renderLayoutPreview();
+}
+
+function getPortLayoutPreviewColor(typeCode) {
+    const definitions = getPortTypeDefinitions();
+    const typeFamily = definitions[typeCode]?.family || 'other';
+    const colors = {
+        power: 'f59e0b',
+        copper: '60a5fa',
+        sfp: '22d3ee',
+        qsfp: '14b8a6',
+        mgmt: '84cc16',
+        console: 'f97316',
+        other: '94a3b8'
+    };
+
+    return colors[typeFamily] || colors.other;
 }
 
 async function loadExistingSwitchItemGroups() {
@@ -1398,13 +2656,19 @@ async function createAutoPortsForDevice(deviceUuid, options = {}, onProgress = n
     }
 
     const metadataStatus = '6';
+    const portTemplate = getAutoPortTypeTemplate(options.typeFamily || 'copper');
+    const layoutRules = getPortLayoutRules({
+        ...options,
+        layoutPreset: options.layoutPreset || getDefaultPortLayoutPresetFromProfile(options.profile || '')
+    });
 
     if (typeof onProgress === 'function') {
         onProgress({ current: 0, total: count, label: 'Auto-Ports werden erstellt ...' });
     }
 
     for (let index = 1; index <= count; index++) {
-        const label = buildPortLabel(startLabel, index - 1);
+        const autoPosition = computeAutoPortLayoutPosition(layoutRules, index - 1, count);
+        const label = buildPortLabelFromPattern(startLabel, index - 1, options.labelPattern || layoutRules.labelPattern, autoPosition);
         const metadataPayload = {
             status: metadataStatus,
             caption: label,
@@ -1430,7 +2694,16 @@ async function createAutoPortsForDevice(deviceUuid, options = {}, onProgress = n
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 metadata: metadataUuid,
-                device: deviceUuid
+                device: deviceUuid,
+                type: portTemplate.typeCode,
+                size: JSON.stringify(portTemplate.size),
+                position: JSON.stringify({
+                    x: autoPosition.x,
+                    y: autoPosition.y,
+                    z: autoPosition.z,
+                    side: autoPosition.side || layoutRules.side || 'front'
+                }),
+                rotation: JSON.stringify(portTemplate.rotation)
             })
         });
         const devicePortResult = await devicePortResponse.json();
@@ -1731,13 +3004,38 @@ async function submitForms(table) {
         const postData = buildPostDataFromConfig(form, postConfig);
 
         if (postConfig.table === 'device') {
-            const parsedCount = parseInt(postData.port_count || 0, 10) || 0;
-            const parsedStartLabel = (postData.port_start_label || '').trim();
+            let parsedCount = parseInt(postData.port_count || 0, 10) || 0;
+            let parsedStartLabel = (postData.port_start_label || '').trim();
             const parsedItemGroup = (postData.item_group || '').trim();
+            const parsedPortProfile = (postData.port_profile || '').trim().toLowerCase();
+            const parsedPortTypeFamily = (postData.port_type_family || '').trim().toLowerCase();
+            const parsedPortLayoutPreset = (postData.port_layout_preset || '').trim().toLowerCase();
+            const parsedPortLayoutRows = parseInt(postData.port_layout_rows || 0, 10) || 0;
+            const parsedPortLayoutCols = parseInt(postData.port_layout_cols || 0, 10) || 0;
+            const parsedPortLayoutPitchX = getNumericOrDefault(postData.port_layout_pitch_x, 0);
+            const parsedPortLayoutPitchY = getNumericOrDefault(postData.port_layout_pitch_y, 0);
+            const parsedPortLayoutSide = (postData.port_layout_side || '').trim().toLowerCase();
+            const parsedPortLayoutAnchor = (postData.port_layout_anchor || '').trim().toLowerCase();
+            const parsedPortLayoutMirror = isTruthyTemplateValue(postData.port_layout_mirror);
+            const parsedPortLabelPattern = (postData.port_label_pattern || '').trim();
 
             if (parsedItemGroup && !isValidPostgresUuid(parsedItemGroup)) {
                 submitErrorMessage = 'Item Group muss eine gueltige UUID sein.';
                 break;
+            }
+
+            const profileDefaultCount = getAutoPortProfileCount(parsedPortProfile);
+            if (parsedCount <= 0 && profileDefaultCount > 0) {
+                parsedCount = profileDefaultCount;
+            }
+
+            const presetDefaultCount = getPortLayoutPresetCount(parsedPortLayoutPreset);
+            if (parsedCount <= 0 && presetDefaultCount > 0) {
+                parsedCount = presetDefaultCount;
+            }
+
+            if (parsedCount > 0 && !parsedStartLabel) {
+                parsedStartLabel = getAutoPortStartLabelDefault(parsedPortTypeFamily || 'copper');
             }
 
             postData.item_group = parsedItemGroup || null;
@@ -1750,7 +3048,18 @@ async function submitForms(table) {
 
             autoPortConfig = {
                 count: parsedCount,
-                startLabel: parsedStartLabel
+                startLabel: parsedStartLabel,
+                profile: parsedPortProfile,
+                typeFamily: parsedPortTypeFamily || 'copper',
+                layoutPreset: parsedPortLayoutPreset || getDefaultPortLayoutPresetFromProfile(parsedPortProfile),
+                layoutRows: parsedPortLayoutRows,
+                layoutCols: parsedPortLayoutCols,
+                layoutPitchX: parsedPortLayoutPitchX,
+                layoutPitchY: parsedPortLayoutPitchY,
+                layoutSide: parsedPortLayoutSide || 'front',
+                layoutAnchor: parsedPortLayoutAnchor || 'center',
+                layoutMirror: parsedPortLayoutMirror,
+                labelPattern: parsedPortLabelPattern
             };
 
             if (isTemplateDevice) {
@@ -1767,6 +3076,17 @@ async function submitForms(table) {
 
             delete postData.port_count;
             delete postData.port_start_label;
+            delete postData.port_profile;
+            delete postData.port_type_family;
+            delete postData.port_layout_preset;
+            delete postData.port_layout_rows;
+            delete postData.port_layout_cols;
+            delete postData.port_layout_pitch_x;
+            delete postData.port_layout_pitch_y;
+            delete postData.port_layout_side;
+            delete postData.port_layout_anchor;
+            delete postData.port_layout_mirror;
+            delete postData.port_label_pattern;
         }
 
         // UUIDs aus vorherigen POSTs einfügen, falls benötigt
@@ -2771,6 +4091,27 @@ async function renderDetailsGrid(rowData) {
         $tbody.append(`<tr><th class="w-[38%] border-b border-slate-200 px-2 py-2 text-left text-sm font-semibold text-slate-600">${escapeHtml(label)}</th><td class="break-words border-b border-slate-200 px-2 py-2 text-left text-sm text-slate-900">${escapeHtml(value)}</td></tr>`);
     });
     $leftCard.append($table);
+    
+    // DEBUG: Für Locations type=8 (Racks) einen 3D-Button hinzufügen
+    // Achtung: Bei location_details sind die Felder als "location_type" vorhanden, nicht "type"!
+    let locationType = rowData.location_type || rowData.type;
+    
+    console.log('[3D-VIEW DEBUG] renderDetailsGrid Location:', {
+        currentTable,
+        location_type: rowData.location_type,
+        type: rowData.type,
+        resolvedType: locationType,
+        isLocationTable: currentTable === 'location_details'
+    });
+    
+    // Zeige 3D-Button für Location-Racks an
+    if (currentTable === 'location_details' && (locationType == 8 || locationType === '8' || Number(locationType) === 8)) {
+        console.log('[3D-VIEW] ✓ Rack erkannt - Füge 3D-Button hinzu');
+        const $actionDiv = $('<div class="mt-4 flex gap-2 flex-wrap"></div>');
+        const $3dBtn = $('<button type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="openLocationIn3D(\'' + escapeHtml(rowData.location_uuid || rowData.uuid) + '\')"><i data-lucide="cube" class="h-4 w-4"></i>3D Ansicht öffnen</button>');
+        $actionDiv.append($3dBtn);
+        $leftCard.append($actionDiv);
+    }
 
     const panels = Array.isArray(detailsLayout.panels) ? detailsLayout.panels : [];
     for (const panel of panels) {
@@ -2810,8 +4151,52 @@ async function renderDetailsGrid(rowData) {
 
 // Open and close details popup
 async function openDetailsPopup(rowData) {
+    if (!rowData || typeof rowData !== 'object' || Object.keys(rowData).length === 0) {
+        closeDetailsPopup();
+        return;
+    }
+
+    // Always reopen on info tab first to avoid stale 3D-only state.
+    switchDetailsTab('info');
+    const details3d = document.getElementById('detailsContent3d');
+    if (details3d) {
+        details3d.innerHTML = '';
+    }
+
     currentDetailsRowData = rowData;
     await renderDetailsGrid(rowData);
+    
+    // Prüfe ob Location ein Rack (type=8) oder Raum (type=6) ist und zeige 3D-Tab an
+    const isLocationTable = currentTable === 'location_details';
+    const resolvedType = rowData.location_type ?? rowData.type;
+    const isRack = resolvedType == 8 || resolvedType === '8'; // Flexible Typ-Prüfung
+    const isRoom = resolvedType == 6 || resolvedType === '6';
+    
+    console.log('[3D-DEBUG] openDetailsPopup:', {
+        currentTable,
+        isLocationTable,
+        type: rowData.type,
+        location_type: rowData.location_type,
+        resolvedType,
+        isRack,
+        isRoom,
+        rowData: rowData
+    });
+    
+    if (isLocationTable && (isRack || isRoom)) {
+        console.log('[3D-DEBUG] Zeige 3D-Tab an');
+        const tabNavEl = document.getElementById('detailsTabNav');
+        const tab3dBtn = document.getElementById('detailsTab3dBtn');
+        if (tabNavEl) tabNavEl.style.display = 'flex'; // Nested flex für Tab-Container
+        if (tab3dBtn) tab3dBtn.style.display = 'block'; // Block für Tab-Button
+    } else {
+        console.log('[3D-DEBUG] Verstecke 3D-Tab');
+        const tabNavEl = document.getElementById('detailsTabNav');
+        const tab3dBtn = document.getElementById('detailsTab3dBtn');
+        if (tabNavEl) tabNavEl.style.display = 'none';
+        if (tab3dBtn) tab3dBtn.style.display = 'none';
+    }
+    
     $('#detailsPopup').removeClass('hidden');
 }
 
@@ -2819,10 +4204,466 @@ function closeDetailsPopup() {
     if (!$('#detailsPopup').hasClass('hidden')) {
         $('#detailsPopup').addClass('hidden');
     }
+
+    const details3d = document.getElementById('detailsContent3d');
+    if (details3d) {
+        details3d.innerHTML = '';
+    }
+
+    const tabNavEl = document.getElementById('detailsTabNav');
+    const tab3dBtn = document.getElementById('detailsTab3dBtn');
+    if (tabNavEl) tabNavEl.style.display = 'none';
+    if (tab3dBtn) tab3dBtn.style.display = 'none';
+
+    // Reset to info tab
+    switchDetailsTab('info');
     currentDetailsRowData = null;
 }
 
-function openJournalEntryModal() {
+/**
+ * Wechselt zwischen Details-Tabs (info / 3d)
+ */
+function switchDetailsTab(tabName) {
+    // Deaktiviere alle Tabs
+    document.querySelectorAll('.details-tab').forEach(btn => {
+        btn.classList.remove('border-blue-600');
+        btn.classList.add('border-transparent');
+    });
+    document.querySelectorAll('.details-tab-content').forEach(el => {
+        el.style.display = 'none';
+    });
+    
+    // Aktiviere gewählten Tab
+    const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+    if (activeBtn) {
+        activeBtn.classList.remove('border-transparent');
+        activeBtn.classList.add('border-blue-600');
+    }
+    
+    const activeContent = document.querySelector(`.details-tab-content[data-tab="${tabName}"]`);
+    if (activeContent) {
+        activeContent.style.display = tabName === '3d' ? 'flex' : 'block';
+    }
+    
+    // Wenn 3D-Tab gewählt, initialisiere den Viewer
+    if (tabName === '3d' && currentDetailsRowData) {
+        const resolvedUuid = currentDetailsRowData.location_uuid || currentDetailsRowData.uuid || null;
+        if (resolvedUuid) {
+            initiate3DViewer(resolvedUuid, currentDetailsRowData);
+        } else {
+            console.warn('[3D-VIEW] Keine UUID für 3D-Initialisierung gefunden', currentDetailsRowData);
+        }
+    }
+}
+
+/**
+ * Öffnet einen Rack in der 3D-Ansicht
+ */
+async function openLocationIn3D(locationUuid) {
+    console.log('[3D-VIEW] openLocationIn3D called with UUID:', locationUuid);
+    
+    // Tab wechseln
+    switchDetailsTab('3d');
+    
+    // Fallback: falls keine aktuelle Detailzeile gesetzt ist
+    if (!currentDetailsRowData && locationUuid) {
+        try {
+            await initiate3DViewer(locationUuid, null);
+        } catch (err) {
+            console.error('[3D-VIEW] Error:', err);
+            alert('Fehler beim Laden der 3D-Ansicht: ' + err.message);
+        }
+    }
+}
+
+async function initiate3DViewer(locationUuid, rackSeedRow = null) {
+    const container = document.getElementById('detailsContent3d');
+    const resolvedType = (rackSeedRow?.location_type ?? rackSeedRow?.type ?? currentDetailsRowData?.location_type ?? currentDetailsRowData?.type ?? '').toString();
+    const isRoomMode = resolvedType === '6';
+    container.innerHTML = `
+        <div class="viewer3d-layout grid h-full min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <div class="min-h-0 overflow-y-auto rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Steuerung (Basis)</div>
+                <div class="mb-3 text-xs text-slate-600">Links: drehen | Mitte: verschieben | Rad: zoomen</div>
+
+                <div class="mb-3 grid grid-cols-2 gap-2">
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('front')">Front</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('rear')">Rear</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('left')">Left</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('right')">Right</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('top')">Top</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('iso')">Iso</button>
+                </div>
+
+                <div class="grid gap-3">
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Overlay-Metrik</span>
+                <select id="viewer3dMetric" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="change3DMetric(this.value)">
+                    <option value="weight">Gewicht (kg)</option>
+                    <option value="power">Power (W)</option>
+                    <option value="thermal">Thermal (W)</option>
+                </select>
+            </label>
+
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Kabel-Preset</span>
+                <select id="viewer3dCablePreset" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DCablePreset(this.value)">
+                    <option value="all">Alle</option>
+                    <option value="power">Nur Power</option>
+                    <option value="fiber">Nur Fiber</option>
+                    <option value="copper">Nur Copper</option>
+                    <option value="minimal">Minimal Fokus</option>
+                </select>
+            </label>
+
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Achsen-Lock</span>
+                <select id="viewer3dAxisLock" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DAxisLock(this.value)">
+                    <option value="free">Frei</option>
+                    <option value="horizontal">Horizontal Orbit</option>
+                </select>
+            </label>
+
+            ${isRoomMode ? `
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Rack-Fokus (Room)</span>
+                <select id="viewer3dRoomFocusRack" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DRoomFocusRack(this.value)">
+                    <option value="">Automatisch (alle Racks)</option>
+                </select>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dRoomFocusDevicesOnlyToggle" onchange="toggle3DFeature('roomFocusDevicesOnly', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Nur fokussiertes Rack mit Geraeten</span>
+            </label>
+            ` : ''}
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dRackEarsToggle" checked onchange="toggle3DFeature('rackEars', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Rackohren anzeigen</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dLoadOverlayToggle" onchange="toggle3DFeature('loadOverlay', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Last-Overlay anzeigen</span>
+            </label>
+            
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dPortsToggle" checked onchange="toggle3DFeature('ports', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Ports anzeigen</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dPortLabelsToggle" onchange="toggle3DFeature('portLabels', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Port-Beschriftung</span>
+            </label>
+            
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCablesToggle" checked onchange="toggle3DFeature('cables', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Kabel anzeigen</span>
+            </label>
+
+            <details class="viewer-expert-menu rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                <summary class="text-xs font-bold uppercase tracking-wide text-slate-600">Expertenmenue</summary>
+                <div class="mt-3 grid gap-3">
+
+            ${isRoomMode ? `
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Chunk Size</span>
+                <input type="number" id="viewer3dFetchChunkSize" min="10" step="10" value="80" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
+            </label>
+
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Target Chunks</span>
+                <input type="number" id="viewer3dFetchTargetChunks" min="1" step="1" value="8" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
+            </label>
+
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Max Concurrency</span>
+                <input type="number" id="viewer3dFetchConcurrency" min="1" step="1" value="4" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
+            </label>
+            ` : ''}
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableLabelsToggle" onchange="toggle3DFeature('cableLabels', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Kabel-Beschriftung</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableMetaLabelsToggle" checked onchange="toggle3DFeature('cableMetaLabels', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Kabel-Metadaten</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableFiberToggle" checked onchange="toggle3DFeature('cableFiber', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Fiber</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableCopperToggle" checked onchange="toggle3DFeature('cableCopper', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Copper/CAT</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCablePowerToggle" checked onchange="toggle3DFeature('cablePower', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Power</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableTrunkToggle" checked onchange="toggle3DFeature('cableTrunk', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Trunks</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableRearAwareToggle" onchange="toggle3DFeature('cableRearAware', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Rear-aware Routing</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dComMarkerToggle" onchange="toggle3DFeature('comMarker', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Last-Schwerpunktmarker</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dTransparentRackToggle" onchange="toggle3DFeature('rackTransparent', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Rack halbtransparent</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dDoorsToggle" checked onchange="toggle3DFeature('doorsOpen', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Türen geöffnet</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dSidePanelsToggle" onchange="toggle3DFeature('sidePanelsOpen', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Seitenwände geöffnet</span>
+            </label>
+
+                </div>
+            </details>
+
+                </div>
+
+                <div id="viewer3dStatus" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-600">
+                    3D-Viewer wird geladen...
+                </div>
+            </div>
+
+            <div id="viewer3dContainer" class="h-[60vh] min-h-[520px] w-full rounded-lg border border-slate-300 bg-slate-50 shadow-sm lg:h-full lg:min-h-0"></div>
+        </div>
+    `;
+    
+    // Importiere und starte den 3D-Viewer
+    try {
+        // Errechne absoluten Pfad zum Modul
+        const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) + '/';
+        const modulePath = baseUrl + 'js/PortflowViewer3D.js';
+        console.log('[3D-VIEW] Importing from:', modulePath);
+        
+        const module = await import(modulePath);
+        const PortflowViewer3D = module.PortflowViewer3D;
+        
+        const viewer = new PortflowViewer3D('#viewer3dContainer', {
+            apiUrl: './api/',
+            debug: true,
+            width: document.getElementById('viewer3dContainer').clientWidth,
+            height: document.getElementById('viewer3dContainer').clientHeight || 720,
+            onStatus: (msg, isError) => {
+                const statusEl = document.getElementById('viewer3dStatus');
+                if (statusEl) {
+                    statusEl.textContent = msg;
+                    statusEl.className = `rounded-lg border p-3 text-sm ${isError 
+                        ? 'border-red-300 bg-red-50 text-red-700' 
+                        : 'border-slate-200 bg-slate-50 text-slate-600'}`;
+                }
+            }
+        });
+
+        const applyFetchTuningFromInputs = () => {
+            const chunkSizeEl = document.getElementById('viewer3dFetchChunkSize');
+            const targetChunksEl = document.getElementById('viewer3dFetchTargetChunks');
+            const concurrencyEl = document.getElementById('viewer3dFetchConcurrency');
+
+            viewer.setFetchTuning?.({
+                minChunkSize: Number(chunkSizeEl?.value || 80),
+                maxChunkSize: Number(chunkSizeEl?.value || 80),
+                targetChunks: Number(targetChunksEl?.value || 8),
+                maxConcurrency: Number(concurrencyEl?.value || 4)
+            });
+        };
+
+        if (isRoomMode) {
+            applyFetchTuningFromInputs();
+        }
+        
+        window.current3DViewer = viewer;
+        
+        if (isRoomMode) {
+            await viewer.loadRoom(locationUuid);
+        } else {
+            await viewer.loadRack(locationUuid, rackSeedRow || currentDetailsRowData || null);
+        }
+
+        if (viewer && viewer.state && viewer.state.activeRack) {
+            const rack = viewer.state.activeRack;
+            const statusEl = document.getElementById('viewer3dStatus');
+            if (statusEl) {
+                const outer = rack.geometry?.outer || {};
+                const inner = rack.geometry?.inner || {};
+                if (isRoomMode) {
+                    statusEl.textContent = `Raum geladen | Racks: ${viewer.state.liveRacks?.length || 0} | Devices: ${viewer.state.liveDevices?.length || 0} | Cables: ${viewer.state.liveConnections?.length || 0}`;
+                } else {
+                    statusEl.textContent = `Rack geladen | UUID: ${rack.uuid} | Outer: ${outer.x || '-'}x${outer.y || '-'}x${outer.z || '-'} | Inner: ${inner.x || '-'}x${inner.y || '-'}x${inner.z || '-'} | Cables: ${viewer.state.liveConnections?.length || 0}`;
+                }
+            }
+        }
+
+        if (isRoomMode) {
+            const roomFocusSelect = document.getElementById('viewer3dRoomFocusRack');
+            if (roomFocusSelect && Array.isArray(viewer.state?.liveRacks)) {
+                roomFocusSelect.innerHTML = '<option value="">Automatisch (alle Racks)</option>';
+                viewer.state.liveRacks.forEach(rack => {
+                    const option = document.createElement('option');
+                    option.value = String(rack.uuid || '');
+                    option.textContent = `${rack.name || 'Rack'} (${String(rack.uuid || '').slice(0, 8)})`;
+                    roomFocusSelect.appendChild(option);
+                });
+            }
+        }
+        
+        // Speichere die Event-Handler im Window für Zugriff durch HTML-Attribute
+        window.change3DMetric = (metric) => {
+            if (window.current3DViewer) {
+                window.current3DViewer.setOverlayMetric(metric);
+            }
+        };
+
+        window.set3DCablePreset = (preset) => {
+            if (!window.current3DViewer) return;
+            window.current3DViewer.setCablePreset?.(preset);
+
+            const cableToggle = document.getElementById('viewer3dCablesToggle');
+            if (cableToggle) {
+                cableToggle.checked = window.current3DViewer.state.showCables !== false;
+            }
+
+            const fiberToggle = document.getElementById('viewer3dCableFiberToggle');
+            const copperToggle = document.getElementById('viewer3dCableCopperToggle');
+            const powerToggle = document.getElementById('viewer3dCablePowerToggle');
+            const trunkToggle = document.getElementById('viewer3dCableTrunkToggle');
+            if (fiberToggle) fiberToggle.checked = !!window.current3DViewer.state.cableFilterFiber;
+            if (copperToggle) copperToggle.checked = !!window.current3DViewer.state.cableFilterCopper;
+            if (powerToggle) powerToggle.checked = !!window.current3DViewer.state.cableFilterPower;
+            if (trunkToggle) trunkToggle.checked = !!window.current3DViewer.state.cableFilterTrunk;
+        };
+
+        window.set3DAxisLock = (mode) => {
+            if (!window.current3DViewer) return;
+            window.current3DViewer.setAxisLock?.(mode);
+        };
+
+        const initialCablePresetEl = document.getElementById('viewer3dCablePreset');
+        if (initialCablePresetEl) {
+            window.set3DCablePreset(initialCablePresetEl.value);
+        }
+
+        const initialAxisLockEl = document.getElementById('viewer3dAxisLock');
+        if (initialAxisLockEl) {
+            window.set3DAxisLock(initialAxisLockEl.value);
+        }
+
+        window.set3DCameraPreset = (preset) => {
+            if (window.current3DViewer) {
+                window.current3DViewer.setCameraPreset?.(preset);
+            }
+        };
+
+        window.set3DRoomFocusRack = (rackUuid) => {
+            if (!window.current3DViewer) return;
+            window.current3DViewer.setRoomFocusRack?.(rackUuid || '');
+        };
+
+        window.set3DFetchTuning = async () => {
+            if (!window.current3DViewer) return;
+            applyFetchTuningFromInputs();
+
+            if (isRoomMode && window.current3DViewer.state?.currentSceneUuid) {
+                await window.current3DViewer.loadRoom(window.current3DViewer.state.currentSceneUuid);
+            }
+        };
+        
+        window.toggle3DFeature = (feature, enabled) => {
+            if (!window.current3DViewer) return;
+            switch (feature) {
+                case 'ports':
+                    window.current3DViewer.setPortsVisible?.(enabled);
+                    break;
+                case 'cables':
+                    window.current3DViewer.setCablesVisible?.(enabled);
+                    break;
+                case 'rackEars':
+                    window.current3DViewer.setRackEarsVisible?.(enabled);
+                    break;
+                case 'loadOverlay':
+                    window.current3DViewer.setLoadOverlayVisible?.(enabled);
+                    break;
+                case 'portLabels':
+                    window.current3DViewer.setPortLabelsVisible?.(enabled);
+                    break;
+                case 'cableLabels':
+                    window.current3DViewer.setCableLabelsVisible?.(enabled);
+                    break;
+                case 'cableMetaLabels':
+                    window.current3DViewer.setCableMetaLabelsVisible?.(enabled);
+                    break;
+                case 'cableFiber':
+                    window.current3DViewer.setFiberVisible?.(enabled);
+                    break;
+                case 'cableCopper':
+                    window.current3DViewer.setCopperVisible?.(enabled);
+                    break;
+                case 'cablePower':
+                    window.current3DViewer.setPowerCableVisible?.(enabled);
+                    break;
+                case 'cableTrunk':
+                    window.current3DViewer.setTrunkVisible?.(enabled);
+                    break;
+                case 'cableRearAware':
+                    window.current3DViewer.setRearAware?.(enabled);
+                    break;
+                case 'comMarker':
+                    window.current3DViewer.setComMarkerVisible?.(enabled);
+                    break;
+                case 'rackTransparent':
+                    window.current3DViewer.setRackTransparent?.(enabled);
+                    break;
+                case 'doorsOpen':
+                    window.current3DViewer.setDoorsOpen?.(enabled);
+                    break;
+                case 'sidePanelsOpen':
+                    window.current3DViewer.setSidePanelsOpen?.(enabled);
+                    break;
+                case 'roomFocusDevicesOnly':
+                    window.current3DViewer.setRoomFocusDevicesOnly?.(enabled);
+                    break;
+                default:
+                    window.current3DViewer.state[`show${feature.charAt(0).toUpperCase() + feature.slice(1)}`] = enabled;
+                    window.current3DViewer._invalidateCache?.();
+                    break;
+            }
+        };
+        
+    } catch (err) {
+        console.error('Failed to initialize 3D viewer:', err);
+        const statusEl = document.getElementById('viewer3dStatus');
+        if (statusEl) {
+            statusEl.textContent = `Fehler: ${err.message}`;
+            statusEl.className = 'rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700';
+        }
+    }
+}
+
+function closeJournalEntryModal() {
     if (!currentDetailsRowData) {
         alert('Keine Zeile ausgewählt.');
         return;

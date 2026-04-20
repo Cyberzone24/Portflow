@@ -290,6 +290,14 @@
         <label><input id="comMarkerToggle" type="checkbox" checked> Last-Schwerpunktmarker anzeigen</label>
       </div>
 
+      <div class="section-label">Debug-Presets (Phase 5)</div>
+      <div class="row">
+        <button id="presetFullBtn" class="secondary">Full</button>
+        <button id="presetDebugTrunksBtn" class="secondary">Debug Trunks</button>
+        <button id="presetPowerBtn" class="secondary">Power Only</button>
+        <button id="presetMinimalBtn" class="secondary">Minimal</button>
+      </div>
+
       <div class="section-label">Phase 7 - Room Layout</div>
       <div class="toggle-row">
         <label><input id="roomModeToggle" type="checkbox"> Room-Modus (mehrere Racks)</label>
@@ -315,6 +323,13 @@
         <div><label for="roomCableRenderLimit">cable.render.limit</label><input id="roomCableRenderLimit" type="number" step="1" min="1" value="600"></div>
         <div><label for="roomMinClearance">min.clearance (mm)</label><input id="roomMinClearance" type="number" step="50" min="100" value="1000"></div>
         <div><label for="roomSampleCount">sample.racks</label><input id="roomSampleCount" type="number" step="1" min="1" value="12"></div>
+      </div>
+
+      <div class="section-label">Trunk Waypoints (mm)</div>
+      <div class="form-grid">
+        <div><label for="trunkWaypointDownwardFloor">downward floor (mm)</label><input id="trunkWaypointDownwardFloor" type="number" step="1" min="0" value="6"></div>
+        <div><label for="trunkWaypointDownwardDepth">downward clearance (mm)</label><input id="trunkWaypointDownwardDepth" type="number" step="10" min="0" value="260"></div>
+        <div><label for="trunkWaypointOverheadHeight">overhead height (mm)</label><input id="trunkWaypointOverheadHeight" type="number" step="10" min="0" value="260"></div>
       </div>
 
       <div class="section-label">Rack Outer (mm)</div>
@@ -588,6 +603,10 @@
     const cableFilterTrunkToggle = document.getElementById('cableFilterTrunkToggle');
     const cableRearAwareToggle = document.getElementById('cableRearAwareToggle');
     const comMarkerToggle = document.getElementById('comMarkerToggle');
+    const presetFullBtn = document.getElementById('presetFullBtn');
+    const presetDebugTrunksBtn = document.getElementById('presetDebugTrunksBtn');
+    const presetPowerBtn = document.getElementById('presetPowerBtn');
+    const presetMinimalBtn = document.getElementById('presetMinimalBtn');
     const loadSummaryEl = document.getElementById('loadSummary');
     const cableSummaryEl = document.getElementById('cableSummary');
     const roomModeToggle = document.getElementById('roomModeToggle');
@@ -608,6 +627,9 @@
     const roomMinClearanceEl = document.getElementById('roomMinClearance');
     const roomSampleCountEl = document.getElementById('roomSampleCount');
     const roomSummaryEl = document.getElementById('roomSummary');
+    const trunkWaypointDownwardFloorEl = document.getElementById('trunkWaypointDownwardFloor');
+    const trunkWaypointDownwardDepthEl = document.getElementById('trunkWaypointDownwardDepth');
+    const trunkWaypointOverheadHeightEl = document.getElementById('trunkWaypointOverheadHeight');
 
     const formFields = {
       outerX: document.getElementById('outerX'),
@@ -657,10 +679,137 @@
     state.roomChunking = !!roomChunkingToggle.checked;
     state.roomNearbyCount = Math.max(1, Math.floor(ensureNum(roomNearbyCountEl.value, 5)));
     state.roomFocusDevicesOnly = !!roomFocusDevicesToggle.checked;
+    state.trunkWaypointDownwardFloor = Math.max(0, Math.floor(ensureNum(trunkWaypointDownwardFloorEl.value, 6)));
+    state.trunkWaypointDownwardDepth = Math.max(0, Math.floor(ensureNum(trunkWaypointDownwardDepthEl.value, 260)));
+    state.trunkWaypointOverheadHeight = Math.max(0, Math.floor(ensureNum(trunkWaypointOverheadHeightEl.value, 260)));
 
     function setStatus(msg, isError = false) {
       statusEl.textContent = msg;
       statusEl.classList.toggle('error', !!isError);
+    }
+
+    function applyPreset(presetName) {
+      // Define presets with toggle states
+      const presets = {
+        full: {
+          showRackEars: true,
+          showLoadOverlay: true,
+          showPorts: true,
+          showPortLabels: false,
+          showCables: true,
+          showCableLabels: false,
+          showCableMetaLabels: true,
+          cableFilterFiber: true,
+          cableFilterCopper: true,
+          cableFilterPower: true,
+          cableFilterTrunk: true,
+          cableRearAware: true,
+          comMarker: true,
+          loadOverlayMetric: 'weight'
+        },
+        debugTrunks: {
+          showRackEars: true,
+          showLoadOverlay: false,
+          showPorts: false,
+          showPortLabels: false,
+          showCables: true,
+          showCableLabels: true,
+          showCableMetaLabels: true,
+          cableFilterFiber: false,
+          cableFilterCopper: false,
+          cableFilterPower: false,
+          cableFilterTrunk: true,
+          cableRearAware: true,
+          comMarker: false,
+          loadOverlayMetric: 'weight'
+        },
+        power: {
+          showRackEars: true,
+          showLoadOverlay: true,
+          showPorts: false,
+          showPortLabels: false,
+          showCables: true,
+          showCableLabels: false,
+          showCableMetaLabels: true,
+          cableFilterFiber: false,
+          cableFilterCopper: false,
+          cableFilterPower: true,
+          cableFilterTrunk: false,
+          cableRearAware: true,
+          comMarker: true,
+          loadOverlayMetric: 'power'
+        },
+        minimal: {
+          showRackEars: false,
+          showLoadOverlay: false,
+          showPorts: false,
+          showPortLabels: false,
+          showCables: true,
+          showCableLabels: false,
+          showCableMetaLabels: false,
+          cableFilterFiber: true,
+          cableFilterCopper: true,
+          cableFilterPower: true,
+          cableFilterTrunk: true,
+          cableRearAware: false,
+          comMarker: false,
+          loadOverlayMetric: 'weight'
+        }
+      };
+
+      const preset = presets[presetName];
+      if (!preset) {
+        setStatus(`Preset '${presetName}' nicht gefunden.`, true);
+        return;
+      }
+
+      // Apply all toggles
+      rackEarsToggle.checked = preset.showRackEars;
+      state.showRackEars = preset.showRackEars;
+      
+      loadOverlayToggle.checked = preset.showLoadOverlay;
+      state.showLoadOverlay = preset.showLoadOverlay;
+      
+      portsToggle.checked = preset.showPorts;
+      state.showPorts = preset.showPorts;
+      
+      portLabelsToggle.checked = preset.showPortLabels;
+      state.showPortLabels = preset.showPortLabels;
+      
+      cablesToggle.checked = preset.showCables;
+      state.showCables = preset.showCables;
+      
+      cableLabelsToggle.checked = preset.showCableLabels;
+      state.showCableLabels = preset.showCableLabels;
+      
+      cableMetaLabelsToggle.checked = preset.showCableMetaLabels;
+      state.showCableMetaLabels = preset.showCableMetaLabels;
+      
+      cableFilterFiberToggle.checked = preset.cableFilterFiber;
+      state.cableFilterFiber = preset.cableFilterFiber;
+      
+      cableFilterCopperToggle.checked = preset.cableFilterCopper;
+      state.cableFilterCopper = preset.cableFilterCopper;
+      
+      cableFilterPowerToggle.checked = preset.cableFilterPower;
+      state.cableFilterPower = preset.cableFilterPower;
+      
+      cableFilterTrunkToggle.checked = preset.cableFilterTrunk;
+      state.cableFilterTrunk = preset.cableFilterTrunk;
+      
+      cableRearAwareToggle.checked = preset.cableRearAware;
+      state.cableRearAware = preset.cableRearAware;
+      
+      comMarkerToggle.checked = preset.comMarker;
+      state.comMarker = preset.comMarker;
+      
+      loadOverlayMetricSelect.value = preset.loadOverlayMetric;
+      state.loadOverlayMetric = preset.loadOverlayMetric;
+
+      // Trigger re-render
+      state.lastModelSignature = null;
+      if (state.loaded) renderFromInput();
+      setStatus(`Preset angewendet: ${presetName}.`);
     }
 
     function modelFromInputOrDefault() {
@@ -1780,7 +1929,10 @@
 
       if (state.showCables) {
         const cables = createCableRoutingGroup(THREE, roomConnections, roomPortAnchors, roomConfig.cableRenderLimit, {
-          rearAware: state.cableRearAware
+          rearAware: state.cableRearAware,
+          trunkWaypointDownwardFloor: state.trunkWaypointDownwardFloor,
+          trunkWaypointDownwardDepth: state.trunkWaypointDownwardDepth,
+          trunkWaypointOverheadHeight: state.trunkWaypointOverheadHeight
         });
         renderedCableCount = ensureNum(cables.userData?.renderedCount, 0);
         skippedCableByFilterCount = ensureNum(cables.userData?.skippedByFilter, 0);
@@ -2670,8 +2822,10 @@
         if (isDownwardRoute) {
           // Force multi-rack trunks to exit downward before spanning horizontally.
           // Route near rack/room floor so trunks pass through the rack bottom area.
-          const floorTrayY = mm(6) + laneY;
-          const trayY = Math.min(floorTrayY, Math.min(srcOut.y, dstOut.y) - mm(260));
+          const downwardFloor = Math.max(0, ensureNum(options.trunkWaypointDownwardFloor, 6));
+          const downwardDepth = Math.max(0, ensureNum(options.trunkWaypointDownwardDepth, 260));
+          const floorTrayY = mm(downwardFloor) + laneY;
+          const trayY = Math.min(floorTrayY, Math.min(srcOut.y, dstOut.y) - mm(downwardDepth));
           const p1 = srcOut.clone();
           p1.y = trayY;
           const p2 = dstOut.clone();
@@ -2679,7 +2833,8 @@
           curve = new THREE.CatmullRomCurve3([src, srcOut, p1, p2, dstOut, dst], false, 'centripetal');
         } else if (routeProfile === 'overhead') {
           // Keep explicit overhead support as fallback for future profiles.
-          const trayY = Math.max(srcOut.y, dstOut.y) + mm(260) + laneY;
+          const overheadHeight = Math.max(0, ensureNum(options.trunkWaypointOverheadHeight, 260));
+          const trayY = Math.max(srcOut.y, dstOut.y) + mm(overheadHeight) + laneY;
           const p1 = srcOut.clone();
           p1.y = trayY;
           const p2 = dstOut.clone();
@@ -2906,7 +3061,10 @@
           ? state.liveConnections
           : normalizeConnections(Array.isArray(data.connections) ? data.connections : []);
         const cables = createCableRoutingGroup(state.THREE, activeConnections, portAnchors, roomConfig.cableRenderLimit, {
-          rearAware: state.cableRearAware
+          rearAware: state.cableRearAware,
+          trunkWaypointDownwardFloor: state.trunkWaypointDownwardFloor,
+          trunkWaypointDownwardDepth: state.trunkWaypointDownwardDepth,
+          trunkWaypointOverheadHeight: state.trunkWaypointOverheadHeight
         });
         g.add(cables);
         renderCableSummary(
@@ -3142,6 +3300,36 @@
       state.lastModelSignature = null;
       if (state.loaded) renderFromInput();
       setStatus(`Schwerpunktmarker ${state.showComMarker ? 'aktiv' : 'deaktiviert'}.`);
+    });
+    presetFullBtn.addEventListener('click', () => {
+      applyPreset('full');
+    });
+    presetDebugTrunksBtn.addEventListener('click', () => {
+      applyPreset('debugTrunks');
+    });
+    presetPowerBtn.addEventListener('click', () => {
+      applyPreset('power');
+    });
+    presetMinimalBtn.addEventListener('click', () => {
+      applyPreset('minimal');
+    });
+    trunkWaypointDownwardFloorEl.addEventListener('input', () => {
+      state.trunkWaypointDownwardFloor = Math.max(0, Math.floor(ensureNum(trunkWaypointDownwardFloorEl.value, 6)));
+      state.lastModelSignature = null;
+      if (state.loaded) scheduleRenderFromInput();
+      setStatus(`Trunk downward floor: ${state.trunkWaypointDownwardFloor} mm.`);
+    });
+    trunkWaypointDownwardDepthEl.addEventListener('input', () => {
+      state.trunkWaypointDownwardDepth = Math.max(0, Math.floor(ensureNum(trunkWaypointDownwardDepthEl.value, 260)));
+      state.lastModelSignature = null;
+      if (state.loaded) scheduleRenderFromInput();
+      setStatus(`Trunk downward clearance: ${state.trunkWaypointDownwardDepth} mm.`);
+    });
+    trunkWaypointOverheadHeightEl.addEventListener('input', () => {
+      state.trunkWaypointOverheadHeight = Math.max(0, Math.floor(ensureNum(trunkWaypointOverheadHeightEl.value, 260)));
+      state.lastModelSignature = null;
+      if (state.loaded) scheduleRenderFromInput();
+      setStatus(`Trunk overhead height: ${state.trunkWaypointOverheadHeight} mm.`);
     });
     roomModeToggle.addEventListener('change', () => {
       state.showRoomLayout = roomModeToggle.checked;
