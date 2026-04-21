@@ -3059,6 +3059,9 @@ function generateField(name, config) {
     label.className = 'block mb-2';
     label.setAttribute('for', name);
     label.textContent = config.label;
+    if (config.required) {
+        label.textContent += ' *';
+    }
     wrapper.appendChild(label);
 
     // Create input fields

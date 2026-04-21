@@ -3307,7 +3307,17 @@ HTML;
 
                 $decoded = json_decode($changedDataRaw, true);
                 if (is_array($decoded)) {
-                    $changedDataRaw = json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    $hasDiff = isset($decoded['diff']) && is_array($decoded['diff']);
+                    $isInsertOrDelete = in_array((string)($row['operation'] ?? ''), ['INSERT', 'DELETE'], true);
+                    if ($hasDiff && $isInsertOrDelete) {
+                        $diffBefore = $decoded['diff']['before'] ?? [];
+                        $diffAfter = $decoded['diff']['after'] ?? [];
+                        $beforeCount = is_array($diffBefore) ? count($diffBefore) : 0;
+                        $afterCount = is_array($diffAfter) ? count($diffAfter) : 0;
+                        $changedDataRaw = 'Diff verfuegbar (before=' . $beforeCount . ', after=' . $afterCount . ')';
+                    } else {
+                        $changedDataRaw = json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    }
                 }
                 if (!is_string($changedDataRaw)) {
                     $changedDataRaw = '';
@@ -3340,6 +3350,7 @@ HTML;
         echo "<button type='button' class='h-9 w-9 rounded-full bg-red-500 hover:bg-red-700 text-white font-bold' onclick='closeChangelogDetailsPopup()'>X</button>";
         echo "</div>";
         echo "<div id='changelogDetailsMeta' class='pt-3 text-sm text-gray-700'></div>";
+        echo "<div id='changelogDetailsDiff' class='mt-3 hidden'></div>";
         echo "<pre id='changelogDetailsPayload' class='mt-3 p-3 bg-gray-100 rounded text-xs font-mono whitespace-pre-wrap break-all'></pre>";
         echo "</div>";
         echo "</div>";
@@ -3347,6 +3358,10 @@ HTML;
         echo "<script>\n"
             . "function escapeHtml(value){return String(value).replace(/[&<>\"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'})[c];});}\n"
             . "function closeChangelogDetailsPopup(){document.getElementById('changelogDetailsPopup').classList.add('hidden');}\n"
+            . "function normalizeDiffValue(value){if(value===null||value===undefined){return '';}if(typeof value==='object'){try{return JSON.stringify(value);}catch(e){return '[object]';}}return String(value);}\n"
+            . "function renderDiffTable(beforeObj, afterObj){var keys=[];Object.keys(beforeObj||{}).forEach(function(k){if(keys.indexOf(k)===-1){keys.push(k);}});Object.keys(afterObj||{}).forEach(function(k){if(keys.indexOf(k)===-1){keys.push(k);}});if(keys.length===0){return '<div class=\"text-xs text-gray-500\">Keine Diff-Daten verfuegbar.</div>';}\n"
+            . "var rows='';keys.sort().forEach(function(key){var oldVal=normalizeDiffValue((beforeObj||{})[key]);var newVal=normalizeDiffValue((afterObj||{})[key]);var changed=(oldVal!==newVal);rows += '<tr class=\"'+(changed?'bg-amber-50':'')+'\"><td class=\"p-2 border-b font-mono text-xs\">'+escapeHtml(key)+'</td><td class=\"p-2 border-b font-mono text-xs whitespace-pre-wrap break-all\">'+escapeHtml(oldVal)+'</td><td class=\"p-2 border-b font-mono text-xs whitespace-pre-wrap break-all\">'+escapeHtml(newVal)+'</td></tr>';});\n"
+            . "return '<div class=\"rounded border border-gray-200 overflow-auto\"><table class=\"w-full text-left\"><thead class=\"bg-gray-100\"><tr><th class=\"p-2 border-b text-xs\">Feld</th><th class=\"p-2 border-b text-xs\">Before</th><th class=\"p-2 border-b text-xs\">After</th></tr></thead><tbody>'+rows+'</tbody></table></div>';}\n"
             . "function openChangelogDetailsPopup(uuid){\n"
             . "  $.ajax({url:'?get=changelog_details&uuid='+encodeURIComponent(uuid),type:'GET',dataType:'json',success:function(response){\n"
             . "    if(!response){return;}\n"
@@ -3360,7 +3375,20 @@ HTML;
             . "      + '<div><strong>UUID:</strong> '+escapeHtml(response.uuid || '')+'</div>';\n"
             . "    document.getElementById('changelogDetailsMeta').innerHTML = meta;\n"
             . "    var payloadText = response.changed_data || '';\n"
-            . "    try { payloadText = JSON.stringify(JSON.parse(payloadText), null, 2); } catch (e) {}\n"
+            . "    var diffContainer = document.getElementById('changelogDetailsDiff');\n"
+            . "    diffContainer.classList.add('hidden');\n"
+            . "    diffContainer.innerHTML = '';\n"
+            . "    try {\n"
+            . "      var parsed = JSON.parse(payloadText);\n"
+            . "      if(parsed && typeof parsed === 'object' && parsed.diff && typeof parsed.diff === 'object'){\n"
+            . "        var beforeObj = parsed.diff.before && typeof parsed.diff.before === 'object' ? parsed.diff.before : {};\n"
+            . "        var afterObj = parsed.diff.after && typeof parsed.diff.after === 'object' ? parsed.diff.after : {};\n"
+            . "        var title = '<div class=\"text-sm font-semibold text-gray-800 mb-2\">Diff Ansicht</div>';\n"
+            . "        diffContainer.innerHTML = title + renderDiffTable(beforeObj, afterObj);\n"
+            . "        diffContainer.classList.remove('hidden');\n"
+            . "      }\n"
+            . "      payloadText = JSON.stringify(parsed, null, 2);\n"
+            . "    } catch (e) {}\n"
             . "    document.getElementById('changelogDetailsPayload').textContent = payloadText;\n"
             . "    document.getElementById('changelogDetailsPopup').classList.remove('hidden');\n"
             . "  },error:function(){alert('Details konnten nicht geladen werden.');}});\n"

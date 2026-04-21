@@ -106,12 +106,18 @@ class DatabaseAdapter {
             $stmt->bindValue(':' . $param, $value, $pdoType);
         }
     
+        $auditParsed = $this->parseAuditOperation($query);
+        $auditBeforeImage = null;
+        if ($auditParsed !== null && in_array($auditParsed['operation'], ['UPDATE', 'DELETE'], true)) {
+            $auditBeforeImage = $this->captureAuditRowImage($auditParsed['table'], $params);
+        }
+
         try {
             $stmt->execute();
             $affectedRows = $stmt->rowCount();
             // Fetch results and return
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            $this->writeAuditTrail($query, $params, $results, $affectedRows);
+            $this->writeAuditTrail($query, $params, $results, $affectedRows, $auditParsed, $auditBeforeImage);
             return $results;
         } catch (\Exception $e) {
             $this->logger->log('error during query execution: ' . $query . ' - ' . $e->getMessage(), 1);
@@ -121,8 +127,10 @@ class DatabaseAdapter {
         // ============================================================= HIER CHANGELOG =============================================================
     }
 
-    private function writeAuditTrail(string $query, array $params, array $results, int $affectedRows): void {
-        $parsed = $this->parseAuditOperation($query);
+    private function writeAuditTrail(string $query, array $params, array $results, int $affectedRows, ?array $parsed = null, ?array $beforeImage = null): void {
+        if ($parsed === null) {
+            $parsed = $this->parseAuditOperation($query);
+        }
         if ($parsed === null) {
             return;
         }
@@ -144,6 +152,8 @@ class DatabaseAdapter {
         $context = $this->buildAuditContext();
         $changedRow = $this->extractChangedRowUuid($results, $params);
 
+        $sanitizedParams = $this->sanitizeAuditParams($params);
+
         $payload = [
             'source' => $context['source'],
             'request_method' => $context['method'],
@@ -151,8 +161,25 @@ class DatabaseAdapter {
             'ip' => $context['ip'],
             'user_agent' => $context['user_agent'],
             'affected_rows' => $affectedRows,
-            'params' => $this->sanitizeAuditParams($params)
+            'params' => $sanitizedParams
         ];
+
+        if ($operation === 'INSERT') {
+            $payload['diff'] = [
+                'before' => new \stdClass(),
+                'after' => $this->sanitizeAuditParams($params)
+            ];
+        } elseif ($operation === 'DELETE') {
+            $payload['diff'] = [
+                'before' => $this->sanitizeAuditRecord($beforeImage ?? []),
+                'after' => new \stdClass()
+            ];
+        } elseif ($operation === 'UPDATE') {
+            $payload['diff'] = [
+                'before' => $this->sanitizeAuditRecord($beforeImage ?? []),
+                'after' => $sanitizedParams
+            ];
+        }
 
         $encodedPayload = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (!is_string($encodedPayload)) {
@@ -277,6 +304,57 @@ class DatabaseAdapter {
         return $this->generateUuidV4();
     }
 
+    private function captureAuditRowImage(string $table, array $params): ?array {
+        $uuid = $this->extractAuditUuidFromParams($params);
+        if ($uuid === null || $table === '' || !preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+            return null;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare('SELECT * FROM "' . $table . '" WHERE uuid = :uuid LIMIT 1');
+            $stmt->bindValue(':uuid', $uuid, PDO::PARAM_STR);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($row)) {
+                return $row;
+            }
+        } catch (\Throwable $e) {
+            $this->logger->log('audit row capture skipped for table ' . $table . ': ' . $e->getMessage(), 0);
+        }
+
+        return null;
+    }
+
+    private function extractAuditUuidFromParams(array $params): ?string {
+        foreach ($params as $key => $value) {
+            if (!is_scalar($value) && $value !== null) {
+                continue;
+            }
+
+            $stringValue = trim((string)$value);
+            if (!$this->isValidUuid($stringValue)) {
+                continue;
+            }
+
+            $lowerKey = strtolower((string)$key);
+            if ($lowerKey === 'uuid' || str_ends_with($lowerKey, '_uuid')) {
+                return $stringValue;
+            }
+        }
+
+        foreach ($params as $value) {
+            if (!is_scalar($value) && $value !== null) {
+                continue;
+            }
+            $stringValue = trim((string)$value);
+            if ($this->isValidUuid($stringValue)) {
+                return $stringValue;
+            }
+        }
+
+        return null;
+    }
+
     private function sanitizeAuditParams(array $params): array {
         $sanitized = [];
         foreach ($params as $key => $value) {
@@ -295,6 +373,37 @@ class DatabaseAdapter {
             } else {
                 $sanitized[$key] = '[non-scalar]';
             }
+        }
+
+        return $sanitized;
+    }
+
+    private function sanitizeAuditRecord(array $record): array {
+        $sanitized = [];
+        foreach ($record as $key => $value) {
+            $lowerKey = strtolower((string)$key);
+            if (strpos($lowerKey, 'password') !== false || strpos($lowerKey, 'secret') !== false || strpos($lowerKey, 'token') !== false) {
+                $sanitized[$key] = '***';
+                continue;
+            }
+
+            if (is_scalar($value) || $value === null) {
+                $text = (string)$value;
+                if (strlen($text) > 512) {
+                    $text = substr($text, 0, 512) . '...';
+                }
+                $sanitized[$key] = $text;
+                continue;
+            }
+
+            $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (!is_string($encoded)) {
+                $encoded = '[complex]';
+            }
+            if (strlen($encoded) > 512) {
+                $encoded = substr($encoded, 0, 512) . '...';
+            }
+            $sanitized[$key] = $encoded;
         }
 
         return $sanitized;
