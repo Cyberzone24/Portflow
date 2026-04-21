@@ -1267,17 +1267,44 @@ export class PortflowViewer3D {
       points.push(new this.state.THREE.Vector3(sourceOut.x, sourceOut.y, bridgeZ));
       points.push(new this.state.THREE.Vector3(destinationOut.x, destinationOut.y, bridgeZ));
     } else {
-      const sameFace = (sourceAnchor.normal.z * destinationAnchor.normal.z) > 0;
-      const bridgeZ = sameFace
-        ? (sourceOut.z + destinationOut.z) * 0.5
-        : (sourceAnchor.rackRearZ + sourceAnchor.rackFrontZ) * 0.5;
-      const targetY = destinationOut.y;
+      // Prefer a dedicated rear/front lane when both endpoints are clearly on that side.
+      // This keeps rear power cables away from the front face while preserving legacy routing.
+      const sourceRearDist = Math.abs(sourceOut.z - sourceAnchor.rackRearZ);
+      const sourceFrontDist = Math.abs(sourceOut.z - sourceAnchor.rackFrontZ);
+      const destinationRearDist = Math.abs(destinationOut.z - destinationAnchor.rackRearZ);
+      const destinationFrontDist = Math.abs(destinationOut.z - destinationAnchor.rackFrontZ);
 
-      points.push(new this.state.THREE.Vector3(sourceOut.x, sourceOut.y, bridgeZ));
-      if (Math.abs(targetY - sourceOut.y) > 0.002) {
-        points.push(new this.state.THREE.Vector3(sourceOut.x, targetY, bridgeZ));
+      const sourceIsRear = sourceRearDist <= sourceFrontDist;
+      const destinationIsRear = destinationRearDist <= destinationFrontDist;
+      const isPower = String(connection?.cableKind || '').toLowerCase() === 'power';
+
+      const useRearLane = (sourceIsRear && destinationIsRear) || (isPower && (sourceIsRear || destinationIsRear));
+      const useFrontLane = !useRearLane && !sourceIsRear && !destinationIsRear;
+
+      if (useRearLane || useFrontLane) {
+        const laneZ = useRearLane
+          ? Math.min(sourceAnchor.rackRearZ, destinationAnchor.rackRearZ) - 0.06
+          : Math.max(sourceAnchor.rackFrontZ, destinationAnchor.rackFrontZ) + 0.06;
+        const targetY = destinationOut.y;
+
+        points.push(new this.state.THREE.Vector3(sourceOut.x, sourceOut.y, laneZ));
+        if (Math.abs(targetY - sourceOut.y) > 0.002) {
+          points.push(new this.state.THREE.Vector3(sourceOut.x, targetY, laneZ));
+        }
+        points.push(new this.state.THREE.Vector3(destinationOut.x, targetY, laneZ));
+      } else {
+        const sameFace = (sourceAnchor.normal.z * destinationAnchor.normal.z) > 0;
+        const bridgeZ = sameFace
+          ? (sourceOut.z + destinationOut.z) * 0.5
+          : (sourceAnchor.rackRearZ + sourceAnchor.rackFrontZ) * 0.5;
+        const targetY = destinationOut.y;
+
+        points.push(new this.state.THREE.Vector3(sourceOut.x, sourceOut.y, bridgeZ));
+        if (Math.abs(targetY - sourceOut.y) > 0.002) {
+          points.push(new this.state.THREE.Vector3(sourceOut.x, targetY, bridgeZ));
+        }
+        points.push(new this.state.THREE.Vector3(destinationOut.x, targetY, bridgeZ));
       }
-      points.push(new this.state.THREE.Vector3(destinationOut.x, targetY, bridgeZ));
     }
 
     points.push(destinationOut, destinationAnchor.point.clone());
@@ -1869,11 +1896,28 @@ export class PortflowViewer3D {
       const pos = this._parseJsonishObject(row.device_position ?? row.position, {});
       const size = this._parseJsonishObject(row.device_size ?? row.size, {});
       const rotation = this._parseJsonishObject(row.device_rotation ?? row.rotation, {});
+      const specificationRaw = row.device_metadata_specification ?? row.metadata_specification ?? row.specification ?? '';
+      const specification = this._parseJsonishObject(specificationRaw, {});
+      const specNumber = (keys = []) => {
+        for (const key of keys) {
+          if (!Object.prototype.hasOwnProperty.call(specification, key)) {
+            continue;
+          }
+          const parsed = Number(String(specification[key] ?? '').replace(',', '.'));
+          if (Number.isFinite(parsed)) {
+            return parsed;
+          }
+        }
+        return 0;
+      };
       const deviceName = row.device_metadata_caption || row.metadata_caption || row.device_caption || row.caption || row.device_name || row.name || null;
       const locationName = row.device_location_metadata_caption || row.location_metadata_caption || row.location_caption || row.location_name || row.location_label || null;
+      const deviceType = String(row.device_type || row.type || '').trim().toLowerCase();
+      const resolvedDeviceColor = this._resolveDeviceColor(deviceType, specification, row);
       return {
         uuid: row.device_uuid || row.uuid,
         name: deviceName,
+        deviceType,
         location: row.device_location || row.location || null,
         locationName,
         placement: { x: pos.x || 0, y: pos.y || 0, z: pos.z || 0 },
@@ -1881,9 +1925,12 @@ export class PortflowViewer3D {
         size: { x: size.x || 445, y: size.y || 44, z: size.z || 300 },
         ports,
         weightKg: row.device_weight || row.weight || size.weightKg || size.weight || 5,
-        powerW: row.device_power || row.power || 100,
-        thermalW: row.device_thermal || row.thermal || 80,
-        color: '#' + (Math.random() * 0xFFFFFF << 0).toString(16).padStart(6, '0')
+        powerW: specNumber(['powerConsumptionW', 'powerW', 'stromverbrauchW', 'leistungsaufnahmeW']) || row.device_power || row.power || size.powerConsumptionW || 0,
+        powerOutputW: specNumber(['powerOutputW', 'capacityW', 'maxPowerW']) || size.powerOutputW || 0,
+        powerOutputVA: specNumber(['powerOutputVA', 'capacityVA']) || size.powerOutputVA || 0,
+        phases: specNumber(['phases']) || size.phases || 1,
+        thermalW: row.device_thermal || row.thermal || size.thermalW || 0,
+        color: resolvedDeviceColor
       };
     } catch (e) {
       console.warn('Failed to normalize device', row, e);
@@ -1897,8 +1944,11 @@ export class PortflowViewer3D {
         size: { x: 445, y: 44, z: 300 },
         ports,
         weightKg: 5,
-        powerW: 100,
-        thermalW: 80
+        powerW: 0,
+        powerOutputW: 0,
+        powerOutputVA: 0,
+        phases: 1,
+        thermalW: 0
       };
     }
   }
@@ -1959,8 +2009,12 @@ export class PortflowViewer3D {
 
   _portTypeMeta(typeCode) {
     const map = {
-      0: { label: 'C14 (Power)', color: 0xf59e0b },
-      1: { label: 'C20 (Power)', color: 0xd97706 },
+      0: { label: 'C14 (Power In)', color: 0xf59e0b },
+      1: { label: 'C20 (Power In)', color: 0xd97706 },
+      2: { label: 'C13 (Power Out)', color: 0xfbbf24 },
+      3: { label: 'C19 (Power Out)', color: 0xb45309 },
+      4: { label: 'Schuko', color: 0xeab308 },
+      5: { label: 'CEE (3-Phase)', color: 0xef4444 },
       10: { label: 'RJ45', color: 0x93c5fd },
       11: { label: 'SFP / SFP+', color: 0x22d3ee },
       12: { label: 'QSFP', color: 0x14b8a6 },
@@ -1982,26 +2036,32 @@ export class PortflowViewer3D {
       .map(row => {
         const sourcePortUuid = String(row.device_port_source || row.expected_device_port_source || '').trim();
         const destinationPortUuid = String(row.device_port_destination || row.expected_device_port_destination || '').trim();
+        const specificationRaw = row.connection_metadata_specification || row.metadata_specification || row.specification || '';
+        const specification = this._parseJsonishObject(specificationRaw, {});
         const descriptor = [
           row.type,
           row.caption,
           row.cable_name,
+          row.connection_metadata_caption,
+          row.connection_metadata_description,
+          row.connection_metadata_specification,
           row.tags,
           row.specification,
           row.description
         ].filter(Boolean).join(' ').toLowerCase();
-        const isPower = /power|strom|c13|c14|c19|c20|pdu/.test(descriptor);
+        const isPower = /power|strom|c13|c14|c19|c20|pdu|usv|ups|schuko|cee/.test(descriptor);
         const isFiber = /fiber|glasfaser|lc|sc|sfp|qsfp|mpo|om\d|smf|mmf/.test(descriptor);
         const isTrunk = /trunk|uplink|bundle|backbone/.test(descriptor) || !!row.item_group;
-        const cableKind = isPower ? 'power' : (isFiber ? 'fiber' : 'copper');
-        const color = isPower ? 0xf59e0b : (isFiber ? 0x22d3ee : 0x60a5fa);
+        const requestedCableKind = String(specification.cableKind || specification.kind || '').trim().toLowerCase();
+        const cableKind = requestedCableKind || (isPower ? 'power' : (isFiber ? 'fiber' : 'copper'));
+        const color = this._resolveConnectionColor(cableKind, descriptor, specification, row);
 
         return {
           uuid: row.uuid || 'unknown-connection',
           sourcePortUuid: sourcePortUuid || null,
           destinationPortUuid: destinationPortUuid || null,
-          sourceDeviceUuid: String(row.device_source || row.expected_device_source || '').trim(),
-          destinationDeviceUuid: String(row.device_destination || row.expected_device_destination || '').trim(),
+          sourceDeviceUuid: String(row.connection_device_source || row.device_source || row.expected_device_source || '').trim(),
+          destinationDeviceUuid: String(row.connection_device_destination || row.device_destination || row.expected_device_destination || '').trim(),
           type: row.type || row.cable_name || 'Copper',
           typeLabel: row.type || row.cable_name || (isPower ? 'Power' : (isFiber ? 'Fiber' : 'Copper')),
           name: row.caption || row.cable_name || '',
@@ -2013,6 +2073,103 @@ export class PortflowViewer3D {
         };
       })
       .filter(connection => connection.sourcePortUuid && connection.destinationPortUuid);
+  }
+
+  _parseColorValue(value, fallback = null) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.min(0xffffff, Math.round(value)));
+    }
+
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) {
+      return fallback;
+    }
+
+    const named = {
+      yellow: 0xeab308,
+      orange: 0xf59e0b,
+      red: 0xef4444,
+      blue: 0x3b82f6,
+      cyan: 0x22d3ee,
+      green: 0x22c55e,
+      purple: 0x8b5cf6,
+      pink: 0xec4899,
+      magenta: 0xd946ef,
+      gray: 0x94a3b8,
+      grey: 0x94a3b8,
+      white: 0xf8fafc,
+      black: 0x020617
+    };
+    if (Object.prototype.hasOwnProperty.call(named, text)) {
+      return named[text];
+    }
+
+    const hex = text.replace(/^#/, '').replace(/^0x/, '');
+    if (/^[0-9a-f]{6}$/i.test(hex)) {
+      return parseInt(hex, 16);
+    }
+    if (/^[0-9a-f]{3}$/i.test(hex)) {
+      const expanded = hex.split('').map(ch => ch + ch).join('');
+      return parseInt(expanded, 16);
+    }
+
+    return fallback;
+  }
+
+  _resolveDeviceColor(deviceType, specification = {}, row = {}) {
+    const custom = this._parseColorValue(
+      row.device_color
+      || row.color
+      || specification.viewerColor
+      || specification.deviceColor
+      || specification.color
+      || specification.displayColor,
+      null
+    );
+    if (custom !== null) {
+      return custom;
+    }
+
+    const defaults = {
+      ups: 0xf59e0b,
+      pdu: 0xf97316,
+      switch: 0x0f766e,
+      router: 0x2563eb,
+      firewall: 0xdc2626,
+      server: 0x334155,
+      storage: 0x0ea5a4
+    };
+    return defaults[String(deviceType || '').toLowerCase()] || 0x0f766e;
+  }
+
+  _resolveConnectionColor(cableKind, descriptor, specification = {}, row = {}) {
+    const custom = this._parseColorValue(
+      row.connection_color
+      || row.color
+      || specification.viewerColor
+      || specification.cableColor
+      || specification.color
+      || specification.displayColor,
+      null
+    );
+    if (custom !== null) {
+      return custom;
+    }
+
+    const normalizedDescriptor = String(descriptor || '').toLowerCase();
+    const fiberHint = String(specification.fiberType || specification.fiber || specification.mode || '').toLowerCase();
+    const isSinglemode = /singlemode|single-mode|\bos\d\b|\bsmf\b|\bsm\b/.test(normalizedDescriptor) || /singlemode|single-mode|\bos\d\b|\bsmf\b|\bsm\b/.test(fiberHint);
+    const isMultimode = /multimode|multi-mode|\bom\d\b|\bmmf\b|\bmm\b/.test(normalizedDescriptor) || /multimode|multi-mode|\bom\d\b|\bmmf\b|\bmm\b/.test(fiberHint);
+
+    if (String(cableKind || '').toLowerCase() === 'power') {
+      return 0xf59e0b;
+    }
+    if (String(cableKind || '').toLowerCase() === 'fiber') {
+      if (isSinglemode) return 0xeab308;
+      if (isMultimode) return 0xd946ef;
+      return 0x22d3ee;
+    }
+    return 0x60a5fa;
   }
 
   _parseJsonishObject(input, fallback = {}) {

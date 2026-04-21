@@ -315,7 +315,9 @@
                         { "value": "firewall", "label": "Firewall" },
                         { "value": "loadbalancer", "label": "Loadbalancer" },
                         { "value": "storage", "label": "Storage" },
-                        { "value": "sensor", "label": "Sensor" }
+                        { "value": "sensor", "label": "Sensor" },
+                        { "value": "ups", "label": "USV (UPS)" },
+                        { "value": "pdu", "label": "PDU" }
                     ],
                     "required": false
                 },
@@ -489,8 +491,12 @@
                     "label": "Type",
                     "type": "dropdown",
                     "options": [
-                        { "value": "0", "label": "0 - C14 (Power)" },
-                        { "value": "1", "label": "1 - C20 (Power)" },
+                        { "value": "0", "label": "0 - C14 (Power In)" },
+                        { "value": "1", "label": "1 - C20 (Power In)" },
+                        { "value": "2", "label": "2 - C13 (Power Out)" },
+                        { "value": "3", "label": "3 - C19 (Power Out)" },
+                        { "value": "4", "label": "4 - Schuko" },
+                        { "value": "5", "label": "5 - CEE (3-Phase)" },
                         { "value": "10", "label": "10 - RJ45" },
                         { "value": "11", "label": "11 - SFP / SFP+" },
                         { "value": "12", "label": "12 - QSFP" },
@@ -643,8 +649,22 @@
                     "required": false
                 },
                 "type": {
-                    "label": "Type",
-                    "type": "text",
+                    "label": "Type",                    
+                    "type": "dropdown",
+                    "options": [
+                        { "value": "power", "label": "Power" },
+                        { "value": "om2", "label": "OM2" },
+                        { "value": "om3", "label": "OM3" },
+                        { "value": "om4", "label": "OM4" },
+                        { "value": "os1", "label": "OS1" },
+                        { "value": "os2", "label": "OS2" },
+                        { "value": "cat5e", "label": "Cat5e" },
+                        { "value": "cat6", "label": "Cat6" },
+                        { "value": "cat6a", "label": "Cat6a" },
+                        { "value": "cat7", "label": "Cat7" },
+                        { "value": "cat8", "label": "Cat8" },
+                        { "value": "other", "label": "Other" }
+                    ],
                     "required": false
                 },
                 "length": {

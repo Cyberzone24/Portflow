@@ -381,7 +381,7 @@ function searchTable(event) {
 async function generateFormFromJSON(table = 'location_details', options = {}) {
     try {
         console.log('Loading form configuration for table:', table);
-        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json');
+        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/forms.json');
         const data = await response.json();
         const mode = options.mode === 'edit' ? 'edit' : 'create';
         const rowData = options.rowData || null;
@@ -482,6 +482,8 @@ async function generateFormFromJSON(table = 'location_details', options = {}) {
             populateFormsFromRow(table, formConfig, rowData);
         }
 
+        setupSpecificationEditors(container);
+
         if (table === 'device_details') {
             currentDeviceCreateMode = 'new';
             if (mode !== 'edit') {
@@ -518,8 +520,12 @@ function getDefaultDevicePortConfig(deviceType) {
 
 function getPortTypeDefinitions() {
     return {
-        0: { key: 'power_c14', label: 'C14 (Power)', family: 'power' },
-        1: { key: 'power_c20', label: 'C20 (Power)', family: 'power' },
+        0: { key: 'power_c14', label: 'C14 (Power In)', family: 'power' },
+        1: { key: 'power_c20', label: 'C20 (Power In)', family: 'power' },
+        2: { key: 'power_c13', label: 'C13 (Power Out)', family: 'power' },
+        3: { key: 'power_c19', label: 'C19 (Power Out)', family: 'power' },
+        4: { key: 'power_schuko', label: 'Schuko', family: 'power' },
+        5: { key: 'power_cee', label: 'CEE (3-Phase)', family: 'power' },
         10: { key: 'rj45', label: 'RJ45', family: 'copper' },
         11: { key: 'sfp', label: 'SFP / SFP+', family: 'sfp' },
         12: { key: 'qsfp', label: 'QSFP', family: 'qsfp' },
@@ -547,8 +553,12 @@ function getPortTypeCodeByFamily(typeFamily) {
  */
 function getPortTypeSizeMm(typeCode) {
     const sizes = {
-        0:  { w: 25, h: 32 },  // C14
-        1:  { w: 25, h: 32 },  // C20
+        0:  { w: 25, h: 32 },  // C14 (Power In)
+        1:  { w: 25, h: 32 },  // C20 (Power In)
+        2:  { w: 25, h: 20 },  // C13 (Power Out)
+        3:  { w: 30, h: 20 },  // C19 (Power Out)
+        4:  { w: 20, h: 20 },  // Schuko
+        5:  { w: 30, h: 30 },  // CEE (3-Phase)
         10: { w: 14, h: 14 },  // RJ45
         11: { w: 14, h:  8 },  // SFP / SFP+
         12: { w: 18, h:  9 },  // QSFP
@@ -642,6 +652,42 @@ function getDevicePresetDefinitions() {
             deviceWidth: 440, deviceHeight: 44,
             groups: [
                 { typeCode: 10, count: 48, rows: 2, startLabel: 'Port1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 18, offsetY: 3, gapX: 1, gapY: 2, numbering: 'column-first' }
+            ]
+        },
+        'ups-1u-single': {
+            label: 'USV 1HE 1-Phase (1× C14 In, 8× C13 Out, MGMT)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 20, count: 1, rows: 1, startLabel: 'MGMT1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 200, offsetY: 15, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 0,  count: 1, rows: 1, startLabel: 'Input1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 10, offsetY: 6, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 2,  count: 8, rows: 2, startLabel: 'Out1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 60, offsetY: 2, gapX: 3, gapY: 2, numbering: 'column-first' }
+            ]
+        },
+        'ups-2u-3phase': {
+            label: 'USV 2HE 3-Phase (1× CEE In, 12× C13, 4× C19 Out, MGMT)',
+            deviceWidth: 440, deviceHeight: 88,
+            groups: [
+                { typeCode: 20, count: 1, rows: 1, startLabel: 'MGMT1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 200, offsetY: 37, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 5,  count: 1, rows: 1, startLabel: 'Input1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 10, offsetY: 29, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 2,  count: 12, rows: 2, startLabel: 'Out1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 60, offsetY: 5, gapX: 3, gapY: 2, numbering: 'column-first' },
+                { typeCode: 3,  count: 4,  rows: 2, startLabel: 'OutHigh1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 340, offsetY: 5, gapX: 3, gapY: 2, numbering: 'column-first' }
+            ]
+        },
+        'pdu-vertical-24': {
+            label: 'PDU Vertikal 24-Port (1× C20 In, 24× C13 Out, MGMT)',
+            deviceWidth: 60, deviceHeight: 1720,
+            groups: [
+                { typeCode: 20, count: 1, rows: 1, startLabel: 'MGMT1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 23, offsetY: 5, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 1,  count: 1, rows: 1, startLabel: 'Input1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 17, offsetY: 5, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 2,  count: 24, rows: 1, startLabel: 'Out1', labelPattern: '{prefix}{index}', side: 'front', offsetX: 17, offsetY: 40, gapX: 2, gapY: 5, numbering: 'row-first' }
+            ]
+        },
+        'pdu-horizontal-12': {
+            label: 'PDU 1HE Horizontal (1× C20 In, 12× C13 Out)',
+            deviceWidth: 440, deviceHeight: 44,
+            groups: [
+                { typeCode: 1,  count: 1, rows: 1, startLabel: 'Input1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 10, offsetY: 6, gapX: 5, gapY: 2, numbering: 'row-first' },
+                { typeCode: 2,  count: 12, rows: 1, startLabel: 'Out1', labelPattern: '{prefix}{index}', side: 'rear', offsetX: 60, offsetY: 12, gapX: 3, gapY: 2, numbering: 'row-first' }
             ]
         }
     };
@@ -959,6 +1005,205 @@ function parseJsonObjectOrDefault(rawValue, fallback = {}) {
 function getNumericOrDefault(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeSpecificationObject(rawValue) {
+    if (!rawValue) {
+        return {};
+    }
+
+    const parsed = parseJsonObjectOrDefault(rawValue, {});
+    if (Object.keys(parsed).length > 0) {
+        return parsed;
+    }
+
+    const lines = String(rawValue || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (lines.length === 0) {
+        return {};
+    }
+
+    const result = {};
+    lines.forEach((line, index) => {
+        const kvMatch = line.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
+        if (kvMatch) {
+            const key = kvMatch[1].trim();
+            const val = kvMatch[2].trim();
+            if (key) {
+                result[key] = val;
+            }
+        } else {
+            result[`note_${index + 1}`] = line;
+        }
+    });
+
+    return result;
+}
+
+function serializeSpecificationObject(specObj) {
+    const sanitized = {};
+    Object.entries(specObj || {}).forEach(([key, value]) => {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) {
+            return;
+        }
+        const normalizedValue = value == null ? '' : String(value).trim();
+        if (normalizedValue === '') {
+            return;
+        }
+        sanitized[normalizedKey] = normalizedValue;
+    });
+
+    return Object.keys(sanitized).length > 0
+        ? JSON.stringify(sanitized)
+        : '';
+}
+
+function setupSpecificationEditors(container) {
+    if (!container) {
+        return;
+    }
+
+    const specTextareas = Array.from(container.querySelectorAll('textarea[name="specification"]'));
+    const predefinedSpecKeys = [
+        'powerConsumptionW',
+        'powerOutputW',
+        'powerOutputVA',
+        'phases',
+        'switchingBackplaneGbps',
+        'throughputGbps',
+        'cpuModel',
+        'ramGB',
+        'storageTB',
+        'psuCount',
+        'efficiencyClass'
+    ];
+
+    specTextareas.forEach((textarea) => {
+        if (!textarea || textarea.dataset.specEditorInitialized === '1') {
+            return;
+        }
+
+        textarea.dataset.specEditorInitialized = '1';
+        textarea.classList.add('hidden');
+
+        const host = document.createElement('div');
+        host.className = 'rounded-xl border border-slate-300 bg-slate-50 p-3';
+        host.innerHTML = `
+            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Specification (Erweiterte Tabelle)</div>
+            <div class="spec-grid grid gap-2"></div>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" class="spec-add-row rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Zeile hinzufügen</button>
+                <select class="spec-key-preset rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700">
+                    <option value="">Vorgefertigten Schlüssel wählen ...</option>
+                    ${predefinedSpecKeys.map((key) => `<option value="${key}">${key}</option>`).join('')}
+                </select>
+                <button type="button" class="spec-add-preset rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">Schlüssel einfügen</button>
+            </div>
+        `;
+
+        textarea.parentNode.appendChild(host);
+
+        const grid = host.querySelector('.spec-grid');
+        const addButton = host.querySelector('.spec-add-row');
+        const presetSelect = host.querySelector('.spec-key-preset');
+        const addPresetButton = host.querySelector('.spec-add-preset');
+        let isInternalWrite = false;
+
+        const writeBack = () => {
+            const specObj = {};
+            host.querySelectorAll('.spec-row').forEach((row) => {
+                const keyInput = row.querySelector('.spec-key');
+                const valInput = row.querySelector('.spec-value');
+                const key = String(keyInput?.value || '').trim();
+                const val = String(valInput?.value || '').trim();
+                if (!key || !val) {
+                    return;
+                }
+                specObj[key] = val;
+            });
+
+            isInternalWrite = true;
+            textarea.value = serializeSpecificationObject(specObj);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            isInternalWrite = false;
+        };
+
+        const createRow = (key = '', value = '') => {
+            const row = document.createElement('div');
+            row.className = 'spec-row grid gap-2 sm:grid-cols-[minmax(120px,1fr)_minmax(160px,2fr)_auto]';
+            row.innerHTML = `
+                <input type="text" class="spec-key rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" placeholder="Schlüssel (z.B. powerConsumptionW)">
+                <input type="text" class="spec-value rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" placeholder="Wert (z.B. 450)">
+                <button type="button" class="spec-remove h-9 rounded-lg border border-red-200 bg-red-50 px-2 text-xs font-semibold text-red-700 hover:bg-red-100">Entfernen</button>
+            `;
+
+            const keyInput = row.querySelector('.spec-key');
+            const valueInput = row.querySelector('.spec-value');
+            const removeButton = row.querySelector('.spec-remove');
+
+            keyInput.value = key;
+            valueInput.value = value;
+
+            keyInput.addEventListener('input', writeBack);
+            valueInput.addEventListener('input', writeBack);
+            removeButton.addEventListener('click', () => {
+                row.remove();
+                writeBack();
+            });
+
+            grid.appendChild(row);
+            return row;
+        };
+
+        const renderFromTextarea = () => {
+            if (isInternalWrite) {
+                return;
+            }
+            grid.innerHTML = '';
+            const specObj = normalizeSpecificationObject(textarea.value);
+            const entries = Object.entries(specObj);
+            if (entries.length === 0) {
+                createRow('', '');
+                return;
+            }
+            entries.forEach(([key, value]) => createRow(String(key || ''), String(value || '')));
+        };
+
+        addButton.addEventListener('click', () => {
+            const row = createRow('', '');
+            row.querySelector('.spec-key')?.focus();
+        });
+
+        addPresetButton.addEventListener('click', () => {
+            const selectedKey = String(presetSelect?.value || '').trim();
+            if (!selectedKey) {
+                return;
+            }
+
+            const existingRow = Array.from(host.querySelectorAll('.spec-row')).find((row) => {
+                const keyInput = row.querySelector('.spec-key');
+                return String(keyInput?.value || '').trim() === selectedKey;
+            });
+
+            if (existingRow) {
+                existingRow.querySelector('.spec-value')?.focus();
+                return;
+            }
+
+            const row = createRow(selectedKey, '');
+            writeBack();
+            row.querySelector('.spec-value')?.focus();
+        });
+
+        textarea.addEventListener('input', renderFromTextarea);
+        textarea.addEventListener('change', renderFromTextarea);
+        renderFromTextarea();
+    });
 }
 
 function createMaskNumberInput(id, labelText, defaultValue = 0, step = '1') {
@@ -2049,6 +2294,8 @@ function setupDevicePortAutomation() {
     const typeField = form.querySelector('[name="type"]');
     const templateField = form.querySelector('[name="template"]');
     const sizeField = form.querySelector('[name="size"]');
+    const metadataForm = document.getElementById('metadata');
+    const specificationField = metadataForm ? metadataForm.querySelector('[name="specification"]') : null;
 
     // Port groups state
     let portGroups = [];
@@ -2070,7 +2317,138 @@ function setupDevicePortAutomation() {
         const dim = getDeviceDimensions();
         const parsed = parseJsonObjectOrDefault(sizeField.value || '{}', {});
         parsed.portLayout = { deviceWidth: dim.w, deviceHeight: dim.h, groups: portGroups };
+        // Preserve power fields
+        syncPowerFieldsToSize(parsed);
         sizeField.value = JSON.stringify(parsed);
+    };
+
+    // --- Power fields sync via metadata specification ---
+    const syncPowerFieldsToSize = (parsed) => {
+        void parsed;
+        const panel = document.getElementById('powerFieldsPanel');
+        if (!panel || !specificationField) return;
+        const get = (id) => {
+            const el = panel.querySelector(`#${id}`);
+            return el ? el.value : '';
+        };
+        const pConsumption = parseFloat(String(get('pwrConsumptionW')).replace(',', '.')) || 0;
+        const pOutput = parseFloat(String(get('pwrOutputW')).replace(',', '.')) || 0;
+        const pOutputVA = parseFloat(String(get('pwrOutputVA')).replace(',', '.')) || 0;
+        const pPhases = parseInt(get('pwrPhases'), 10) || 1;
+
+        const specification = normalizeSpecificationObject(specificationField.value || '');
+        if (pConsumption > 0) specification.powerConsumptionW = String(pConsumption);
+        else delete specification.powerConsumptionW;
+        if (pOutput > 0) specification.powerOutputW = String(pOutput);
+        else delete specification.powerOutputW;
+        if (pOutputVA > 0) specification.powerOutputVA = String(pOutputVA);
+        else delete specification.powerOutputVA;
+        if (pPhases > 1) specification.phases = String(pPhases);
+        else delete specification.phases;
+
+        specificationField.value = serializeSpecificationObject(specification);
+        specificationField.dispatchEvent(new Event('input', { bubbles: true }));
+        specificationField.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const loadPowerFieldsFromSize = () => {
+        const panel = document.getElementById('powerFieldsPanel');
+        if (!panel) return;
+        const specification = normalizeSpecificationObject(specificationField ? specificationField.value : '');
+        const set = (id, val) => {
+            const el = panel.querySelector(`#${id}`);
+            if (el) el.value = val || '';
+        };
+        set('pwrConsumptionW', specification.powerConsumptionW || '');
+        set('pwrOutputW', specification.powerOutputW || '');
+        set('pwrOutputVA', specification.powerOutputVA || '');
+        set('pwrPhases', specification.phases || '1');
+        updatePhaseInfo();
+    };
+
+    const updatePhaseInfo = () => {
+        const panel = document.getElementById('powerFieldsPanel');
+        if (!panel) return;
+        const phases = parseInt(panel.querySelector('#pwrPhases')?.value, 10) || 1;
+        const info = panel.querySelector('#pwrPhaseInfo');
+        if (info) {
+            if (phases === 3) {
+                info.textContent = '3-Phasen: Ausgänge werden gleichmäßig auf L1, L2, L3 verteilt.';
+                info.classList.remove('hidden');
+            } else {
+                info.classList.add('hidden');
+            }
+        }
+    };
+
+    let powerFieldsPanel = null;
+
+    const ensurePowerPanel = () => {
+        if (powerFieldsPanel) return powerFieldsPanel;
+        const existingPanel = document.getElementById('powerFieldsPanel');
+        if (existingPanel) existingPanel.remove();
+
+        powerFieldsPanel = document.createElement('div');
+        powerFieldsPanel.id = 'powerFieldsPanel';
+        powerFieldsPanel.className = 'col-span-2 pb-6 hidden';
+        powerFieldsPanel.innerHTML = `
+            <div class="rounded-xl border border-amber-300 bg-amber-50 p-4">
+                <div class="mb-3">
+                    <div class="text-lg font-bold text-amber-800"><i data-lucide="zap" class="inline w-5 h-5 mr-1"></i>Strom-Konfiguration</div>
+                    <div class="text-xs text-amber-600">Werte werden in Metadata Specification gespeichert.</div>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <label class="block">
+                        <span class="text-xs text-amber-700 font-medium">Stromverbrauch (W)</span>
+                        <input type="number" id="pwrConsumptionW" min="0" step="1" placeholder="z.B. 50" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                    </label>
+                    <label class="block">
+                        <span class="text-xs text-amber-700 font-medium">Ausgangsleistung (W)</span>
+                        <input type="number" id="pwrOutputW" min="0" step="1" placeholder="z.B. 3000" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                    </label>
+                    <label class="block">
+                        <span class="text-xs text-amber-700 font-medium">Scheinleistung (VA)</span>
+                        <input type="number" id="pwrOutputVA" min="0" step="1" placeholder="z.B. 3750" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                    </label>
+                    <label class="block">
+                        <span class="text-xs text-amber-700 font-medium">Phasen</span>
+                        <select id="pwrPhases" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                            <option value="1">1-Phase</option>
+                            <option value="3">3-Phasen</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="pwrPhaseInfo" class="mt-2 text-xs text-amber-600 hidden"></div>
+            </div>
+        `;
+
+        const sizeFieldWrapper = sizeField ? sizeField.closest('.pb-6') : null;
+        if (sizeFieldWrapper && sizeFieldWrapper.parentNode) {
+            sizeFieldWrapper.parentNode.insertBefore(powerFieldsPanel, sizeFieldWrapper.nextSibling);
+        }
+
+        // Wire up events
+        powerFieldsPanel.querySelectorAll('input, select').forEach(el => {
+            el.addEventListener('change', () => { syncConfigField(); });
+            el.addEventListener('input', () => { syncConfigField(); });
+        });
+        powerFieldsPanel.querySelector('#pwrPhases')?.addEventListener('change', updatePhaseInfo);
+
+        if (typeof lucide !== 'undefined') lucide.createIcons({ attrs: { class: ['lucide-icon'] }, nameAttr: 'data-lucide' });
+
+        return powerFieldsPanel;
+    };
+
+    const updatePowerPanelVisibility = () => {
+        const deviceType = typeField ? typeField.value : '';
+        const isPowerDevice = ['ups', 'pdu'].includes(deviceType);
+        ensurePowerPanel();
+        if (powerFieldsPanel) {
+            powerFieldsPanel.classList.toggle('hidden', !isPowerDevice);
+        }
+        if (isPowerDevice) {
+            loadPowerFieldsFromSize();
+        }
     };
 
     const typeOptions = Object.entries(getPortTypeDefinitions()).map(([code, def]) => {
@@ -2414,7 +2792,7 @@ function setupDevicePortAutomation() {
     };
 
     if (typeField) {
-        typeField.addEventListener('change', () => { renderCanvas(); });
+        typeField.addEventListener('change', () => { renderCanvas(); updatePowerPanelVisibility(); });
     }
 
     if (sizeField) {
@@ -2428,6 +2806,7 @@ function setupDevicePortAutomation() {
     }
 
     initBuilder();
+    updatePowerPanelVisibility();
     syncTemplatePortRules();
 }
 
@@ -3614,6 +3993,200 @@ function resolveDetailsValue(fieldKey, rowData) {
     return String(value);
 }
 
+function formatSpecificationValueForDetails(value) {
+    const specification = normalizeSpecificationObject(value);
+    const entries = Object.entries(specification).filter(([key, val]) => String(key || '').trim() && String(val || '').trim());
+
+    if (entries.length === 0) {
+        const plain = String(value || '').trim();
+        return plain ? `<span class="whitespace-pre-wrap">${escapeHtml(plain)}</span>` : '--';
+    }
+
+    const rows = entries.map(([key, val]) => {
+        return `<tr>`
+            + `<th class="border-b border-slate-200 px-2 py-1 text-left text-xs font-semibold text-slate-600">${escapeHtml(key)}</th>`
+            + `<td class="border-b border-slate-200 px-2 py-1 text-left text-xs text-slate-900">${escapeHtml(val)}</td>`
+            + `</tr>`;
+    }).join('');
+
+    return `<details class="rounded border border-slate-200 bg-white" open>`
+        + `<summary class="cursor-pointer px-2 py-1 text-xs font-semibold text-slate-700">${entries.length} technische Werte</summary>`
+        + `<div class="overflow-auto px-2 pb-2 pt-1"><table class="w-full border-collapse"><tbody>${rows}</tbody></table></div>`
+        + `</details>`;
+}
+
+function getSpecificationRawFromRow(rowData) {
+    return rowData?.device_metadata_specification || rowData?.metadata_specification || rowData?.specification || '';
+}
+
+function getSpecificationNumberFromObject(specification, candidateKeys = []) {
+    const map = specification && typeof specification === 'object' ? specification : {};
+    for (const key of candidateKeys) {
+        if (!Object.prototype.hasOwnProperty.call(map, key)) {
+            continue;
+        }
+        const parsed = Number(String(map[key] || '').replace(',', '.'));
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return 0;
+}
+
+async function loadUpsDataset() {
+    const [devicesResponse, portsResponse, connectionsResponse] = await Promise.all([
+        fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_details?limit=5000'),
+        fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port_details?limit=5000'),
+        fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/connection_details?limit=5000')
+    ]);
+
+    const [devicesPayload, portsPayload, connectionsPayload] = await Promise.all([
+        devicesResponse.json(),
+        portsResponse.json(),
+        connectionsResponse.json()
+    ]);
+
+    return {
+        devices: Array.isArray(devicesPayload?.items) ? devicesPayload.items : [],
+        ports: Array.isArray(portsPayload?.items) ? portsPayload.items : [],
+        connections: Array.isArray(connectionsPayload?.items) ? connectionsPayload.items : []
+    };
+}
+
+function isPowerConnection(connectionRow) {
+    const descriptor = [
+        connectionRow?.connection_type,
+        connectionRow?.type,
+        connectionRow?.connection_metadata_caption,
+        connectionRow?.metadata_caption,
+        connectionRow?.connection_metadata_specification,
+        connectionRow?.metadata_specification,
+        connectionRow?.connection_metadata_description,
+        connectionRow?.metadata_description,
+        connectionRow?.connection_metadata_tags,
+        connectionRow?.metadata_tags,
+        connectionRow?.cable_name
+    ].filter(Boolean).join(' ').toLowerCase();
+    return /power|strom|c13|c14|c19|c20|pdu|usv|ups|schuko|cee/.test(descriptor);
+}
+
+function getDevicePowerFromRowSpec(rowData) {
+    const specification = normalizeSpecificationObject(getSpecificationRawFromRow(rowData));
+    return getSpecificationNumberFromObject(specification, ['powerConsumptionW', 'powerW', 'stromverbrauchW', 'leistungsaufnahmeW']);
+}
+
+function getDeviceTypeFromRow(rowData) {
+    return String(rowData?.device_type || rowData?.type || '').trim().toLowerCase();
+}
+
+async function computeUpsUtilizationFromDetailsRow(rowData) {
+    const upsUuid = String(rowData?.device_uuid || rowData?.uuid || '').trim();
+    if (!upsUuid) {
+        return null;
+    }
+
+    const dataset = await loadUpsDataset();
+    const ports = dataset.ports || [];
+    const connections = dataset.connections || [];
+    const devices = dataset.devices || [];
+
+    const portOwner = new Map();
+    ports.forEach((port) => {
+        const portUuid = String(port?.device_port_uuid || port?.uuid || '').trim();
+        const owner = String(port?.device_port_device || port?.device || '').trim();
+        if (portUuid && owner) {
+            portOwner.set(portUuid, owner);
+        }
+    });
+
+    const adjacency = new Map();
+    const connect = (left, right) => {
+        if (!left || !right || left === right) {
+            return;
+        }
+        if (!adjacency.has(left)) {
+            adjacency.set(left, new Set());
+        }
+        adjacency.get(left).add(right);
+    };
+
+    connections.forEach((connection) => {
+        if (!isPowerConnection(connection)) {
+            return;
+        }
+
+        const sourcePort = String(connection?.connection_device_port_source || connection?.device_port_source || connection?.connection_expected_device_port_source || connection?.expected_device_port_source || '').trim();
+        const destinationPort = String(connection?.connection_device_port_destination || connection?.device_port_destination || connection?.connection_expected_device_port_destination || connection?.expected_device_port_destination || '').trim();
+
+        const sourceDevice = String(portOwner.get(sourcePort) || '').trim();
+        const destinationDevice = String(portOwner.get(destinationPort) || '').trim();
+        connect(sourceDevice, destinationDevice);
+        connect(destinationDevice, sourceDevice);
+    });
+
+    const deviceByUuid = new Map();
+    const deviceTypeByUuid = new Map();
+    const devicePowerByUuid = new Map();
+    devices.forEach((device) => {
+        const uuid = String(device?.device_uuid || device?.uuid || '').trim();
+        if (uuid) {
+            deviceByUuid.set(uuid, device);
+            deviceTypeByUuid.set(uuid, getDeviceTypeFromRow(device));
+            devicePowerByUuid.set(uuid, getDevicePowerFromRowSpec(device));
+        }
+    });
+
+    const sourceType = deviceTypeByUuid.get(upsUuid) || getDeviceTypeFromRow(rowData);
+    const visited = new Set([upsUuid]);
+    const queue = [upsUuid];
+
+    while (queue.length > 0) {
+        const current = queue.shift();
+        const neighbors = adjacency.get(current) || new Set();
+        neighbors.forEach((neighbor) => {
+            if (!neighbor || visited.has(neighbor)) {
+                return;
+            }
+
+            const neighborType = deviceTypeByUuid.get(neighbor) || '';
+            if (sourceType === 'pdu' && neighborType === 'ups') {
+                return;
+            }
+
+            visited.add(neighbor);
+            queue.push(neighbor);
+        });
+    }
+
+    let totalLoadW = 0;
+    let consumerCount = 0;
+    visited.forEach((uuid) => {
+        if (!uuid || uuid === upsUuid) {
+            return;
+        }
+
+        const type = deviceTypeByUuid.get(uuid) || '';
+        const power = Number(devicePowerByUuid.get(uuid) || 0);
+        if (power > 0) {
+            totalLoadW += power;
+        }
+        if (type !== 'ups' && type !== 'pdu') {
+            consumerCount += 1;
+        }
+    });
+
+    const ownSpecification = normalizeSpecificationObject(getSpecificationRawFromRow(rowData));
+    const capacityW = getSpecificationNumberFromObject(ownSpecification, ['powerOutputW', 'capacityW', 'maxPowerW']);
+    const utilizationPct = capacityW > 0 ? (totalLoadW / capacityW) * 100 : null;
+
+    return {
+        connectedDevices: consumerCount,
+        totalLoadW,
+        capacityW,
+        utilizationPct
+    };
+}
+
 function findFirstExistingKey(rowData, candidates) {
     for (const key of candidates) {
         if (Object.prototype.hasOwnProperty.call(rowData, key) && rowData[key] !== null && rowData[key] !== undefined && String(rowData[key]).trim() !== '') {
@@ -3960,9 +4533,38 @@ async function renderDetailsGrid(rowData) {
     detailsLayout.primary_fields.forEach((fieldKey) => {
         const label = resolveDetailsLabel(fieldKey, tableConfig);
         const value = resolveDetailsValue(fieldKey, rowData);
-        $tbody.append(`<tr><th class="w-[38%] border-b border-slate-200 px-2 py-2 text-left text-sm font-semibold text-slate-600">${escapeHtml(label)}</th><td class="break-words border-b border-slate-200 px-2 py-2 text-left text-sm text-slate-900">${escapeHtml(value)}</td></tr>`);
+        const isSpecification = /specification$/i.test(String(fieldKey || ''));
+        const renderedValue = isSpecification ? formatSpecificationValueForDetails(value) : escapeHtml(value);
+        $tbody.append(`<tr><th class="w-[38%] border-b border-slate-200 px-2 py-2 text-left text-sm font-semibold text-slate-600">${escapeHtml(label)}</th><td class="break-words border-b border-slate-200 px-2 py-2 text-left text-sm text-slate-900">${renderedValue}</td></tr>`);
     });
     $leftCard.append($table);
+
+    const deviceType = String(rowData.device_type || rowData.type || '').trim().toLowerCase();
+    if (currentTable === 'device_details' && (deviceType === 'ups' || deviceType === 'pdu')) {
+        try {
+            const utilization = await computeUpsUtilizationFromDetailsRow(rowData);
+            if (utilization) {
+                const pct = Number.isFinite(utilization.utilizationPct) ? Math.max(0, utilization.utilizationPct) : null;
+                const width = pct === null ? 0 : Math.min(pct, 100);
+                const text = pct === null ? 'Kapazitaet fehlt in Specification' : `${pct.toFixed(1)}%`;
+
+                $leftCard.append(`
+                    <div class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                        <div class="mb-1 text-sm font-bold text-amber-900">USV/PDU Auslastung</div>
+                        <div class="grid grid-cols-3 gap-2 text-xs text-amber-800">
+                            <div>Last: <strong>${escapeHtml(utilization.totalLoadW.toFixed(1))} W</strong></div>
+                            <div>Kapazitaet: <strong>${utilization.capacityW > 0 ? `${escapeHtml(utilization.capacityW.toFixed(1))} W` : '--'}</strong></div>
+                            <div>Verbraucher: <strong>${escapeHtml(utilization.connectedDevices)}</strong></div>
+                        </div>
+                        <div class="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-amber-200"><div class="h-full ${pct !== null && pct > 100 ? 'bg-red-600' : 'bg-amber-500'}" style="width:${width}%"></div></div>
+                        <div class="mt-1 text-xs text-amber-700">Auslastung: ${escapeHtml(text)}</div>
+                    </div>
+                `);
+            }
+        } catch (error) {
+            console.warn('USV-Auslastung konnte nicht berechnet werden:', error);
+        }
+    }
     
     // DEBUG: Für Locations type=8 (Racks) einen 3D-Button hinzufügen
     // Achtung: Bei location_details sind die Felder als "location_type" vorhanden, nicht "type"!
@@ -4335,6 +4937,9 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 <div id="viewer3dStatus" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-600">
                     3D-Viewer wird geladen...
                 </div>
+                <div id="viewer3dUpsSummary" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-600">
+                    USV/PDU Auslastung wird geladen...
+                </div>
             </div>
 
             <div id="viewer3dContainer" class="h-[60vh] min-h-[520px] w-full rounded-lg border border-slate-300 bg-slate-50 shadow-sm lg:h-full lg:min-h-0"></div>
@@ -4449,6 +5054,123 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 } else {
                     statusEl.textContent = `Rack geladen | UUID: ${rack.uuid} | Outer: ${outer.x || '-'}x${outer.y || '-'}x${outer.z || '-'} | Inner: ${inner.x || '-'}x${inner.y || '-'}x${inner.z || '-'} | Cables: ${viewer.state.liveConnections?.length || 0}`;
                 }
+            }
+        }
+
+        const upsSummaryEl = document.getElementById('viewer3dUpsSummary');
+        if (upsSummaryEl) {
+            const devices = Array.isArray(viewer.state?.liveDevices) ? viewer.state.liveDevices : [];
+            const connections = Array.isArray(viewer.state?.liveConnections) ? viewer.state.liveConnections : [];
+            const deviceByUuid = new Map();
+            const portToDeviceUuid = new Map();
+            const adjacency = new Map();
+
+            const connect = (left, right) => {
+                if (!left || !right || left === right) {
+                    return;
+                }
+                if (!adjacency.has(left)) {
+                    adjacency.set(left, new Set());
+                }
+                adjacency.get(left).add(right);
+            };
+
+            devices.forEach((device) => {
+                const uuid = String(device?.uuid || '').trim();
+                if (uuid) {
+                    deviceByUuid.set(uuid, device);
+                }
+
+                const ports = Array.isArray(device?.ports) ? device.ports : [];
+                ports.forEach((port) => {
+                    const portUuid = String(port?.uuid || '').trim();
+                    if (portUuid && uuid) {
+                        portToDeviceUuid.set(portUuid, uuid);
+                    }
+                });
+            });
+
+            const powerSources = devices.filter((device) => {
+                const type = String(device?.deviceType || '').toLowerCase();
+                return type === 'ups' || type === 'pdu';
+            });
+
+            if (powerSources.length === 0) {
+                upsSummaryEl.textContent = 'Keine USV/PDU im aktuellen 3D-Ausschnitt.';
+            } else {
+                const html = powerSources.map((source) => {
+                    const sourceUuid = String(source?.uuid || '').trim();
+                    connections.forEach((connection) => {
+                        if (String(connection?.cableKind || '').toLowerCase() !== 'power') {
+                            return;
+                        }
+
+                        const srcPort = String(connection?.sourcePortUuid || '').trim();
+                        const dstPort = String(connection?.destinationPortUuid || '').trim();
+                        const srcFromPort = srcPort ? String(portToDeviceUuid.get(srcPort) || '').trim() : '';
+                        const dstFromPort = dstPort ? String(portToDeviceUuid.get(dstPort) || '').trim() : '';
+
+                        const src = String(connection?.sourceDeviceUuid || srcFromPort || '').trim();
+                        const dst = String(connection?.destinationDeviceUuid || dstFromPort || '').trim();
+                        connect(src, dst);
+                        connect(dst, src);
+                    });
+
+                    const sourceType = String(source?.deviceType || '').toLowerCase();
+                    const visited = new Set([sourceUuid]);
+                    const queue = [sourceUuid];
+
+                    while (queue.length > 0) {
+                        const current = queue.shift();
+                        const neighbors = adjacency.get(current) || new Set();
+                        neighbors.forEach((neighbor) => {
+                            if (!neighbor || visited.has(neighbor)) {
+                                return;
+                            }
+                            const neighborType = String(deviceByUuid.get(neighbor)?.deviceType || '').toLowerCase();
+                            if (sourceType === 'pdu' && neighborType === 'ups') {
+                                return;
+                            }
+                            visited.add(neighbor);
+                            queue.push(neighbor);
+                        });
+                    }
+
+                    let consumerCount = 0;
+                    let totalLoadW = 0;
+                    visited.forEach((uuid) => {
+                        if (!uuid || uuid === sourceUuid) {
+                            return;
+                        }
+                        const device = deviceByUuid.get(uuid);
+                        const type = String(device?.deviceType || '').toLowerCase();
+                        const power = Number(device?.powerW || 0);
+                        if (power > 0) {
+                            totalLoadW += power;
+                        }
+                        if (type !== 'ups' && type !== 'pdu') {
+                            consumerCount += 1;
+                        }
+                    });
+
+                    const capacityW = Number(source?.powerOutputW || 0);
+                    const pct = capacityW > 0 ? (totalLoadW / capacityW) * 100 : null;
+                    const width = pct === null ? 0 : Math.min(Math.max(pct, 0), 100);
+                    const pctText = pct === null ? 'n/a' : `${pct.toFixed(1)}%`;
+
+                    return `<div class="mb-2 rounded border border-slate-200 bg-white p-2">`
+                        + `<div class="text-xs font-semibold text-slate-800">${escapeHtml(String(source?.name || sourceUuid))}</div>`
+                        + `<div class="mt-1 grid grid-cols-3 gap-2 text-[11px] text-slate-600">`
+                        + `<div>Last: <strong>${escapeHtml(totalLoadW.toFixed(1))} W</strong></div>`
+                        + `<div>Kap.: <strong>${capacityW > 0 ? `${escapeHtml(capacityW.toFixed(1))} W` : '--'}</strong></div>`
+                        + `<div>Verbraucher: <strong>${escapeHtml(consumerCount)}</strong></div>`
+                        + `</div>`
+                        + `<div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200"><div class="h-full ${pct !== null && pct > 100 ? 'bg-red-600' : 'bg-blue-600'}" style="width:${width}%"></div></div>`
+                        + `<div class="mt-1 text-[11px] text-slate-600">Auslastung: ${escapeHtml(pctText)}</div>`
+                        + `</div>`;
+                }).join('');
+
+                upsSummaryEl.innerHTML = `<div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">USV/PDU Auslastung (3D)</div>${html}`;
             }
         }
 
@@ -4676,7 +5398,7 @@ function updateFileSelection() {
 // Delete entry
 function deleteEntry(uuid, rowData) {
     if (confirm('Möchten Sie diesen Eintrag und alle zugehörigen Daten wirklich löschen?')) {
-        fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/forms.json')
+        fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/forms.json')
         .then(response => response.json())
         .then(data => {
             const formConfig = data.forms[currentTable];

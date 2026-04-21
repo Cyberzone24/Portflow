@@ -19,6 +19,10 @@
     $action = '?signup';
     $instead = '<a class="text-gray-500 underline" href="./">login instead</a>';
     $button = 'Sign Up';
+  } elseif (isset($_GET['forgot_password'])) {
+    $action = '?forgot_password';
+    $instead = '<a class="text-gray-500 underline" href="./">login instead</a>';
+    $button = 'Reset Password';
   } else {
     $action = '?signin';
     $instead = '<a class="text-gray-500 underline" href="?signup">register instead</a>';
@@ -40,6 +44,8 @@
       $auth->signup();
     } elseif (isset($_GET['signin'])) {
       $auth->signin();
+    } elseif (isset($_GET['forgot_password'])) {
+      $auth->forgot_password();
     } else {
       header('Location: ./');
       exit;
@@ -88,12 +94,19 @@
         </label>
         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="username" name="username" min="2" max="255">
       </div>
-      <div class="pb-6">
-        <label class="block mb-2" for="password">
-          Password
-        </label>
-        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password" min="8" max="128">
-      </div>
+      <?php
+        if (!isset($_GET['forgot_password'])) {
+          echo <<<HTML
+            <div class="pb-6">
+              <label class="block mb-2" for="password">
+                Password
+              </label>
+              <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="password" name="password" min="8" max="128">
+              <a class="text-gray-500 underline" href="?forgot_password">Forgot password?</a>
+            </div>
+          HTML;
+        }
+      ?>
       <div class="pt-6 flex justify-between items-center">
         <input type="hidden" name="csrf" value="<?php echo $auth->csrf(); ?>">
         <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="<?php echo $button; ?>">

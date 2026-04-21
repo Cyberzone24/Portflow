@@ -111,16 +111,16 @@ class Auth {
     private function local_signon($usage) {
         try {
             // check post data
-            if (mb_strlen($this->password) > 128 || mb_strlen($this->password) < 8) {
-                $this->logger->log('password length not correct', 2, echoToWeb: true);
-                throw new \Exception('password length not correct');
-            }
             if (mb_strlen($this->username) > 255 || mb_strlen($this->username) < 2) {
                 $this->logger->log('username length not correct', 2, echoToWeb: true);
                 throw new \Exception('username length not correct');
             }
 
-            if ($usage != 'signup') {
+            if ($usage == 'signin') {
+                if (mb_strlen($this->password) > 128 || mb_strlen($this->password) < 8) {
+                    $this->logger->log('password length not correct', 2, echoToWeb: true);
+                    throw new \Exception('password length not correct');
+                }
                 if (!isset($this->username, $this->password)) {
                     $this->logger->log('username or password not set', 2, echoToWeb: true);
                     throw new \Exception('username or password not set');
@@ -129,7 +129,11 @@ class Auth {
                     $this->logger->log('username or password empty', 2, echoToWeb: true);
                     throw new \Exception('username or password empty');
                 }
-            } else {
+            } elseif ($usage == 'signup') {
+                if (mb_strlen($this->password) > 128 || mb_strlen($this->password) < 8) {
+                    $this->logger->log('password length not correct', 2, echoToWeb: true);
+                    throw new \Exception('password length not correct');
+                }
                 if (!isset($this->username, $this->password, $this->email)) {
                     $this->logger->log('username, password or email not set', 2, echoToWeb: true);
                     throw new \Exception('username, password or email not set');
@@ -142,6 +146,18 @@ class Auth {
                     $this->logger->log('email not valid', 2, echoToWeb: true);
                     throw new \Exception('email not valid');
                 }
+            } elseif ($usage == 'forgot_password') {
+                if (!isset($this->username)) {
+                    $this->logger->log('username not set', 2, echoToWeb: true);
+                    throw new \Exception('username not set');
+                }
+                if (empty($this->username)) {
+                    $this->logger->log('username empty', 2, echoToWeb: true);
+                    throw new \Exception('username empty');
+                }
+            } else {
+                $this->logger->log('invalid usage of local_signon function', 3);
+                throw new \Exception('invalid usage of local_signon function');
             }
             $this->logger->log('submitted post data correct', 1);
         } catch (\Exception $e) {
@@ -541,6 +557,81 @@ class Auth {
             if (isset($ldap_connection)) {
                 @ldap_close($ldap_connection);
             }
+        }
+    }
+
+    public function forgot_password() {
+        // check csrf token
+        if ($this->csrf_check()) {
+            $this->logger->log('CSRF token correct', 1);
+        } else {
+            $this->logger->log('CSRF token not correct', 2, echoToWeb: true);
+            throw new \Exception('CSRF token not correct');
+        }
+
+        try {
+            if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
+                die("the database table 'users' doesn't exist. please run the init script.");
+            }
+            // check post data
+            $this->local_signon('forgot_password');
+
+            // check if user exists
+            $query = "SELECT uuid, email FROM users WHERE username = :username AND login_provider = :login_provider";
+            
+            // execute query
+            $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'local']);
+            $result = !empty($result) ? $result[0] : null;
+            $this->logger->log('checking if user with username exists');
+
+            if (!empty($result)) {
+                $this->logger->log('user with username exists', 1);
+
+                $this->uuid = $result['uuid'];
+                $this->email = $result['email'];
+
+                // create activation code
+                $activation_code = $this->random_string(10);
+
+                // create new random password hash
+                $this->password = $this->random_string(16);
+                $this->password_db = password_hash($this->password, PASSWORD_DEFAULT);
+
+                // update database
+                $query = "UPDATE users SET password = :password, activation_code = :activation_code WHERE uuid = :uuid";
+
+                // execute query
+                $result = $this->db_adapter->db_query($query, ['password' => $this->password_db, 'activation_code' => $activation_code, 'uuid' => $this->uuid]);
+
+                if (!empty($result)) {
+                    $this->logger->log("activation code and new password set in database", 1);
+                
+                    // prepare vars for email
+                    $activate_link = PORTFLOW_HOSTNAME . "?code="  . $activation_code . "&email=" . $this->email;
+                    $mail_to = ['email' => $this->email, 'username' => $this->username];
+
+                    // send email with activation code
+                    $subject = "Password reset for " . APP_NAME;
+                    $body = 'Reactivate your Account here:  <a href="' . $activate_link . '">Activate</a>';
+                    $body .= "<br><br>Your new password is: <b>" . $this->password . "</b><br>Please change your password after logging in.";
+                    $this->mail->send($mail_to, $subject, $body);
+
+                    $this->logger->log('email with activation code and new password sent to user', 1, echoToWeb: true);
+                    return true;
+                } else {
+                    // database could not update
+                    $this->logger->log("activation code and new password couldn't set in database", 3);
+                    throw new \Exception("activation code and new password couldn't set in database");
+                }
+            } else {
+                // user with username doesn't exist
+                $this->logger->log('user with this username does not exist or uses a different login provider', 2);
+                throw new \Exception('user with this username does not exist or uses a different login provider');
+            }
+        } catch (\Exception $e) {
+            // Log the exception message with ERROR level
+            $this->logger->log($e->getMessage(), 3);
+            return false;
         }
     }
 

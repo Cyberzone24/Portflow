@@ -288,6 +288,355 @@
         }
     }
 
+    function escapeSettingValue(string $value): string {
+        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+    }
+
+    function configToBool($value): bool {
+        if (is_bool($value)) {
+            return $value;
+        }
+        $normalized = strtolower(trim((string)$value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    function configBoolFromPost(string $name): bool {
+        return isset($_POST[$name]) && configToBool($_POST[$name]);
+    }
+
+    function configEnvBool(bool $value): string {
+        return $value ? 'true' : 'false';
+    }
+
+    function configNormalizeEnvValue(string $value): string {
+        return str_replace(["\r", "\n"], '', trim($value));
+    }
+
+    function configRequirePortRange(int $port): bool {
+        return $port >= 1 && $port <= 65535;
+    }
+
+    function configGetPasswordValue(string $postField, string $fallback): string {
+        $raw = (string)($_POST[$postField] ?? '');
+        if ($raw === '') {
+            return $fallback;
+        }
+        return configNormalizeEnvValue($raw);
+    }
+
+    function configNormalizeMailSecureToUi(string $value): ?string {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '') {
+            return '';
+        }
+        if ($normalized === 'tls' || $normalized === 'phpmailer::encryption_starttls') {
+            return 'tls';
+        }
+        if ($normalized === 'ssl' || $normalized === 'phpmailer::encryption_smtps') {
+            return 'ssl';
+        }
+        return null;
+    }
+
+    function configMapMailSecureToEnv(string $uiValue): string {
+        $normalizedUi = configNormalizeMailSecureToUi($uiValue);
+        if ($normalizedUi === 'tls') {
+            return 'PHPMailer::ENCRYPTION_STARTTLS';
+        }
+        if ($normalizedUi === 'ssl') {
+            return 'PHPMailer::ENCRYPTION_SMTPS';
+        }
+        return '';
+    }
+
+    function configMapMailSecureToPhpMailer(string $uiValue): string {
+        $normalizedUi = configNormalizeMailSecureToUi($uiValue);
+        if ($normalizedUi === 'tls') {
+            return \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        }
+        if ($normalizedUi === 'ssl') {
+            return \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+        }
+        return '';
+    }
+
+    function configSetFeedback(string $section, bool $ok, string $message, array $formData = []): void {
+        if (!isset($_SESSION['configuration_feedback']) || !is_array($_SESSION['configuration_feedback'])) {
+            $_SESSION['configuration_feedback'] = [];
+        }
+        if (!isset($_SESSION['configuration_form_data']) || !is_array($_SESSION['configuration_form_data'])) {
+            $_SESSION['configuration_form_data'] = [];
+        }
+
+        $_SESSION['configuration_feedback'][$section] = [
+            'ok' => $ok,
+            'message' => $message
+        ];
+        if (!empty($formData)) {
+            $_SESSION['configuration_form_data'][$section] = $formData;
+        }
+    }
+
+    function configReadAndClearFeedback(): array {
+        $feedback = $_SESSION['configuration_feedback'] ?? [];
+        $formData = $_SESSION['configuration_form_data'] ?? [];
+        unset($_SESSION['configuration_feedback'], $_SESSION['configuration_form_data']);
+        return [
+            'feedback' => is_array($feedback) ? $feedback : [],
+            'form_data' => is_array($formData) ? $formData : []
+        ];
+    }
+
+    function configWriteEnvValues(array $updates): array {
+        $envPath = __DIR__ . '/.env';
+        if (!file_exists($envPath)) {
+            return ['ok' => false, 'message' => '.env wurde nicht gefunden.'];
+        }
+        if (!is_readable($envPath) || !is_writable($envPath)) {
+            return ['ok' => false, 'message' => '.env ist nicht lesbar oder nicht schreibbar.'];
+        }
+
+        $content = file_get_contents($envPath);
+        if (!is_string($content)) {
+            return ['ok' => false, 'message' => '.env konnte nicht gelesen werden.'];
+        }
+
+        $lines = preg_split('/\R/', $content);
+        if (!is_array($lines)) {
+            $lines = [];
+        }
+
+        $normalizedUpdates = [];
+        foreach ($updates as $key => $value) {
+            $normalizedKey = strtoupper(trim((string)$key));
+            if ($normalizedKey === '') {
+                continue;
+            }
+            $normalizedUpdates[$normalizedKey] = configNormalizeEnvValue((string)$value);
+        }
+
+        if (empty($normalizedUpdates)) {
+            return ['ok' => false, 'message' => 'Keine gueltigen Einstellungen zum Speichern uebergeben.'];
+        }
+
+        $found = [];
+        foreach ($lines as $idx => $line) {
+            if (!is_string($line)) {
+                continue;
+            }
+            if (preg_match('/^\s*([A-Z0-9_]+)\s*=/', $line, $matches) === 1) {
+                $lineKey = strtoupper((string)$matches[1]);
+                if (array_key_exists($lineKey, $normalizedUpdates)) {
+                    $lines[$idx] = $lineKey . '=' . $normalizedUpdates[$lineKey];
+                    $found[$lineKey] = true;
+                }
+            }
+        }
+
+        foreach ($normalizedUpdates as $lineKey => $lineValue) {
+            if (!isset($found[$lineKey])) {
+                $lines[] = $lineKey . '=' . $lineValue;
+            }
+        }
+
+        $newContent = implode(PHP_EOL, $lines) . PHP_EOL;
+        $tempPath = $envPath . '.tmp';
+        $backupPath = $envPath . '.bak.' . date('YmdHis');
+
+        if (@copy($envPath, $backupPath) === false) {
+            return ['ok' => false, 'message' => '.env Backup konnte nicht erstellt werden.'];
+        }
+
+        if (file_put_contents($tempPath, $newContent, LOCK_EX) === false) {
+            return ['ok' => false, 'message' => 'Temporare .env Datei konnte nicht geschrieben werden.'];
+        }
+
+        if (!@rename($tempPath, $envPath)) {
+            @unlink($tempPath);
+            return ['ok' => false, 'message' => '.env konnte nicht atomar ersetzt werden.'];
+        }
+
+        return ['ok' => true, 'message' => 'Einstellungen wurden gespeichert.'];
+    }
+
+    function configBuildDbFormData(): array {
+        return [
+            'db_type' => configNormalizeEnvValue((string)($_POST['db_type'] ?? DB_TYPE)),
+            'db_server' => configNormalizeEnvValue((string)($_POST['db_server'] ?? DB_SERVER)),
+            'db_port' => configNormalizeEnvValue((string)($_POST['db_port'] ?? DB_PORT)),
+            'db_name' => configNormalizeEnvValue((string)($_POST['db_name'] ?? DB_NAME)),
+            'db_user' => configNormalizeEnvValue((string)($_POST['db_user'] ?? DB_USER))
+        ];
+    }
+
+    function configBuildLdapFormData(): array {
+        return [
+            'ldap_enabled' => configBoolFromPost('ldap_enabled') ? '1' : '0',
+            'ldap_server' => configNormalizeEnvValue((string)($_POST['ldap_server'] ?? LDAP_SERVER)),
+            'ldap_port' => configNormalizeEnvValue((string)($_POST['ldap_port'] ?? LDAP_PORT)),
+            'ldap_basedn' => configNormalizeEnvValue((string)($_POST['ldap_basedn'] ?? LDAP_BASEDN)),
+            'ldap_userdn' => configNormalizeEnvValue((string)($_POST['ldap_userdn'] ?? LDAP_USERDN)),
+            'ldap_filter' => configNormalizeEnvValue((string)($_POST['ldap_filter'] ?? LDAP_FILTER)),
+            'ldap_bind' => configBoolFromPost('ldap_bind') ? '1' : '0',
+            'ldap_bind_user' => configNormalizeEnvValue((string)($_POST['ldap_bind_user'] ?? LDAP_BIND_USER)),
+            'ldap_trust' => configBoolFromPost('ldap_trust') ? '1' : '0'
+        ];
+    }
+
+    function configBuildMailFormData(): array {
+        $mailSecureRaw = configNormalizeEnvValue((string)($_POST['mail_smtpsecure'] ?? MAIL_SMTPSECURE));
+        $mailSecureUi = configNormalizeMailSecureToUi($mailSecureRaw);
+        if ($mailSecureUi === null) {
+            $mailSecureUi = '';
+        }
+
+        return [
+            'mail_host' => configNormalizeEnvValue((string)($_POST['mail_host'] ?? MAIL_HOST)),
+            'mail_user' => configNormalizeEnvValue((string)($_POST['mail_user'] ?? MAIL_USER)),
+            'mail_port' => configNormalizeEnvValue((string)($_POST['mail_port'] ?? MAIL_PORT)),
+            'mail_smtpauth' => configBoolFromPost('mail_smtpauth') ? '1' : '0',
+            'mail_smtpsecure' => $mailSecureUi
+        ];
+    }
+
+    function configTestDatabase(array $formData): array {
+        $dbType = strtolower(trim((string)($formData['db_type'] ?? '')));
+        $dbServer = trim((string)($formData['db_server'] ?? ''));
+        $dbPort = (int)($formData['db_port'] ?? 0);
+        $dbName = trim((string)($formData['db_name'] ?? ''));
+        $dbUser = trim((string)($formData['db_user'] ?? ''));
+        $dbPassword = (string)($formData['db_password'] ?? '');
+
+        if (!in_array($dbType, ['pgsql', 'mysql'], true)) {
+            return ['ok' => false, 'message' => 'Ungueltiger DB-Typ. Erlaubt: pgsql oder mysql.'];
+        }
+        if ($dbServer === '' || $dbName === '' || $dbUser === '') {
+            return ['ok' => false, 'message' => 'DB-Server, DB-Name und DB-User sind Pflichtfelder.'];
+        }
+        if (!configRequirePortRange($dbPort)) {
+            return ['ok' => false, 'message' => 'DB-Port muss zwischen 1 und 65535 liegen.'];
+        }
+        if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $dbServer)) {
+            return ['ok' => false, 'message' => 'DB-Server enthaelt ungueltige Zeichen.'];
+        }
+
+        try {
+            $dsn = $dbType . ':host=' . $dbServer . ';port=' . $dbPort . ';dbname=' . $dbName;
+            $pdo = new \PDO($dsn, $dbUser, $dbPassword, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_TIMEOUT => 8
+            ]);
+            $stmt = $pdo->query('SELECT 1');
+            $stmt->fetchColumn();
+            return ['ok' => true, 'message' => 'DB-Test erfolgreich. Verbindung hergestellt.'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'DB-Test fehlgeschlagen: ' . $e->getMessage()];
+        }
+    }
+
+    function configTestLdap(array $formData): array {
+        $ldapServer = trim((string)($formData['ldap_server'] ?? ''));
+        $ldapPort = (int)($formData['ldap_port'] ?? 0);
+        $ldapBaseDn = trim((string)($formData['ldap_basedn'] ?? ''));
+        $ldapBind = configToBool($formData['ldap_bind'] ?? false);
+        $ldapBindUser = trim((string)($formData['ldap_bind_user'] ?? ''));
+        $ldapBindPassword = (string)($formData['ldap_bind_password'] ?? '');
+
+        if (!extension_loaded('ldap')) {
+            return ['ok' => false, 'message' => 'LDAP-Test nicht moeglich: PHP LDAP Modul fehlt.'];
+        }
+        if ($ldapServer === '' || $ldapBaseDn === '') {
+            return ['ok' => false, 'message' => 'LDAP-Server und LDAP-BaseDN sind fuer den Test erforderlich.'];
+        }
+        if (!configRequirePortRange($ldapPort)) {
+            return ['ok' => false, 'message' => 'LDAP-Port muss zwischen 1 und 65535 liegen.'];
+        }
+        if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $ldapServer)) {
+            return ['ok' => false, 'message' => 'LDAP-Server enthaelt ungueltige Zeichen.'];
+        }
+        if ($ldapBind && $ldapBindUser === '') {
+            return ['ok' => false, 'message' => 'LDAP Bind User ist erforderlich, wenn LDAP Bind aktiv ist.'];
+        }
+
+        $link = @ldap_connect($ldapServer, $ldapPort);
+        if ($link === false) {
+            return ['ok' => false, 'message' => 'LDAP-Test fehlgeschlagen: Verbindung konnte nicht aufgebaut werden.'];
+        }
+
+        @ldap_set_option($link, LDAP_OPT_PROTOCOL_VERSION, 3);
+        @ldap_set_option($link, LDAP_OPT_REFERRALS, 0);
+
+        $bindOk = false;
+        if ($ldapBind) {
+            $bindOk = @ldap_bind($link, $ldapBindUser, $ldapBindPassword);
+        } else {
+            $bindOk = @ldap_bind($link);
+        }
+
+        if (!$bindOk) {
+            $error = ldap_error($link);
+            @ldap_unbind($link);
+            return ['ok' => false, 'message' => 'LDAP-Test fehlgeschlagen: Bind nicht erfolgreich (' . $error . ').'];
+        }
+
+        $searchResult = @ldap_search($link, $ldapBaseDn, '(objectClass=*)', ['dn'], 0, 1, 5);
+        if ($searchResult === false) {
+            $error = ldap_error($link);
+            @ldap_unbind($link);
+            return ['ok' => false, 'message' => 'LDAP-Test fehlgeschlagen: Suche nicht moeglich (' . $error . ').'];
+        }
+
+        @ldap_unbind($link);
+        return ['ok' => true, 'message' => 'LDAP-Test erfolgreich. Verbindung, Bind und Suchtest sind erfolgreich.'];
+    }
+
+    function configTestMail(array $formData): array {
+        $mailHost = trim((string)($formData['mail_host'] ?? ''));
+        $mailUser = trim((string)($formData['mail_user'] ?? ''));
+        $mailPassword = (string)($formData['mail_password'] ?? '');
+        $mailPort = (int)($formData['mail_port'] ?? 0);
+        $mailAuth = configToBool($formData['mail_smtpauth'] ?? false);
+        $mailSecureUi = (string)($formData['mail_smtpsecure'] ?? '');
+        $mailSecure = configNormalizeMailSecureToUi($mailSecureUi);
+
+        if ($mailHost === '') {
+            return ['ok' => false, 'message' => 'MAIL_HOST ist erforderlich.'];
+        }
+        if (!configRequirePortRange($mailPort)) {
+            return ['ok' => false, 'message' => 'MAIL_PORT muss zwischen 1 und 65535 liegen.'];
+        }
+        if ($mailSecure === null) {
+            return ['ok' => false, 'message' => 'MAIL_SMTPSECURE darf nur leer, tls oder ssl sein.'];
+        }
+        if ($mailAuth && ($mailUser === '' || $mailPassword === '')) {
+            return ['ok' => false, 'message' => 'MAIL_USER und MAIL_PASSWORD sind bei aktivem SMTPAuth erforderlich.'];
+        }
+
+        try {
+            $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+            $mailer->isSMTP();
+            $mailer->SMTPDebug = \PHPMailer\PHPMailer\SMTP::DEBUG_OFF;
+            $mailer->Host = $mailHost;
+            $mailer->Port = $mailPort;
+            $mailer->SMTPAuth = $mailAuth;
+            $mailer->SMTPSecure = configMapMailSecureToPhpMailer($mailSecure);
+            $mailer->Username = $mailUser;
+            $mailer->Password = $mailPassword;
+            $mailer->Timeout = 8;
+
+            if (!$mailer->smtpConnect()) {
+                $error = $mailer->ErrorInfo;
+                $mailer->smtpClose();
+                return ['ok' => false, 'message' => 'MAIL-Test fehlgeschlagen: ' . ($error !== '' ? $error : 'SMTP Verbindung nicht moeglich.')];
+            }
+
+            $mailer->smtpClose();
+            return ['ok' => true, 'message' => 'MAIL-Test erfolgreich. SMTP-Verbindung ist erreichbar.'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'MAIL-Test fehlgeschlagen: ' . $e->getMessage()];
+        }
+    }
+
     // import db_adapter
     use Portflow\Core\DatabaseAdapter;
     $db_adapter = new DatabaseAdapter();
@@ -546,6 +895,207 @@
 
                 $logger->log('appearance preferences updated', 1, echoToWeb: true);
                 header('Location: ?site=appearance');
+                break;
+            case 'config_db_test':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for db configuration test', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $dbFormData = configBuildDbFormData();
+                $dbFormData['db_password'] = configGetPasswordValue('db_password', (string)DB_PASSWORD);
+                $dbTestResult = configTestDatabase($dbFormData);
+                configSetFeedback('db', (bool)$dbTestResult['ok'], (string)$dbTestResult['message'], $dbFormData);
+                $logger->log('database configuration test executed', $dbTestResult['ok'] ? 1 : 2, echoToWeb: true);
+                header('Location: ?site=configuration#cfg-db');
+                break;
+            case 'config_db_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for db configuration save', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $dbFormData = configBuildDbFormData();
+                $dbFormData['db_password'] = configGetPasswordValue('db_password', (string)DB_PASSWORD);
+                $dbValidationResult = configTestDatabase($dbFormData);
+                if (!$dbValidationResult['ok']) {
+                    configSetFeedback('db', false, (string)$dbValidationResult['message'], $dbFormData);
+                    header('Location: ?site=configuration#cfg-db');
+                    break;
+                }
+
+                $dbWriteResult = configWriteEnvValues([
+                    'DB_TYPE' => $dbFormData['db_type'],
+                    'DB_SERVER' => $dbFormData['db_server'],
+                    'DB_PORT' => $dbFormData['db_port'],
+                    'DB_NAME' => $dbFormData['db_name'],
+                    'DB_USER' => $dbFormData['db_user'],
+                    'DB_PASSWORD' => $dbFormData['db_password']
+                ]);
+
+                configSetFeedback('db', (bool)$dbWriteResult['ok'], (string)$dbWriteResult['message'], $dbFormData);
+                $logger->log('database configuration save executed', $dbWriteResult['ok'] ? 1 : 3, echoToWeb: true);
+                if ($dbWriteResult['ok']) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_db_save', [
+                        'db_type' => $dbFormData['db_type'],
+                        'db_server' => $dbFormData['db_server'],
+                        'db_port' => $dbFormData['db_port'],
+                        'db_name' => $dbFormData['db_name'],
+                        'db_user' => $dbFormData['db_user']
+                    ]);
+                }
+                header('Location: ?site=configuration#cfg-db');
+                break;
+            case 'config_ldap_test':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for ldap configuration test', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $ldapFormData = configBuildLdapFormData();
+                $ldapFormData['ldap_bind_password'] = configGetPasswordValue('ldap_bind_password', (string)LDAP_BIND_PASSWORD);
+                $ldapTestResult = configTestLdap($ldapFormData);
+                configSetFeedback('ldap', (bool)$ldapTestResult['ok'], (string)$ldapTestResult['message'], $ldapFormData);
+                $logger->log('ldap configuration test executed', $ldapTestResult['ok'] ? 1 : 2, echoToWeb: true);
+                header('Location: ?site=configuration#cfg-ldap');
+                break;
+            case 'config_ldap_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for ldap configuration save', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $ldapFormData = configBuildLdapFormData();
+                $ldapFormData['ldap_bind_password'] = configGetPasswordValue('ldap_bind_password', (string)LDAP_BIND_PASSWORD);
+
+                if (configToBool($ldapFormData['ldap_enabled'] ?? false)) {
+                    $ldapValidationResult = configTestLdap($ldapFormData);
+                    if (!$ldapValidationResult['ok']) {
+                        configSetFeedback('ldap', false, (string)$ldapValidationResult['message'], $ldapFormData);
+                        header('Location: ?site=configuration#cfg-ldap');
+                        break;
+                    }
+                }
+
+                $ldapWriteResult = configWriteEnvValues([
+                    'LDAP_ENABLED' => configEnvBool(configToBool($ldapFormData['ldap_enabled'] ?? false)),
+                    'LDAP_SERVER' => $ldapFormData['ldap_server'],
+                    'LDAP_PORT' => $ldapFormData['ldap_port'],
+                    'LDAP_BASEDN' => $ldapFormData['ldap_basedn'],
+                    'LDAP_USERDN' => $ldapFormData['ldap_userdn'],
+                    'LDAP_FILTER' => $ldapFormData['ldap_filter'],
+                    'LDAP_BIND' => configEnvBool(configToBool($ldapFormData['ldap_bind'] ?? false)),
+                    'LDAP_BIND_USER' => $ldapFormData['ldap_bind_user'],
+                    'LDAP_BIND_PASSWORD' => $ldapFormData['ldap_bind_password'],
+                    'LDAP_TRUST' => configEnvBool(configToBool($ldapFormData['ldap_trust'] ?? false))
+                ]);
+
+                configSetFeedback('ldap', (bool)$ldapWriteResult['ok'], (string)$ldapWriteResult['message'], $ldapFormData);
+                $logger->log('ldap configuration save executed', $ldapWriteResult['ok'] ? 1 : 3, echoToWeb: true);
+                if ($ldapWriteResult['ok']) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_ldap_save', [
+                        'ldap_enabled' => configToBool($ldapFormData['ldap_enabled'] ?? false),
+                        'ldap_server' => $ldapFormData['ldap_server'],
+                        'ldap_port' => $ldapFormData['ldap_port'],
+                        'ldap_basedn' => $ldapFormData['ldap_basedn'],
+                        'ldap_bind' => configToBool($ldapFormData['ldap_bind'] ?? false),
+                        'ldap_bind_user' => $ldapFormData['ldap_bind_user'],
+                        'ldap_trust' => configToBool($ldapFormData['ldap_trust'] ?? false)
+                    ]);
+                }
+                header('Location: ?site=configuration#cfg-ldap');
+                break;
+            case 'config_mail_test':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for mail configuration test', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $mailFormData = configBuildMailFormData();
+                $mailFormData['mail_password'] = configGetPasswordValue('mail_password', (string)MAIL_PASSWORD);
+                $mailTestResult = configTestMail($mailFormData);
+                configSetFeedback('mail', (bool)$mailTestResult['ok'], (string)$mailTestResult['message'], $mailFormData);
+                $logger->log('mail configuration test executed', $mailTestResult['ok'] ? 1 : 2, echoToWeb: true);
+                header('Location: ?site=configuration#cfg-mail');
+                break;
+            case 'config_mail_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for mail configuration save', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $mailFormData = configBuildMailFormData();
+                $mailFormData['mail_password'] = configGetPasswordValue('mail_password', (string)MAIL_PASSWORD);
+                $mailValidationResult = configTestMail($mailFormData);
+                if (!$mailValidationResult['ok']) {
+                    configSetFeedback('mail', false, (string)$mailValidationResult['message'], $mailFormData);
+                    header('Location: ?site=configuration#cfg-mail');
+                    break;
+                }
+
+                $mailWriteResult = configWriteEnvValues([
+                    'MAIL_HOST' => $mailFormData['mail_host'],
+                    'MAIL_USER' => $mailFormData['mail_user'],
+                    'MAIL_PASSWORD' => $mailFormData['mail_password'],
+                    'MAIL_PORT' => $mailFormData['mail_port'],
+                    'MAIL_SMTPAUTH' => configEnvBool(configToBool($mailFormData['mail_smtpauth'] ?? false)),
+                    'MAIL_SMTPSECURE' => configMapMailSecureToEnv((string)$mailFormData['mail_smtpsecure'])
+                ]);
+
+                configSetFeedback('mail', (bool)$mailWriteResult['ok'], (string)$mailWriteResult['message'], $mailFormData);
+                $logger->log('mail configuration save executed', $mailWriteResult['ok'] ? 1 : 3, echoToWeb: true);
+                if ($mailWriteResult['ok']) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_mail_save', [
+                        'mail_host' => $mailFormData['mail_host'],
+                        'mail_user' => $mailFormData['mail_user'],
+                        'mail_port' => $mailFormData['mail_port'],
+                        'mail_smtpauth' => configToBool($mailFormData['mail_smtpauth'] ?? false),
+                        'mail_smtpsecure' => $mailFormData['mail_smtpsecure']
+                    ]);
+                }
+                header('Location: ?site=configuration#cfg-mail');
                 break;
             case 'delete_account':
                 $uuid = $_POST['uuid'] ?? null;
@@ -1582,7 +2132,127 @@ switch ($site) {
             die();
         }
 
-        echo "Datenbank, LDAP, Mail, Backup";
+        $csrf = $auth->csrf();
+        $cfgState = configReadAndClearFeedback();
+        $cfgFeedback = $cfgState['feedback'];
+        $cfgFormData = $cfgState['form_data'];
+
+        $dbDefaults = [
+            'db_type' => (string)DB_TYPE,
+            'db_server' => (string)DB_SERVER,
+            'db_port' => (string)DB_PORT,
+            'db_name' => (string)DB_NAME,
+            'db_user' => (string)DB_USER
+        ];
+        $dbValues = array_merge($dbDefaults, is_array($cfgFormData['db'] ?? null) ? $cfgFormData['db'] : []);
+
+        $ldapDefaults = [
+            'ldap_enabled' => LDAP_ENABLED ? '1' : '0',
+            'ldap_server' => (string)LDAP_SERVER,
+            'ldap_port' => (string)LDAP_PORT,
+            'ldap_basedn' => (string)LDAP_BASEDN,
+            'ldap_userdn' => (string)LDAP_USERDN,
+            'ldap_filter' => (string)LDAP_FILTER,
+            'ldap_bind' => LDAP_BIND ? '1' : '0',
+            'ldap_bind_user' => (string)LDAP_BIND_USER,
+            'ldap_trust' => LDAP_TRUST ? '1' : '0'
+        ];
+        $ldapValues = array_merge($ldapDefaults, is_array($cfgFormData['ldap'] ?? null) ? $cfgFormData['ldap'] : []);
+
+        $mailDefaults = [
+            'mail_host' => (string)MAIL_HOST,
+            'mail_user' => (string)MAIL_USER,
+            'mail_port' => (string)MAIL_PORT,
+            'mail_smtpauth' => MAIL_SMTPAUTH ? '1' : '0',
+            'mail_smtpsecure' => configNormalizeMailSecureToUi((string)MAIL_SMTPSECURE) ?? ''
+        ];
+        $mailValues = array_merge($mailDefaults, is_array($cfgFormData['mail'] ?? null) ? $cfgFormData['mail'] : []);
+
+        $renderFeedback = static function (array $feedback, string $section): string {
+            if (!isset($feedback[$section]) || !is_array($feedback[$section])) {
+                return '';
+            }
+
+            $entry = $feedback[$section];
+            $ok = !empty($entry['ok']);
+            $message = escapeSettingValue((string)($entry['message'] ?? ''));
+            $baseClasses = 'mb-4 rounded-xl border px-4 py-3 text-sm whitespace-pre-wrap';
+            $stateClasses = $ok
+                ? ' border-emerald-400/70 bg-emerald-500/10 text-emerald-200'
+                : ' border-red-400/70 bg-red-500/10 text-red-200';
+            return '<div class="' . $baseClasses . $stateClasses . '">' . $message . '</div>';
+        };
+
+        echo '<div class="h-fit w-full p-2 space-y-6">';
+
+        echo '<section id="cfg-db" class="settings-surface">';
+        echo '<div class="text-xl font-bold pb-1">Datenbank</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes DB Passwort beibehalten.</p>';
+        echo $renderFeedback($cfgFeedback, 'db');
+        echo '<form action="?set=config_db_save" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        echo '<div><label class="block mb-2" for="cfg_db_type">DB Type</label><select id="cfg_db_type" name="db_type" class="w-full py-2 px-3"><option value="pgsql"' . ((string)$dbValues['db_type'] === 'pgsql' ? ' selected' : '') . '>pgsql</option><option value="mysql"' . ((string)$dbValues['db_type'] === 'mysql' ? ' selected' : '') . '>mysql</option></select></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_server">DB Server</label><input id="cfg_db_server" name="db_server" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_server']) . '" required></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_port">DB Port</label><input id="cfg_db_port" name="db_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_port']) . '" required min="1" max="65535"></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_name">DB Name</label><input id="cfg_db_name" name="db_name" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_name']) . '" required></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_user">DB User</label><input id="cfg_db_user" name="db_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_user']) . '" required></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_password">DB Password</label><input id="cfg_db_password" name="db_password" type="password" class="w-full py-2 px-3" placeholder="(unveraendert lassen)"></div>';
+        echo '</div>';
+        echo '<div class="pt-4 flex flex-wrap gap-3">';
+        echo '<button type="submit" formaction="?set=config_db_test" class="bg-amber-600 hover:bg-amber-700 text-white">Verbindung testen</button>';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
+        echo '</div>';
+        echo '</form>';
+        echo '</section>';
+
+        echo '<section id="cfg-ldap" class="settings-surface">';
+        echo '<div class="text-xl font-bold pb-1">LDAP</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">Leeres Bind-Passwort bedeutet: bestehendes LDAP Bind Passwort beibehalten.</p>';
+        echo $renderFeedback($cfgFeedback, 'ldap');
+        echo '<form action="?set=config_ldap_save" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_enabled" value="1"' . (configToBool($ldapValues['ldap_enabled'] ?? false) ? ' checked' : '') . '> LDAP aktivieren</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_server">LDAP Server</label><input id="cfg_ldap_server" name="ldap_server" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_server']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_port">LDAP Port</label><input id="cfg_ldap_port" name="ldap_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_port']) . '" min="1" max="65535"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_basedn">LDAP Base DN</label><input id="cfg_ldap_basedn" name="ldap_basedn" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_basedn']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_userdn">LDAP User DN</label><input id="cfg_ldap_userdn" name="ldap_userdn" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_userdn']) . '"></div>';
+        echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_ldap_filter">LDAP Filter</label><input id="cfg_ldap_filter" name="ldap_filter" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_filter']) . '"></div>';
+        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_bind" value="1"' . (configToBool($ldapValues['ldap_bind'] ?? false) ? ' checked' : '') . '> LDAP Bind verwenden</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_bind_user">LDAP Bind User</label><input id="cfg_ldap_bind_user" name="ldap_bind_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_bind_user']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_bind_password">LDAP Bind Password</label><input id="cfg_ldap_bind_password" name="ldap_bind_password" type="password" class="w-full py-2 px-3" placeholder="(unveraendert lassen)"></div>';
+        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_trust" value="1"' . (configToBool($ldapValues['ldap_trust'] ?? false) ? ' checked' : '') . '> LDAP Trust aktivieren</label></div>';
+        echo '</div>';
+        echo '<div class="pt-4 flex flex-wrap gap-3">';
+        echo '<button type="submit" formaction="?set=config_ldap_test" class="bg-amber-600 hover:bg-amber-700 text-white">LDAP testen</button>';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
+        echo '</div>';
+        echo '</form>';
+        echo '</section>';
+
+        echo '<section id="cfg-mail" class="settings-surface">';
+        echo '<div class="text-xl font-bold pb-1">Mail</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes Mail Passwort beibehalten.</p>';
+        echo $renderFeedback($cfgFeedback, 'mail');
+        echo '<form action="?set=config_mail_save" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        echo '<div><label class="block mb-2" for="cfg_mail_host">Mail Host</label><input id="cfg_mail_host" name="mail_host" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_host']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_port">Mail Port</label><input id="cfg_mail_port" name="mail_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_port']) . '" min="1" max="65535"></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_user">Mail User</label><input id="cfg_mail_user" name="mail_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_user']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_password">Mail Password</label><input id="cfg_mail_password" name="mail_password" type="password" class="w-full py-2 px-3" placeholder="(unveraendert lassen)"></div>';
+        echo '<div><label class="inline-flex items-center gap-2"><input type="checkbox" name="mail_smtpauth" value="1"' . (configToBool($mailValues['mail_smtpauth'] ?? false) ? ' checked' : '') . '> SMTP Auth</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_smtpsecure">SMTP Secure</label><select id="cfg_mail_smtpsecure" name="mail_smtpsecure" class="w-full py-2 px-3"><option value=""' . ((string)$mailValues['mail_smtpsecure'] === '' ? ' selected' : '') . '>None</option><option value="tls"' . ((string)$mailValues['mail_smtpsecure'] === 'tls' ? ' selected' : '') . '>TLS</option><option value="ssl"' . ((string)$mailValues['mail_smtpsecure'] === 'ssl' ? ' selected' : '') . '>SSL</option></select></div>';
+        echo '</div>';
+        echo '<div class="pt-4 flex flex-wrap gap-3">';
+        echo '<button type="submit" formaction="?set=config_mail_test" class="bg-amber-600 hover:bg-amber-700 text-white">Mail testen</button>';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
+        echo '</div>';
+        echo '</form>';
+        echo '</section>';
+
+        echo '</div>';
         break;
     case 'access':
         // check if user is admin
