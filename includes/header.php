@@ -49,11 +49,6 @@
         : [];
 
     $selectedTheme = strtolower((string)($appearance['theme'] ?? 'light'));
-    if ($selectedTheme === 'ocean' || $selectedTheme === 'emerald') {
-        $selectedTheme = 'light';
-    } elseif ($selectedTheme === 'slate') {
-        $selectedTheme = 'dark';
-    }
     if (!in_array($selectedTheme, ['light', 'dark', 'contrast'], true)) {
         $selectedTheme = 'light';
     }
@@ -473,7 +468,8 @@
 <body class="static flex flex-col w-full min-h-screen item-center bg-gray-300">
 <header class="pf-header-shell">
     <div class="pf-mobile-header lg:hidden">
-        <img class="pf-logo" src="./includes/img/portflow.png" alt="Portflow">
+        <!-- Logo -->
+        <img class="pf-logo" src=<?php echo $selectedTheme === 'light' ? '"./includes/img/portflow.png"' : '"./includes/img/portflow-dark.png"'; ?> alt="Portflow">
         <button id="pfMobileMenuButton" class="pf-icon-btn pf-icon-btn-gray" title="Menue oeffnen" type="button">
             <i data-lucide="menu"></i>
         </button>
@@ -481,7 +477,8 @@
 
     <div class="pf-desktop-header hidden lg:grid">
         <div class="flex items-center min-w-0">
-            <img class="pf-logo" src="./includes/img/portflow.png" alt="Portflow">
+            <!-- Logo -->
+            <img class="pf-logo" src=<?php echo $selectedTheme === 'light' ? '"./includes/img/portflow.png"' : '"./includes/img/portflow-dark.png"'; ?> alt="Portflow">
         </div>
 
         <nav class="flex items-center justify-center gap-2">

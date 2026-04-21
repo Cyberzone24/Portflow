@@ -188,10 +188,10 @@
     function normalizeAppearanceTheme(string $theme): string {
         $theme = strtolower(trim($theme));
 
-        if ($theme === 'ocean' || $theme === 'emerald') {
+        if ($theme === 'light') {
             return 'light';
         }
-        if ($theme === 'slate') {
+        if ($theme === 'dark') {
             return 'dark';
         }
 
