@@ -94,3 +94,6 @@ define('LDAP_BIND_PASSWORD', getEnvValue('LDAP_BIND_PASSWORD', ''));
 define('LDAP_TRUST', getEnvValue('LDAP_TRUST', true) === true || getEnvValue('LDAP_TRUST') === 'true');
 
 define('AUTOMATION_SECRET', getEnvValue('AUTOMATION_SECRET', ''));
+
+define('NOTIFICATION_DAILY_TIME', getEnvValue('NOTIFICATION_DAILY_TIME', '08:00'));
+define('NOTIFICATION_TIMEZONE', getEnvValue('NOTIFICATION_TIMEZONE', 'Europe/Berlin'));

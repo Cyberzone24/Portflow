@@ -18,11 +18,16 @@ use Portflow\Core\DatabaseAdapter;
 include_once __DIR__ . '/mail.php';
 use Portflow\Core\Mail;
 
+// import notification center
+include_once __DIR__ . '/notification_center.php';
+use Portflow\Core\NotificationCenter;
+
 class Auth {
     // define class variables
     private $logger;
     private $db_adapter;
     private $mail;
+    private $notificationCenter;
     // form data
     private $csrf;
     private $username;
@@ -55,6 +60,17 @@ class Auth {
         $this->logger = new Logger();
         $this->db_adapter = new DatabaseAdapter();
         $this->mail = new Mail();
+        $this->notificationCenter = new NotificationCenter($this->db_adapter, $this->logger, $this->mail);
+    }
+
+    private function notifyGlobal(string $eventType, string $level, string $title, string $message, array $meta = []): void {
+        try {
+            if ($this->notificationCenter instanceof NotificationCenter) {
+                $this->notificationCenter->enqueueGlobal($eventType, $level, $title, $message, $meta);
+            }
+        } catch (\Throwable $e) {
+            $this->logger->log('notification enqueue failed: ' . $e->getMessage(), 0);
+        }
     }
 
     public function csrf($token = NULL) {    
@@ -293,6 +309,13 @@ class Auth {
 
                         if (!empty($result)) {
                             $this->logger->log("user '$this->username' logged in. database updated", 1);
+                            $this->notifyGlobal(
+                                'login_success',
+                                'all',
+                                'Erfolgreicher Login',
+                                "Erfolgreicher Login fuer Benutzer '{$this->username}'.",
+                                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
+                            );
                             if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME) === 0) {
                                 header('Location: ' . $_SESSION['referrer']);
                             } else {
@@ -314,6 +337,13 @@ class Auth {
 
                         if (!empty($result)) {
                             $this->logger->log('incorrect password', 1);
+                            $this->notifyGlobal(
+                                'login_failed',
+                                'minimal',
+                                'Fehlgeschlagener Login',
+                                "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (lokal).",
+                                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
+                            );
                             throw new \Exception('incorrect password');
                         } else {
                             // database couldn't update
@@ -332,6 +362,13 @@ class Auth {
 
                     if (!empty($result)) {
                         $this->logger->log('login attempts exceeded', 2);
+                        $this->notifyGlobal(
+                            'login_failed',
+                            'minimal',
+                            'Fehlgeschlagener Login',
+                            "Loginversuch blockiert (zu viele Fehlversuche) fuer Benutzer '{$this->username}'.",
+                            ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
+                        );
                         throw new \Exception('login attempts exceeded');
                     } else {
                         // database couldn't update
@@ -526,12 +563,26 @@ class Auth {
                         } else {
                             header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
                         }
+                        $this->notifyGlobal(
+                            'login_success',
+                            'all',
+                            'Erfolgreicher Login',
+                            "Erfolgreicher Login fuer Benutzer '{$this->username}' (LDAP).",
+                            ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+                        );
                         $this->logger->log("user '$this->username' logged in", 1);
                         return true;
 
                     } else {
                         // If the bind fails, the user's credentials are invalid
                         $this->logger->log('password verification failed', echoToWeb: true);
+                        $this->notifyGlobal(
+                            'login_failed',
+                            'minimal',
+                            'Fehlgeschlagener Login',
+                            "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
+                            ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+                        );
                         throw new \Exception('password verification failed');
                     }
 

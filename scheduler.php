@@ -19,11 +19,15 @@ include_once __DIR__ . '/includes/core/db_adapter.php';
 include_once __DIR__ . '/includes/core/pending_changes_queue.php';
 include_once __DIR__ . '/includes/core/automation_store.php';
 include_once __DIR__ . '/includes/core/logger.php';
+include_once __DIR__ . '/includes/core/mail.php';
+include_once __DIR__ . '/includes/core/notification_center.php';
 
 use Portflow\Core\DatabaseAdapter;
 use Portflow\Core\PendingChangesQueue;
 use Portflow\Core\AutomationStore;
 use Portflow\Core\Logger;
+use Portflow\Core\Mail;
+use Portflow\Core\NotificationCenter;
 
 ob_end_clean();
 
@@ -31,6 +35,8 @@ $logger = new Logger();
 $db = new DatabaseAdapter();
 $queueManager = new PendingChangesQueue($db);
 $automationStore = new AutomationStore();
+$mail = new Mail();
+$notificationCenter = new NotificationCenter($db, $logger, $mail);
 $startTime = microtime(true);
 
 $logger->log('Scheduler: Starting automated queue execution', 1);
@@ -130,6 +136,32 @@ try {
     $durationSec = microtime(true) - $startTime;
     $summary = implode("\n", $results);
     $logMessage = "Scheduler: Completed - Processed: $totalProcessed, Succeeded: $totalSucceeded, Failed: $totalFailed, Duration: " . number_format($durationSec, 2) . "s\n$summary";
+
+    // Emit divergence signal if there are failed changes.
+    if ($totalFailed > 0) {
+        $notificationCenter->enqueueGlobal(
+            'documentation_deviation',
+            'progress',
+            'Abweichung zwischen Doku und Realitaet',
+            'Beim automatisierten Abgleich wurden fehlgeschlagene Changes erkannt. Bitte pruefen Sie die betroffenen Eintraege.',
+            [
+                'failed_changes' => $totalFailed,
+                'processed_changes' => $totalProcessed,
+                'summary' => $summary
+            ]
+        );
+    }
+
+    // Trigger daily summary creation based on env time/timezone and always process queue.
+    $notificationCenter->enqueueDailySummaryIfDue();
+    $deliveryResult = $notificationCenter->processQueue(150);
+    $logger->log(
+        'Scheduler: notifications processed - processed=' . (int)$deliveryResult['processed']
+        . ' sent=' . (int)$deliveryResult['sent']
+        . ' failed=' . (int)$deliveryResult['failed']
+        . ' remaining=' . (int)$deliveryResult['remaining'],
+        1
+    );
 
     $logger->log($logMessage, $totalFailed === 0 ? 1 : 2);
     recordSchedulerRun($totalFailed === 0, $summary, $automationStore, $totalProcessed, $totalSucceeded, $totalFailed);

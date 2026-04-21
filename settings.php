@@ -181,6 +181,10 @@
                 'theme' => 'light',
                 'font_family' => 'jetbrains',
                 'font_size' => 'normal'
+            ],
+            'notifications' => [
+                'level' => 'minimal',
+                'channel' => 'mail'
             ]
         ];
     }
@@ -228,6 +232,18 @@
         $settings['appearance']['font_size'] = in_array((string)($settings['appearance']['font_size'] ?? ''), ['small', 'normal', 'large'], true)
             ? (string)$settings['appearance']['font_size']
             : $defaults['appearance']['font_size'];
+
+        if (!isset($settings['notifications']) || !is_array($settings['notifications'])) {
+            $settings['notifications'] = [];
+        }
+
+        $settings['notifications']['level'] = in_array((string)($settings['notifications']['level'] ?? ''), ['off', 'minimal', 'progress', 'all'], true)
+            ? (string)$settings['notifications']['level']
+            : $defaults['notifications']['level'];
+
+        $settings['notifications']['channel'] = in_array((string)($settings['notifications']['channel'] ?? ''), ['mail'], true)
+            ? (string)$settings['notifications']['channel']
+            : $defaults['notifications']['channel'];
 
         return $settings;
     }
@@ -645,6 +661,9 @@
     use Portflow\Core\Mail;
     $mail = new Mail();
 
+    // import notification center
+    use Portflow\Core\NotificationCenter;
+
     // get user role from db
     $query = "SELECT role.caption AS role FROM users INNER JOIN role ON users.role = role.uuid WHERE users.uuid = :uuid";
     $result = $db_adapter->db_query($query, ['uuid' => $_SESSION['uuid']]);
@@ -896,6 +915,31 @@
                 $logger->log('appearance preferences updated', 1, echoToWeb: true);
                 header('Location: ?site=appearance');
                 break;
+            case 'notification_preferences':
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification preferences update', 2, echoToWeb: true);
+                    header('Location: ?site=notifications');
+                    die();
+                }
+
+                $level = strtolower(trim((string)($_POST['notification_level'] ?? 'minimal')));
+                $channel = strtolower(trim((string)($_POST['notification_channel'] ?? 'mail')));
+
+                $allowedLevels = ['off', 'minimal', 'progress', 'all'];
+                $allowedChannels = ['mail'];
+
+                $settings = getSessionUserSettings();
+                $settings['notifications']['level'] = in_array($level, $allowedLevels, true)
+                    ? $level
+                    : 'minimal';
+                $settings['notifications']['channel'] = in_array($channel, $allowedChannels, true)
+                    ? $channel
+                    : 'mail';
+
+                saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
+                $logger->log('notification preferences updated', 1, echoToWeb: true);
+                header('Location: ?site=notifications');
+                break;
             case 'config_db_test':
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -1096,6 +1140,143 @@
                     ]);
                 }
                 header('Location: ?site=configuration#cfg-mail');
+                break;
+            case 'config_notification_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification configuration save', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $notifDailyTime = trim((string)($_POST['notification_daily_time'] ?? '08:00'));
+                $notifTimezone  = trim((string)($_POST['notification_timezone'] ?? 'Europe/Berlin'));
+
+                // validate time format HH:MM
+                if (!preg_match('/^\d{2}:\d{2}$/', $notifDailyTime)) {
+                    $notifDailyTime = '08:00';
+                }
+                // validate timezone
+                if (!in_array($notifTimezone, \DateTimeZone::listIdentifiers(), true)) {
+                    $notifTimezone = 'Europe/Berlin';
+                }
+
+                $notifWriteResult = configWriteEnvValues([
+                    'NOTIFICATION_DAILY_TIME' => $notifDailyTime,
+                    'NOTIFICATION_TIMEZONE'   => $notifTimezone
+                ]);
+
+                configSetFeedback('notification', (bool)$notifWriteResult['ok'], (string)$notifWriteResult['message'], [
+                    'notification_daily_time' => $notifDailyTime,
+                    'notification_timezone'   => $notifTimezone
+                ]);
+                $logger->log('notification configuration save executed', $notifWriteResult['ok'] ? 1 : 3, echoToWeb: true);
+                if ($notifWriteResult['ok']) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_notification_save', [
+                        'notification_daily_time' => $notifDailyTime,
+                        'notification_timezone'   => $notifTimezone
+                    ]);
+                }
+                header('Location: ?site=configuration#cfg-notification');
+                break;
+            case 'config_notification_enqueue_test':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification enqueue test', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $meta = [
+                        'source' => 'settings_admin',
+                        'triggered_by' => (string)($_SESSION['username'] ?? ''),
+                        'triggered_at' => gmdate('c')
+                    ];
+                    $enqueued = $notificationCenter->enqueueGlobal(
+                        'admin_test_event',
+                        'minimal',
+                        'Admin Test-Benachrichtigung',
+                        "Dies ist ein manuell ausgeloestes Test-Event aus den Einstellungen.",
+                        $meta
+                    );
+
+                    configSetFeedback(
+                        'notification',
+                        true,
+                        'Test-Event wurde in die Queue eingestellt. Empfaenger: ' . $enqueued,
+                        [
+                            'notification_daily_time' => (string)(defined('NOTIFICATION_DAILY_TIME') ? NOTIFICATION_DAILY_TIME : '08:00'),
+                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin')
+                        ]
+                    );
+                    $logger->log('notification test event enqueued: recipients=' . $enqueued, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'INSERT', 'configuration_notification_enqueue_test', [
+                        'recipients' => $enqueued
+                    ]);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Test-Event konnte nicht erstellt werden: ' . $e->getMessage());
+                    $logger->log('notification test event enqueue failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration#cfg-notification');
+                break;
+            case 'config_notification_process_queue':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification queue processing', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                $maxEntries = (int)($_POST['notification_process_limit'] ?? 100);
+                if ($maxEntries < 1 || $maxEntries > 500) {
+                    $maxEntries = 100;
+                }
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $result = $notificationCenter->processQueue($maxEntries);
+                    $message = 'Queue verarbeitet: processed=' . (int)($result['processed'] ?? 0)
+                        . ', sent=' . (int)($result['sent'] ?? 0)
+                        . ', failed=' . (int)($result['failed'] ?? 0)
+                        . ', remaining=' . (int)($result['remaining'] ?? 0);
+                    configSetFeedback(
+                        'notification',
+                        true,
+                        $message,
+                        [
+                            'notification_daily_time' => (string)(defined('NOTIFICATION_DAILY_TIME') ? NOTIFICATION_DAILY_TIME : '08:00'),
+                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin')
+                        ]
+                    );
+                    $logger->log('notification queue processed manually: ' . $message, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_notification_process_queue', [
+                        'max_entries' => $maxEntries,
+                        'result' => $result
+                    ]);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Queue-Verarbeitung fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('notification queue processing failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration#cfg-notification');
                 break;
             case 'delete_account':
                 $uuid = $_POST['uuid'] ?? null;
@@ -2093,31 +2274,49 @@ switch ($site) {
         HTML;
         break;
     case 'notifications':
+        $csrf = $auth->csrf();
+        $userSettings = getSessionUserSettings();
+        $notificationLevel = (string)($userSettings['notifications']['level'] ?? 'minimal');
+        $notificationChannel = (string)($userSettings['notifications']['channel'] ?? 'mail');
+
+        $levelOff = $notificationLevel === 'off' ? 'selected' : '';
+        $levelMinimal = $notificationLevel === 'minimal' ? 'selected' : '';
+        $levelProgress = $notificationLevel === 'progress' ? 'selected' : '';
+        $levelAll = $notificationLevel === 'all' ? 'selected' : '';
+        $channelMail = $notificationChannel === 'mail' ? 'selected' : '';
+
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <div class="h-fit max-w-lg">
-                <div class="text-xl font-bold pb-6">Benachrichtigungen</div>
-                <form action="?set=notification" method="post">
-                    <div class="pb-6">
-                        <label class="block mb-2" for="notification">
-                            Benachrichtigung
-                        </label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification" type="text" name="notification">
-                            <option value="1">Level 1</option>
-                            <option value="2">Level 2</option>
-                            <option value="3">Level 3</option>
+            <div class="settings-surface max-w-3xl">
+                <div class="text-xl font-bold pb-2">Benachrichtigungen</div>
+                <p class="text-sm text-gray-600 pb-6">Globales Benachrichtigungssystem mit Levels und kanalbasiertem Versand (aktuell: Mail).</p>
+
+                <form action="?set=notification_preferences" method="post" class="space-y-5">
+                    <input type="hidden" name="csrf" value="$csrf">
+
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="notification_level">Benachrichtigungslevel</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_level" name="notification_level">
+                            <option value="off" $levelOff>Aus</option>
+                            <option value="minimal" $levelMinimal>Minimal (fehlgeschlagene Logins)</option>
+                            <option value="progress" $levelProgress>Fortschritt (Minimal + Tageszusammenfassung + Abweichungen)</option>
+                            <option value="all" $levelAll>Alles (Fortschritt + erfolgreiche Logins)</option>
                         </select>
                     </div>
-                    <div class="pb-6">
-                        <label class="block mb-2" for="provider">
-                            Anbieter
-                        </label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="provider" type="text" name="provider">
-                            <option value="mail">Mail</option>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="notification_channel">Kanal</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_channel" name="notification_channel">
+                            <option value="mail" $channelMail>Mail</option>
                         </select>
                     </div>
-                    <div class="pb-6 flex justify-between items-center">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+
+                    <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
+                        Versandplanung fuer Tageszusammenfassungen wird ueber <span class="font-mono">NOTIFICATION_DAILY_TIME</span> und <span class="font-mono">NOTIFICATION_TIMEZONE</span> in der .env gesteuert.
+                    </div>
+
+                    <div class="pb-2 flex justify-between items-center">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Benachrichtigungen speichern">
                     </div>
                 </form>
             </div>
@@ -2167,6 +2366,28 @@ switch ($site) {
             'mail_smtpsecure' => configNormalizeMailSecureToUi((string)MAIL_SMTPSECURE) ?? ''
         ];
         $mailValues = array_merge($mailDefaults, is_array($cfgFormData['mail'] ?? null) ? $cfgFormData['mail'] : []);
+
+        $notificationCfgDefaults = [
+            'notification_daily_time' => (string)NOTIFICATION_DAILY_TIME,
+            'notification_timezone'   => (string)NOTIFICATION_TIMEZONE
+        ];
+        $notificationCfgValues = array_merge($notificationCfgDefaults, is_array($cfgFormData['notification'] ?? null) ? $cfgFormData['notification'] : []);
+
+        $notificationOverview = [
+            'counts' => ['total' => 0, 'pending' => 0, 'sent' => 0, 'failed' => 0],
+            'recent_sent' => [],
+            'last_sent_at' => '',
+            'last_daily_date' => '',
+            'last_daily_at' => '',
+            'configured_daily_time' => (string)NOTIFICATION_DAILY_TIME,
+            'configured_timezone' => (string)NOTIFICATION_TIMEZONE
+        ];
+        try {
+            $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+            $notificationOverview = array_merge($notificationOverview, $notificationCenter->getQueueOverview(8));
+        } catch (\Throwable $ignored) {
+            // Keep configuration UI available even if overview reading fails.
+        }
 
         $renderFeedback = static function (array $feedback, string $section): string {
             if (!isset($feedback[$section]) || !is_array($feedback[$section])) {
@@ -2250,6 +2471,102 @@ switch ($site) {
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';
         echo '</form>';
+        echo '</section>';
+
+        // Notification configuration section
+        $allTimezones = \DateTimeZone::listIdentifiers();
+        $currentTz = (string)$notificationCfgValues['notification_timezone'];
+        $currentTime = (string)$notificationCfgValues['notification_daily_time'];
+
+        echo '<section id="cfg-notification" class="settings-surface">';
+        echo '<div class="text-xl font-bold pb-1">Benachrichtigungen</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">Zeitzone und Uhrzeit f&uuml;r den t&auml;glichen Benachrichtigungsversand.</p>';
+        echo $renderFeedback($cfgFeedback, 'notification');
+        echo '<form action="?set=config_notification_save" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        echo '<div><label class="block mb-2" for="cfg_notification_daily_time">Versandzeit (HH:MM)</label><input id="cfg_notification_daily_time" name="notification_daily_time" type="time" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTime) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_timezone">Zeitzone</label><select id="cfg_notification_timezone" name="notification_timezone" class="w-full py-2 px-3">';
+        foreach ($allTimezones as $tz) {
+            $sel = ($tz === $currentTz) ? ' selected' : '';
+            echo '<option value="' . escapeSettingValue($tz) . '"' . $sel . '>' . escapeSettingValue($tz) . '</option>';
+        }
+        echo '</select></div>';
+        echo '</div>';
+        echo '<div class="pt-4">';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
+        echo '</div>';
+        echo '</form>';
+
+        echo '<div class="mt-5 rounded-xl border border-slate-200 p-4">';
+        echo '<div class="text-lg font-semibold pb-3">Admin-Uebersicht Queue</div>';
+        echo '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Total</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['total'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Pending</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['pending'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Sent</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['sent'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Failed</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['failed'] ?? 0)) . '</div></div>';
+        echo '</div>';
+
+        $lastSentAt = escapeSettingValue((string)($notificationOverview['last_sent_at'] ?? ''));
+        $lastDailyAt = escapeSettingValue((string)($notificationOverview['last_daily_at'] ?? ''));
+        $lastDailyDate = escapeSettingValue((string)($notificationOverview['last_daily_date'] ?? ''));
+        if ($lastSentAt === '') {
+            $lastSentAt = '-';
+        }
+        if ($lastDailyAt === '') {
+            $lastDailyAt = '-';
+        }
+        if ($lastDailyDate === '') {
+            $lastDailyDate = '-';
+        }
+        echo '<div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 text-sm">';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Letzter Send</div><div class="font-medium">' . $lastSentAt . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Letzter Daily-Run</div><div class="font-medium">' . $lastDailyAt . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Daily-Datum</div><div class="font-medium">' . $lastDailyDate . '</div></div>';
+        echo '</div>';
+
+        echo '<div class="mt-4">';
+        echo '<div class="text-sm font-semibold pb-2">Letzte Sends</div>';
+        $recentSent = is_array($notificationOverview['recent_sent'] ?? null) ? $notificationOverview['recent_sent'] : [];
+        if (!empty($recentSent)) {
+            echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit (UTC)</th><th class="p-2">Event</th><th class="p-2">Titel</th><th class="p-2">Empfaenger</th><th class="p-2">Versuche</th></tr></thead><tbody>';
+            foreach ($recentSent as $entry) {
+                $sentAt = escapeSettingValue((string)($entry['sent_at'] ?? '-'));
+                $eventType = escapeSettingValue((string)($entry['event_type'] ?? '-'));
+                $title = escapeSettingValue((string)($entry['title'] ?? '-'));
+                $recipientUser = escapeSettingValue((string)($entry['recipient_username'] ?? ''));
+                $recipientEmail = escapeSettingValue((string)($entry['recipient_email'] ?? ''));
+                $recipient = trim($recipientUser . ' <' . $recipientEmail . '>');
+                if ($recipient === '<>' || $recipient === '') {
+                    $recipient = '-';
+                }
+                $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $sentAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $title . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $attempts . '</td></tr>';
+            }
+            echo '</tbody></table></div>';
+        } else {
+            echo '<div class="text-sm text-gray-500">Noch keine versendeten Benachrichtigungen vorhanden.</div>';
+        }
+        echo '</div>';
+
+        echo '<div class="mt-5 pt-4 border-t border-slate-200">';
+        echo '<div class="text-sm font-semibold pb-2">Admin-Aktionen</div>';
+        echo '<div class="flex flex-wrap gap-3">';
+        echo '<form action="?set=config_notification_enqueue_test" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Test-Event enqueuen</button>';
+        echo '</form>';
+        echo '<form action="?set=config_notification_process_queue" method="post" class="m-0 flex items-center gap-2">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<input name="notification_process_limit" type="number" min="1" max="500" value="100" class="w-24 py-2 px-3" title="Maximal zu verarbeitende Queue-Eintraege">';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Queue jetzt verarbeiten</button>';
+        echo '</form>';
+        echo '</div>';
+        echo '</div>';
+
+        echo '</div>';
+
         echo '</section>';
 
         echo '</div>';
