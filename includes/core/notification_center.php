@@ -1,6 +1,16 @@
 <?php
 namespace Portflow\Core;
 
+include_once __DIR__ . '/notification/provider_interface.php';
+include_once __DIR__ . '/notification/provider_mail.php';
+include_once __DIR__ . '/notification/provider_slack_stub.php';
+include_once __DIR__ . '/notification/provider_telegram.php';
+
+use Portflow\Core\Notification\ProviderInterface;
+use Portflow\Core\Notification\MailProvider;
+use Portflow\Core\Notification\SlackStubProvider;
+use Portflow\Core\Notification\TelegramProvider;
+
 if (!defined('APP_NAME')) {
     die('Access denied');
 }
@@ -9,6 +19,8 @@ class NotificationCenter {
     private DatabaseAdapter $db;
     private Logger $logger;
     private Mail $mail;
+    /** @var array<string, ProviderInterface> */
+    private array $providers;
     private string $queueFile;
     private string $stateFile;
 
@@ -16,6 +28,7 @@ class NotificationCenter {
         $this->db = $db ?? new DatabaseAdapter();
         $this->logger = $logger ?? new Logger();
         $this->mail = $mail ?? new Mail();
+        $this->providers = $this->buildProviders();
         $baseDir = __DIR__ . '/../../data/notifications';
         $this->queueFile = $baseDir . '/queue.json';
         $this->stateFile = $baseDir . '/state.json';
@@ -87,33 +100,18 @@ class NotificationCenter {
             $recipient = is_array($entry['recipient'] ?? null) ? $entry['recipient'] : [];
             $channel = strtolower(trim((string)($recipient['channel'] ?? 'mail')));
 
-            if ($channel !== 'mail') {
+            $provider = $this->providers[$channel] ?? null;
+            if (!$provider instanceof ProviderInterface) {
                 $queue[$idx]['status'] = 'failed';
                 $queue[$idx]['error'] = 'unsupported channel';
                 $failed++;
                 continue;
             }
 
-            $subject = '[Portflow] ' . (string)($entry['title'] ?? 'Benachrichtigung');
-            $body = nl2br(htmlspecialchars((string)($entry['message'] ?? ''), ENT_QUOTES, 'UTF-8'));
-            $meta = is_array($entry['meta'] ?? null) ? $entry['meta'] : [];
-            if (!empty($meta)) {
-                $body .= '<br><br><pre style="font-family:monospace;white-space:pre-wrap;">' . htmlspecialchars(json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8') . '</pre>';
-            }
-
-            $mailTo = [
-                'email' => (string)($recipient['email'] ?? ''),
-                'username' => (string)($recipient['username'] ?? 'User')
-            ];
-
-            $ok = false;
-            try {
-                if ($mailTo['email'] !== '') {
-                    $ok = $this->mail->send($mailTo, $subject, $body);
-                }
-            } catch (\Throwable $e) {
-                $ok = false;
-                $queue[$idx]['error'] = $e->getMessage();
+            $result = $provider->send($entry);
+            $ok = !empty($result['ok']);
+            if (!$ok) {
+                $queue[$idx]['error'] = (string)($result['error'] ?? 'provider send failed');
             }
 
             if ($ok) {
@@ -147,6 +145,46 @@ class NotificationCenter {
             'failed' => $failed,
             'remaining' => $remaining
         ];
+    }
+
+    /**
+     * Send a direct test message through a specific channel provider.
+     *
+     * @return array{ok: bool, error?: string}
+     */
+    public function sendChannelTest(string $channel, array $recipient, string $title, string $message, array $meta = []): array {
+        $normalizedChannel = strtolower(trim($channel));
+        $provider = $this->providers[$normalizedChannel] ?? null;
+        if (!$provider instanceof ProviderInterface) {
+            return ['ok' => false, 'error' => 'unsupported channel'];
+        }
+
+        $entry = [
+            'title' => $title,
+            'message' => $message,
+            'meta' => $meta,
+            'recipient' => $recipient
+        ];
+
+        return $provider->send($entry);
+    }
+
+    /**
+     * @return array<string, ProviderInterface>
+     */
+    private function buildProviders(): array {
+        $providers = [];
+
+        $mailProvider = new MailProvider($this->mail);
+        $providers[$mailProvider->getChannel()] = $mailProvider;
+
+        $slackProvider = new SlackStubProvider();
+        $providers[$slackProvider->getChannel()] = $slackProvider;
+
+        $telegramProvider = new TelegramProvider();
+        $providers[$telegramProvider->getChannel()] = $telegramProvider;
+
+        return $providers;
     }
 
     public function enqueueDailySummaryIfDue(): bool {
@@ -302,7 +340,7 @@ class NotificationCenter {
 
     private function loadUsersForLevel(string $eventLevel): array {
         $rows = $this->db->db_query(
-            "SELECT uuid, username, email, settings, activation_code FROM users WHERE email IS NOT NULL AND email <> ''"
+            "SELECT uuid, username, email, settings, activation_code FROM users"
         ) ?: [];
 
         $result = [];
@@ -331,11 +369,35 @@ class NotificationCenter {
                 'uuid' => (string)$row['uuid'],
                 'username' => (string)$row['username'],
                 'email' => (string)$row['email'],
-                'channel' => $userChannel !== '' ? $userChannel : 'mail'
+                'channel' => $this->normalizeChannelForDelivery($userChannel)
             ];
         }
 
         return $result;
+    }
+
+    private function normalizeChannelForDelivery(string $requestedChannel): string {
+        $channel = strtolower(trim($requestedChannel));
+        if ($channel === 'slack') {
+            $enabled = defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED === true;
+            $webhook = defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? trim((string)NOTIFICATION_SLACK_WEBHOOK_URL) : '';
+            if ($enabled && $webhook !== '') {
+                return 'slack';
+            }
+            return 'mail';
+        }
+
+        if ($channel === 'telegram') {
+            $enabled = defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED === true;
+            $botToken = defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? trim((string)NOTIFICATION_TELEGRAM_BOT_TOKEN) : '';
+            $chatId = defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? trim((string)NOTIFICATION_TELEGRAM_CHAT_ID) : '';
+            if ($enabled && $botToken !== '' && $chatId !== '') {
+                return 'telegram';
+            }
+            return 'mail';
+        }
+
+        return 'mail';
     }
 
     private function isLevelAllowed(string $userLevel, string $eventLevel): bool {

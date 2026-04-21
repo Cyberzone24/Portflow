@@ -202,6 +202,37 @@
         return in_array($theme, ['light', 'dark', 'contrast'], true) ? $theme : 'light';
     }
 
+    function getNotificationChannelReadiness(): array {
+        $slackEnabled = defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED === true;
+        $slackWebhook = defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? trim((string)NOTIFICATION_SLACK_WEBHOOK_URL) : '';
+
+        $telegramEnabled = defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED === true;
+        $telegramBotToken = defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? trim((string)NOTIFICATION_TELEGRAM_BOT_TOKEN) : '';
+        $telegramChatId = defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? trim((string)NOTIFICATION_TELEGRAM_CHAT_ID) : '';
+
+        return [
+            'mail' => true,
+            'slack' => $slackEnabled && $slackWebhook !== '',
+            'telegram' => $telegramEnabled && $telegramBotToken !== '' && $telegramChatId !== '',
+            'slack_enabled' => $slackEnabled,
+            'telegram_enabled' => $telegramEnabled
+        ];
+    }
+
+    function getAvailableNotificationChannels(bool $includeNotReady = false): array {
+        $channels = ['mail'];
+        $readiness = getNotificationChannelReadiness();
+
+        if (!empty($readiness['slack_enabled']) && ($includeNotReady || !empty($readiness['slack']))) {
+            $channels[] = 'slack';
+        }
+        if (!empty($readiness['telegram_enabled']) && ($includeNotReady || !empty($readiness['telegram']))) {
+            $channels[] = 'telegram';
+        }
+
+        return $channels;
+    }
+
     function getSessionUserSettings(): array {
         $defaults = getDefaultUserSettings();
         $raw = $_SESSION['settings'] ?? '';
@@ -241,7 +272,8 @@
             ? (string)$settings['notifications']['level']
             : $defaults['notifications']['level'];
 
-        $settings['notifications']['channel'] = in_array((string)($settings['notifications']['channel'] ?? ''), ['mail'], true)
+        $availableChannels = getAvailableNotificationChannels();
+        $settings['notifications']['channel'] = in_array((string)($settings['notifications']['channel'] ?? ''), $availableChannels, true)
             ? (string)$settings['notifications']['channel']
             : $defaults['notifications']['channel'];
 
@@ -926,7 +958,7 @@
                 $channel = strtolower(trim((string)($_POST['notification_channel'] ?? 'mail')));
 
                 $allowedLevels = ['off', 'minimal', 'progress', 'all'];
-                $allowedChannels = ['mail'];
+                $allowedChannels = getAvailableNotificationChannels();
 
                 $settings = getSessionUserSettings();
                 $settings['notifications']['level'] = in_array($level, $allowedLevels, true)
@@ -1156,6 +1188,11 @@
 
                 $notifDailyTime = trim((string)($_POST['notification_daily_time'] ?? '08:00'));
                 $notifTimezone  = trim((string)($_POST['notification_timezone'] ?? 'Europe/Berlin'));
+                $notifSlackEnabled = isset($_POST['notification_slack_enabled']) && configToBool($_POST['notification_slack_enabled']);
+                $notifSlackWebhook = configNormalizeEnvValue((string)($_POST['notification_slack_webhook_url'] ?? ''));
+                $notifTelegramEnabled = isset($_POST['notification_telegram_enabled']) && configToBool($_POST['notification_telegram_enabled']);
+                $notifTelegramBotToken = configNormalizeEnvValue((string)($_POST['notification_telegram_bot_token'] ?? ''));
+                $notifTelegramChatId = configNormalizeEnvValue((string)($_POST['notification_telegram_chat_id'] ?? ''));
 
                 // validate time format HH:MM
                 if (!preg_match('/^\d{2}:\d{2}$/', $notifDailyTime)) {
@@ -1168,18 +1205,30 @@
 
                 $notifWriteResult = configWriteEnvValues([
                     'NOTIFICATION_DAILY_TIME' => $notifDailyTime,
-                    'NOTIFICATION_TIMEZONE'   => $notifTimezone
+                    'NOTIFICATION_TIMEZONE'   => $notifTimezone,
+                    'NOTIFICATION_SLACK_ENABLED' => configEnvBool($notifSlackEnabled),
+                    'NOTIFICATION_SLACK_WEBHOOK_URL' => $notifSlackWebhook,
+                    'NOTIFICATION_TELEGRAM_ENABLED' => configEnvBool($notifTelegramEnabled),
+                    'NOTIFICATION_TELEGRAM_BOT_TOKEN' => $notifTelegramBotToken,
+                    'NOTIFICATION_TELEGRAM_CHAT_ID' => $notifTelegramChatId
                 ]);
 
                 configSetFeedback('notification', (bool)$notifWriteResult['ok'], (string)$notifWriteResult['message'], [
                     'notification_daily_time' => $notifDailyTime,
-                    'notification_timezone'   => $notifTimezone
+                    'notification_timezone'   => $notifTimezone,
+                    'notification_slack_enabled' => $notifSlackEnabled ? '1' : '0',
+                    'notification_slack_webhook_url' => $notifSlackWebhook,
+                    'notification_telegram_enabled' => $notifTelegramEnabled ? '1' : '0',
+                    'notification_telegram_bot_token' => $notifTelegramBotToken,
+                    'notification_telegram_chat_id' => $notifTelegramChatId
                 ]);
                 $logger->log('notification configuration save executed', $notifWriteResult['ok'] ? 1 : 3, echoToWeb: true);
                 if ($notifWriteResult['ok']) {
                     logAutomationChange($db_adapter, 'UPDATE', 'configuration_notification_save', [
                         'notification_daily_time' => $notifDailyTime,
-                        'notification_timezone'   => $notifTimezone
+                        'notification_timezone'   => $notifTimezone,
+                        'notification_slack_enabled' => $notifSlackEnabled,
+                        'notification_telegram_enabled' => $notifTelegramEnabled
                     ]);
                 }
                 header('Location: ?site=configuration#cfg-notification');
@@ -1218,7 +1267,12 @@
                         'Test-Event wurde in die Queue eingestellt. Empfaenger: ' . $enqueued,
                         [
                             'notification_daily_time' => (string)(defined('NOTIFICATION_DAILY_TIME') ? NOTIFICATION_DAILY_TIME : '08:00'),
-                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin')
+                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin'),
+                            'notification_slack_enabled' => (defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED) ? '1' : '0',
+                            'notification_slack_webhook_url' => (string)(defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? NOTIFICATION_SLACK_WEBHOOK_URL : ''),
+                            'notification_telegram_enabled' => (defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED) ? '1' : '0',
+                            'notification_telegram_bot_token' => (string)(defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? NOTIFICATION_TELEGRAM_BOT_TOKEN : ''),
+                            'notification_telegram_chat_id' => (string)(defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? NOTIFICATION_TELEGRAM_CHAT_ID : '')
                         ]
                     );
                     $logger->log('notification test event enqueued: recipients=' . $enqueued, 1, echoToWeb: true);
@@ -1263,7 +1317,12 @@
                         $message,
                         [
                             'notification_daily_time' => (string)(defined('NOTIFICATION_DAILY_TIME') ? NOTIFICATION_DAILY_TIME : '08:00'),
-                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin')
+                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin'),
+                            'notification_slack_enabled' => (defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED) ? '1' : '0',
+                            'notification_slack_webhook_url' => (string)(defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? NOTIFICATION_SLACK_WEBHOOK_URL : ''),
+                            'notification_telegram_enabled' => (defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED) ? '1' : '0',
+                            'notification_telegram_bot_token' => (string)(defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? NOTIFICATION_TELEGRAM_BOT_TOKEN : ''),
+                            'notification_telegram_chat_id' => (string)(defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? NOTIFICATION_TELEGRAM_CHAT_ID : '')
                         ]
                     );
                     $logger->log('notification queue processed manually: ' . $message, 1, echoToWeb: true);
@@ -1274,6 +1333,132 @@
                 } catch (\Throwable $e) {
                     configSetFeedback('notification', false, 'Queue-Verarbeitung fehlgeschlagen: ' . $e->getMessage());
                     $logger->log('notification queue processing failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration#cfg-notification');
+                break;
+            case 'config_notification_test_slack':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for slack notification test', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $result = $notificationCenter->sendChannelTest(
+                        'slack',
+                        [
+                            'email' => (string)($_SESSION['email'] ?? ''),
+                            'username' => (string)($_SESSION['username'] ?? 'admin')
+                        ],
+                        'Slack Testnachricht',
+                        'Dies ist eine Slack-Testnachricht aus den Einstellungen.',
+                        [
+                            'source' => 'settings_admin',
+                            'channel' => 'slack',
+                            'triggered_by' => (string)($_SESSION['username'] ?? ''),
+                            'triggered_at' => gmdate('c')
+                        ]
+                    );
+
+                    $ok = !empty($result['ok']);
+                    $message = $ok
+                        ? 'Slack-Testnachricht erfolgreich gesendet.'
+                        : 'Slack-Test fehlgeschlagen: ' . (string)($result['error'] ?? 'unbekannter Fehler');
+
+                    configSetFeedback(
+                        'notification',
+                        $ok,
+                        $message,
+                        [
+                            'notification_daily_time' => (string)(defined('NOTIFICATION_DAILY_TIME') ? NOTIFICATION_DAILY_TIME : '08:00'),
+                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin'),
+                            'notification_slack_enabled' => (defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED) ? '1' : '0',
+                            'notification_slack_webhook_url' => (string)(defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? NOTIFICATION_SLACK_WEBHOOK_URL : ''),
+                            'notification_telegram_enabled' => (defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED) ? '1' : '0',
+                            'notification_telegram_bot_token' => (string)(defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? NOTIFICATION_TELEGRAM_BOT_TOKEN : ''),
+                            'notification_telegram_chat_id' => (string)(defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? NOTIFICATION_TELEGRAM_CHAT_ID : '')
+                        ]
+                    );
+
+                    $logger->log('slack notification test executed', $ok ? 1 : 3, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_notification_test_slack', [
+                        'ok' => $ok,
+                        'error' => (string)($result['error'] ?? '')
+                    ]);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Slack-Test fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('slack notification test failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration#cfg-notification');
+                break;
+            case 'config_notification_test_telegram':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for telegram notification test', 2, echoToWeb: true);
+                    header('Location: ?site=configuration');
+                    die();
+                }
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $result = $notificationCenter->sendChannelTest(
+                        'telegram',
+                        [
+                            'email' => (string)($_SESSION['email'] ?? ''),
+                            'username' => (string)($_SESSION['username'] ?? 'admin')
+                        ],
+                        'Telegram Testnachricht',
+                        'Dies ist eine Telegram-Testnachricht aus den Einstellungen.',
+                        [
+                            'source' => 'settings_admin',
+                            'channel' => 'telegram',
+                            'triggered_by' => (string)($_SESSION['username'] ?? ''),
+                            'triggered_at' => gmdate('c')
+                        ]
+                    );
+
+                    $ok = !empty($result['ok']);
+                    $message = $ok
+                        ? 'Telegram-Testnachricht erfolgreich gesendet.'
+                        : 'Telegram-Test fehlgeschlagen: ' . (string)($result['error'] ?? 'unbekannter Fehler');
+
+                    configSetFeedback(
+                        'notification',
+                        $ok,
+                        $message,
+                        [
+                            'notification_daily_time' => (string)(defined('NOTIFICATION_DAILY_TIME') ? NOTIFICATION_DAILY_TIME : '08:00'),
+                            'notification_timezone' => (string)(defined('NOTIFICATION_TIMEZONE') ? NOTIFICATION_TIMEZONE : 'Europe/Berlin'),
+                            'notification_slack_enabled' => (defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED) ? '1' : '0',
+                            'notification_slack_webhook_url' => (string)(defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? NOTIFICATION_SLACK_WEBHOOK_URL : ''),
+                            'notification_telegram_enabled' => (defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED) ? '1' : '0',
+                            'notification_telegram_bot_token' => (string)(defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? NOTIFICATION_TELEGRAM_BOT_TOKEN : ''),
+                            'notification_telegram_chat_id' => (string)(defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? NOTIFICATION_TELEGRAM_CHAT_ID : '')
+                        ]
+                    );
+
+                    $logger->log('telegram notification test executed', $ok ? 1 : 3, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_notification_test_telegram', [
+                        'ok' => $ok,
+                        'error' => (string)($result['error'] ?? '')
+                    ]);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Telegram-Test fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('telegram notification test failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
                 header('Location: ?site=configuration#cfg-notification');
@@ -2278,12 +2463,43 @@ switch ($site) {
         $userSettings = getSessionUserSettings();
         $notificationLevel = (string)($userSettings['notifications']['level'] ?? 'minimal');
         $notificationChannel = (string)($userSettings['notifications']['channel'] ?? 'mail');
+        $channelReadiness = getNotificationChannelReadiness();
+        $availableChannels = getAvailableNotificationChannels();
 
         $levelOff = $notificationLevel === 'off' ? 'selected' : '';
         $levelMinimal = $notificationLevel === 'minimal' ? 'selected' : '';
         $levelProgress = $notificationLevel === 'progress' ? 'selected' : '';
         $levelAll = $notificationLevel === 'all' ? 'selected' : '';
-        $channelMail = $notificationChannel === 'mail' ? 'selected' : '';
+
+        $slackStatus = 'deaktiviert';
+        if (!empty($channelReadiness['slack_enabled'])) {
+            $slackStatus = !empty($channelReadiness['slack'])
+                ? 'bereit'
+                : 'aktiv, aber unvollstaendig konfiguriert';
+        }
+
+        $telegramStatus = 'deaktiviert';
+        if (!empty($channelReadiness['telegram_enabled'])) {
+            $telegramStatus = !empty($channelReadiness['telegram'])
+                ? 'bereit'
+                : 'aktiv, aber unvollstaendig konfiguriert';
+        }
+
+        $slackStatusSafe = escapeSettingValue($slackStatus);
+        $telegramStatusSafe = escapeSettingValue($telegramStatus);
+        $channelOptionsHtml = '';
+        foreach ($availableChannels as $channelOption) {
+            $selected = $notificationChannel === $channelOption ? 'selected' : '';
+            $label = strtoupper($channelOption);
+            if ($channelOption === 'mail') {
+                $label = 'Mail';
+            } elseif ($channelOption === 'slack') {
+                $label = 'Slack';
+            } elseif ($channelOption === 'telegram') {
+                $label = 'Telegram';
+            }
+            $channelOptionsHtml .= '<option value="' . escapeSettingValue($channelOption) . '" ' . $selected . '>' . escapeSettingValue($label) . '</option>';
+        }
 
         echo <<<HTML
         <div class="h-fit w-full p-4">
@@ -2307,12 +2523,19 @@ switch ($site) {
                     <div>
                         <label class="block mb-2 text-sm font-semibold" for="notification_channel">Kanal</label>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_channel" name="notification_channel">
-                            <option value="mail" $channelMail>Mail</option>
+                            $channelOptionsHtml
                         </select>
                     </div>
 
                     <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
                         Versandplanung fuer Tageszusammenfassungen wird ueber <span class="font-mono">NOTIFICATION_DAILY_TIME</span> und <span class="font-mono">NOTIFICATION_TIMEZONE</span> in der .env gesteuert.
+                    </div>
+
+                    <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
+                        <div>Kanalstatus:</div>
+                        <div>Mail: bereit</div>
+                        <div>Slack: $slackStatusSafe</div>
+                        <div>Telegram: $telegramStatusSafe</div>
                     </div>
 
                     <div class="pb-2 flex justify-between items-center">
@@ -2369,7 +2592,12 @@ switch ($site) {
 
         $notificationCfgDefaults = [
             'notification_daily_time' => (string)NOTIFICATION_DAILY_TIME,
-            'notification_timezone'   => (string)NOTIFICATION_TIMEZONE
+            'notification_timezone'   => (string)NOTIFICATION_TIMEZONE,
+            'notification_slack_enabled' => NOTIFICATION_SLACK_ENABLED ? '1' : '0',
+            'notification_slack_webhook_url' => (string)NOTIFICATION_SLACK_WEBHOOK_URL,
+            'notification_telegram_enabled' => NOTIFICATION_TELEGRAM_ENABLED ? '1' : '0',
+            'notification_telegram_bot_token' => (string)NOTIFICATION_TELEGRAM_BOT_TOKEN,
+            'notification_telegram_chat_id' => (string)NOTIFICATION_TELEGRAM_CHAT_ID
         ];
         $notificationCfgValues = array_merge($notificationCfgDefaults, is_array($cfgFormData['notification'] ?? null) ? $cfgFormData['notification'] : []);
 
@@ -2477,6 +2705,11 @@ switch ($site) {
         $allTimezones = \DateTimeZone::listIdentifiers();
         $currentTz = (string)$notificationCfgValues['notification_timezone'];
         $currentTime = (string)$notificationCfgValues['notification_daily_time'];
+        $currentSlackEnabled = configToBool($notificationCfgValues['notification_slack_enabled'] ?? false);
+        $currentSlackWebhook = (string)($notificationCfgValues['notification_slack_webhook_url'] ?? '');
+        $currentTelegramEnabled = configToBool($notificationCfgValues['notification_telegram_enabled'] ?? false);
+        $currentTelegramBotToken = (string)($notificationCfgValues['notification_telegram_bot_token'] ?? '');
+        $currentTelegramChatId = (string)($notificationCfgValues['notification_telegram_chat_id'] ?? '');
 
         echo '<section id="cfg-notification" class="settings-surface">';
         echo '<div class="text-xl font-bold pb-1">Benachrichtigungen</div>';
@@ -2492,6 +2725,11 @@ switch ($site) {
             echo '<option value="' . escapeSettingValue($tz) . '"' . $sel . '>' . escapeSettingValue($tz) . '</option>';
         }
         echo '</select></div>';
+        echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_slack_enabled" value="1"' . ($currentSlackEnabled ? ' checked' : '') . '> Slack aktivieren</label></div>';
+        echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_notification_slack_webhook_url">Slack Webhook URL</label><input id="cfg_notification_slack_webhook_url" name="notification_slack_webhook_url" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentSlackWebhook) . '" placeholder="https://hooks.slack.com/services/..." ></div>';
+        echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_telegram_enabled" value="1"' . ($currentTelegramEnabled ? ' checked' : '') . '> Telegram aktivieren</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_telegram_bot_token">Telegram Bot Token</label><input id="cfg_notification_telegram_bot_token" name="notification_telegram_bot_token" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTelegramBotToken) . '" placeholder="123456:ABC..." ></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_telegram_chat_id">Telegram Chat ID</label><input id="cfg_notification_telegram_chat_id" name="notification_telegram_chat_id" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTelegramChatId) . '" placeholder="-100... oder 123..." ></div>';
         echo '</div>';
         echo '<div class="pt-4">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
@@ -2561,6 +2799,14 @@ switch ($site) {
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<input name="notification_process_limit" type="number" min="1" max="500" value="100" class="w-24 py-2 px-3" title="Maximal zu verarbeitende Queue-Eintraege">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Queue jetzt verarbeiten</button>';
+        echo '</form>';
+        echo '<form action="?set=config_notification_test_slack" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">Slack Test</button>';
+        echo '</form>';
+        echo '<form action="?set=config_notification_test_telegram" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-cyan-600 hover:bg-cyan-700 text-white">Telegram Test</button>';
         echo '</form>';
         echo '</div>';
         echo '</div>';

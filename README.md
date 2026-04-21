@@ -13,6 +13,8 @@ bash <(curl -s https://raw.githubusercontent.com/Cyberzone24/Portflow/main/insta
 - PHPMailer
 - (Lighttpd - if you are using our installer)
 
+## Scheduler alle 5 Minuten laufen lassen!
+
 ## ITAM Port Type Codes
 
 `device_port.type` is stored as `FLOAT` in the current schema.
