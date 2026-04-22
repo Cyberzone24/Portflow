@@ -301,6 +301,7 @@
                     "type": "dropdown",
                     "options": [
                         { "value": "--", "label": "--" },
+                        { "value": "blindpanel", "label": "Blindpanel" },
                         { "value": "patchpanel", "label": "Patchpanel" },
                         { "value": "net_outlet", "label": "Network Outlet" },
                         { "value": "phone", "label": "Phone" },

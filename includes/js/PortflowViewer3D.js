@@ -47,6 +47,7 @@ export class PortflowViewer3D {
       hoverTooltip: null,
       interactiveMeshes: [],
       baseGrid: null,
+      customPan: null,
       
       // Toggles
       showRackEars: true,
@@ -590,9 +591,13 @@ export class PortflowViewer3D {
       this.state.controls.dispose();
     }
     if (this.state.renderer?.domElement) {
+      this.state.renderer.domElement.removeEventListener('pointerdown', this._boundPointerDown);
       this.state.renderer.domElement.removeEventListener('pointermove', this._boundPointerMove);
       this.state.renderer.domElement.removeEventListener('pointerleave', this._boundPointerLeave);
       this.state.renderer.domElement.removeEventListener('click', this._boundPointerClick);
+      this.state.renderer.domElement.removeEventListener('pointerup', this._boundPointerUp);
+      this.state.renderer.domElement.removeEventListener('pointercancel', this._boundPointerUp);
+      this.state.renderer.domElement.removeEventListener('wheel', this._boundWheelZoom);
     }
     if (this.container) {
       this.container.innerHTML = '';
@@ -631,20 +636,29 @@ export class PortflowViewer3D {
     this.container.appendChild(tooltip);
     this.state.hoverTooltip = tooltip;
 
+    this._boundPointerDown = this._handlePointerDown.bind(this);
     this._boundPointerMove = this._handlePointerMove.bind(this);
     this._boundPointerLeave = this._handlePointerLeave.bind(this);
     this._boundPointerClick = this._handlePointerClick.bind(this);
+    this._boundPointerUp = this._handlePointerUp.bind(this);
+    this._boundWheelZoom = this._handleWheelZoom.bind(this);
+    this.state.renderer.domElement.addEventListener('pointerdown', this._boundPointerDown);
     this.state.renderer.domElement.addEventListener('pointermove', this._boundPointerMove);
     this.state.renderer.domElement.addEventListener('pointerleave', this._boundPointerLeave);
     this.state.renderer.domElement.addEventListener('click', this._boundPointerClick);
+    this.state.renderer.domElement.addEventListener('pointerup', this._boundPointerUp);
+    this.state.renderer.domElement.addEventListener('pointercancel', this._boundPointerUp);
+    this.state.renderer.domElement.addEventListener('wheel', this._boundWheelZoom, { passive: false });
 
     // Controls
     this.state.controls = new OrbitControls(this.state.camera, this.state.renderer.domElement);
     this.state.controls.enableDamping = false;
+    this.state.controls.enableZoom = false;
+    this.state.controls.rotateSpeed = 0.45;
     this.state.controls.screenSpacePanning = true;
     this.state.controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.PAN,
+      MIDDLE: -1,
       RIGHT: THREE.MOUSE.ROTATE
     };
     this.state.controls.addEventListener('change', () => this._requestRender());
@@ -1467,7 +1481,35 @@ export class PortflowViewer3D {
     return true;
   }
 
+  _handlePointerDown(event) {
+    if (event.button !== 1 || !this.state?.renderer?.domElement) {
+      return;
+    }
+
+    event.preventDefault();
+    this._hideHoverTooltip();
+    this.state.customPan = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY
+    };
+
+    if (typeof this.state.renderer.domElement.setPointerCapture === 'function') {
+      this.state.renderer.domElement.setPointerCapture(event.pointerId);
+    }
+  }
+
   _handlePointerMove(event) {
+    if (this.state?.customPan?.pointerId === event.pointerId) {
+      event.preventDefault();
+      const dx = event.clientX - this.state.customPan.clientX;
+      const dy = event.clientY - this.state.customPan.clientY;
+      this.state.customPan.clientX = event.clientX;
+      this.state.customPan.clientY = event.clientY;
+      this._panCameraByPixels(dx, dy);
+      return;
+    }
+
     if (!this._setPointerFromEvent(event) || !this.state.raycaster || !this.state.camera) {
       return;
     }
@@ -1496,6 +1538,22 @@ export class PortflowViewer3D {
     this._hideHoverTooltip();
   }
 
+  _handlePointerUp(event) {
+    if (this.state?.customPan?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (this.state?.renderer?.domElement && typeof this.state.renderer.domElement.releasePointerCapture === 'function') {
+      try {
+        this.state.renderer.domElement.releasePointerCapture(event.pointerId);
+      } catch (_) {
+        // ignore release failures when capture was already cleared
+      }
+    }
+
+    this.state.customPan = null;
+  }
+
   _handlePointerClick(event) {
     if (!this._setPointerFromEvent(event) || !this.state.raycaster || !this.state.camera || this.state.renderAllCables) {
       return;
@@ -1515,6 +1573,89 @@ export class PortflowViewer3D {
       nextSelection.add(deviceUuid);
     }
     this.setSelectedDevices(Array.from(nextSelection));
+  }
+
+  _handleWheelZoom(event) {
+    if (!this.state?.camera || !this.state?.controls || !this.state?.THREE) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const target = this.state.controls.target;
+    const wheelFactor = Math.max(0.5, Math.min(3, Math.abs(Number(event.deltaY) || 0) / 100));
+    if (event.deltaY < 0) {
+      const forward = target.clone().sub(this.state.camera.position);
+      const forwardLength = forward.length();
+      if (forwardLength > 0.0001) {
+        const sceneScale = this._getZoomSceneScale();
+        const baseStep = Math.max(0.04, Math.min(0.35, sceneScale * 0.045));
+        const targetAdvance = Math.min(forwardLength * 0.2, baseStep * wheelFactor * 0.8);
+        target.add(forward.normalize().multiplyScalar(targetAdvance));
+      }
+    }
+
+    const offset = this.state.camera.position.clone().sub(target);
+    const distance = offset.length();
+    if (distance <= 0.0001) {
+      return;
+    }
+
+    const sceneScale = this._getZoomSceneScale();
+    const baseStep = Math.max(0.04, Math.min(0.35, sceneScale * 0.045));
+    const distanceDelta = (event.deltaY > 0 ? 1 : -1) * baseStep * wheelFactor;
+    const minDistance = 0.015;
+    const nextDistance = Math.max(minDistance, distance + distanceDelta);
+
+    offset.normalize().multiplyScalar(nextDistance);
+    this.state.camera.position.copy(target.clone().add(offset));
+    this.state.controls.update();
+    this._requestRender();
+  }
+
+  _panCameraByPixels(deltaX, deltaY) {
+    if (!this.state?.camera || !this.state?.controls || !this.state?.renderer?.domElement) {
+      return;
+    }
+
+    const rect = this.state.renderer.domElement.getBoundingClientRect();
+    const referenceSize = Math.max(1, Math.min(rect.width || 1, rect.height || 1));
+    const sceneScale = this._getZoomSceneScale();
+    const unitsPerPixel = Math.max(0.0015, sceneScale / referenceSize * 1.35);
+
+    const forward = this.state.controls.target.clone().sub(this.state.camera.position).normalize();
+    const right = forward.clone().cross(this.state.camera.up).normalize();
+    const up = this.state.camera.up.clone().normalize();
+    const panOffset = right.multiplyScalar(-deltaX * unitsPerPixel).add(up.multiplyScalar(deltaY * unitsPerPixel));
+
+    this.state.camera.position.add(panOffset);
+    this.state.controls.target.add(panOffset);
+    this.state.controls.update();
+    this._requestRender();
+  }
+
+  _getZoomSceneScale() {
+    const roomOuter = this.state.currentRoom?.geometry?.outer;
+    if (roomOuter) {
+      return Math.max(
+        (Number(roomOuter.x) || 0) / 1000,
+        (Number(roomOuter.y) || 0) / 1000,
+        (Number(roomOuter.z) || 0) / 1000,
+        1
+      );
+    }
+
+    const rackOuter = this.state.activeRack?.geometry?.outer;
+    if (rackOuter) {
+      return Math.max(
+        (Number(rackOuter.x) || 0) / 1000,
+        (Number(rackOuter.y) || 0) / 1000,
+        (Number(rackOuter.z) || 0) / 1000,
+        0.8
+      );
+    }
+
+    return 2;
   }
 
   _showHoverTooltip(event, meta) {
