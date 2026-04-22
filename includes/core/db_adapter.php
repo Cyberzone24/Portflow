@@ -598,6 +598,9 @@ class DatabaseAdapter {
                 // Note the added quotes around the view name for safety
                 $query = "CREATE OR REPLACE VIEW \"$viewName\" AS $selectClause$fromClause$joinClauseStr;";
 
+                // Replacing an existing view cannot remove columns in PostgreSQL;
+                // drop first to allow structural changes during schema migrations.
+                $this->db_query('DROP VIEW IF EXISTS "' . $viewName . '" CASCADE;');
                 $this->db_query($query);
                 $this->logger->log("Successfully created or replaced view: \"$viewName\"");
 

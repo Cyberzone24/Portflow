@@ -184,7 +184,8 @@
             ],
             'notifications' => [
                 'level' => 'minimal',
-                'channel' => 'mail'
+                'channel' => 'mail',
+                'telegram_chat_id' => ''
             ]
         ];
     }
@@ -213,9 +214,10 @@
         return [
             'mail' => true,
             'slack' => $slackEnabled && $slackWebhook !== '',
-            'telegram' => $telegramEnabled && $telegramBotToken !== '' && $telegramChatId !== '',
+            'telegram' => $telegramEnabled && $telegramBotToken !== '',
             'slack_enabled' => $slackEnabled,
-            'telegram_enabled' => $telegramEnabled
+            'telegram_enabled' => $telegramEnabled,
+            'telegram_global_chat_id' => $telegramChatId !== ''
         ];
     }
 
@@ -276,6 +278,8 @@
         $settings['notifications']['channel'] = in_array((string)($settings['notifications']['channel'] ?? ''), $availableChannels, true)
             ? (string)$settings['notifications']['channel']
             : $defaults['notifications']['channel'];
+
+        $settings['notifications']['telegram_chat_id'] = configNormalizeEnvValue((string)($settings['notifications']['telegram_chat_id'] ?? ''));
 
         return $settings;
     }
@@ -956,6 +960,7 @@
 
                 $level = strtolower(trim((string)($_POST['notification_level'] ?? 'minimal')));
                 $channel = strtolower(trim((string)($_POST['notification_channel'] ?? 'mail')));
+                $telegramChatId = configNormalizeEnvValue((string)($_POST['notification_telegram_chat_id'] ?? ''));
 
                 $allowedLevels = ['off', 'minimal', 'progress', 'all'];
                 $allowedChannels = getAvailableNotificationChannels();
@@ -967,6 +972,7 @@
                 $settings['notifications']['channel'] = in_array($channel, $allowedChannels, true)
                     ? $channel
                     : 'mail';
+                $settings['notifications']['telegram_chat_id'] = $telegramChatId;
 
                 saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
                 $logger->log('notification preferences updated', 1, echoToWeb: true);
@@ -2463,6 +2469,7 @@ switch ($site) {
         $userSettings = getSessionUserSettings();
         $notificationLevel = (string)($userSettings['notifications']['level'] ?? 'minimal');
         $notificationChannel = (string)($userSettings['notifications']['channel'] ?? 'mail');
+        $notificationTelegramChatId = (string)($userSettings['notifications']['telegram_chat_id'] ?? '');
         $channelReadiness = getNotificationChannelReadiness();
         $availableChannels = getAvailableNotificationChannels();
 
@@ -2480,13 +2487,20 @@ switch ($site) {
 
         $telegramStatus = 'deaktiviert';
         if (!empty($channelReadiness['telegram_enabled'])) {
-            $telegramStatus = !empty($channelReadiness['telegram'])
-                ? 'bereit'
-                : 'aktiv, aber unvollstaendig konfiguriert';
+            if (empty($channelReadiness['telegram'])) {
+                $telegramStatus = 'aktiv, aber Bot-Token fehlt';
+            } elseif ($notificationTelegramChatId !== '') {
+                $telegramStatus = 'bereit (persoenliche Chat-ID gesetzt)';
+            } elseif (!empty($channelReadiness['telegram_global_chat_id'])) {
+                $telegramStatus = 'bereit (globaler Fallback aktiv)';
+            } else {
+                $telegramStatus = 'bereit, aber persoenliche Chat-ID empfohlen';
+            }
         }
 
         $slackStatusSafe = escapeSettingValue($slackStatus);
         $telegramStatusSafe = escapeSettingValue($telegramStatus);
+        $notificationTelegramChatIdSafe = escapeSettingValue($notificationTelegramChatId);
         $channelOptionsHtml = '';
         foreach ($availableChannels as $channelOption) {
             $selected = $notificationChannel === $channelOption ? 'selected' : '';
@@ -2525,6 +2539,12 @@ switch ($site) {
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_channel" name="notification_channel">
                             $channelOptionsHtml
                         </select>
+                    </div>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="notification_telegram_chat_id">Telegram Chat-ID (optional, pro Nutzer)</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_telegram_chat_id" type="text" name="notification_telegram_chat_id" value="{$notificationTelegramChatIdSafe}" placeholder="z.B. 123456789 oder -100...">
+                        <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Telegram-Benachrichtigungen an deine persoenliche Chat-ID gesendet.</div>
                     </div>
 
                     <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">

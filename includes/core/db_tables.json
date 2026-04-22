@@ -14,8 +14,6 @@
         "email": "VARCHAR(320) UNIQUE",
         "activation_code": "VARCHAR(255)",
         "tfa_secret": "VARCHAR(255)",
-        "notification_provider": "VARCHAR(255)",
-        "notification_setting": "INT",
         "settings": "TEXT",
         "ip_address": "INET",
         "last_login": "TIMESTAMP WITH TIME ZONE",

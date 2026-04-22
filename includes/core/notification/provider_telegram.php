@@ -16,7 +16,10 @@ class TelegramProvider implements ProviderInterface {
         }
 
         $botToken = defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? trim((string)NOTIFICATION_TELEGRAM_BOT_TOKEN) : '';
-        $chatId = defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? trim((string)NOTIFICATION_TELEGRAM_CHAT_ID) : '';
+        $recipient = is_array($entry['recipient'] ?? null) ? $entry['recipient'] : [];
+        $recipientChatId = trim((string)($recipient['telegram_chat_id'] ?? ''));
+        $globalChatId = defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? trim((string)NOTIFICATION_TELEGRAM_CHAT_ID) : '';
+        $chatId = $recipientChatId !== '' ? $recipientChatId : $globalChatId;
 
         if ($botToken === '' || $chatId === '') {
             return ['ok' => false, 'error' => 'telegram config incomplete'];

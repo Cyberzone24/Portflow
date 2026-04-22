@@ -51,14 +51,6 @@
                                                 "type": "string",
                                                 "description": "VARCHAR(255)"
                                             },
-                                            "notification_provider": {
-                                                "type": "integer",
-                                                "description": "INT"
-                                            },
-                                            "notification_setting": {
-                                                "type": "integer",
-                                                "description": "INT"
-                                            },
                                             "language": {
                                                 "type": "string",
                                                 "description": "VARCHAR(255)"

@@ -360,6 +360,7 @@ class NotificationCenter {
             $notifications = is_array($settings['notifications'] ?? null) ? $settings['notifications'] : [];
             $userLevel = strtolower(trim((string)($notifications['level'] ?? 'minimal')));
             $userChannel = strtolower(trim((string)($notifications['channel'] ?? 'mail')));
+            $userTelegramChatId = trim((string)($notifications['telegram_chat_id'] ?? ''));
 
             if (!$this->isLevelAllowed($userLevel, $eventLevel)) {
                 continue;
@@ -369,14 +370,15 @@ class NotificationCenter {
                 'uuid' => (string)$row['uuid'],
                 'username' => (string)$row['username'],
                 'email' => (string)$row['email'],
-                'channel' => $this->normalizeChannelForDelivery($userChannel)
+                'channel' => $this->normalizeChannelForDelivery($userChannel, $userTelegramChatId),
+                'telegram_chat_id' => $userTelegramChatId
             ];
         }
 
         return $result;
     }
 
-    private function normalizeChannelForDelivery(string $requestedChannel): string {
+    private function normalizeChannelForDelivery(string $requestedChannel, string $userTelegramChatId = ''): string {
         $channel = strtolower(trim($requestedChannel));
         if ($channel === 'slack') {
             $enabled = defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED === true;
@@ -390,8 +392,8 @@ class NotificationCenter {
         if ($channel === 'telegram') {
             $enabled = defined('NOTIFICATION_TELEGRAM_ENABLED') && NOTIFICATION_TELEGRAM_ENABLED === true;
             $botToken = defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? trim((string)NOTIFICATION_TELEGRAM_BOT_TOKEN) : '';
-            $chatId = defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? trim((string)NOTIFICATION_TELEGRAM_CHAT_ID) : '';
-            if ($enabled && $botToken !== '' && $chatId !== '') {
+            $globalChatId = defined('NOTIFICATION_TELEGRAM_CHAT_ID') ? trim((string)NOTIFICATION_TELEGRAM_CHAT_ID) : '';
+            if ($enabled && $botToken !== '' && ($userTelegramChatId !== '' || $globalChatId !== '')) {
                 return 'telegram';
             }
             return 'mail';

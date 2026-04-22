@@ -271,7 +271,7 @@ class Auth {
             $this->local_signon('signin');
         
             // check if user exists
-            $query = "SELECT uuid, password, email, notification_setting, settings, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
+            $query = "SELECT uuid, password, email, settings, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
             
             // execute query
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'activation_code' => 'activated']);
@@ -460,7 +460,7 @@ class Auth {
                         $this->email = $user_entries[0]["mail"][0] ?? NULL;
 
                         // check if user exists
-                        $query = "SELECT uuid, email, activation_code, notification_setting, settings, login_attempts FROM users WHERE username = :username AND login_provider = :login_provider";
+                        $query = "SELECT uuid, email, activation_code, settings, login_attempts FROM users WHERE username = :username AND login_provider = :login_provider";
             
                         // execute query
                         $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
