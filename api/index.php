@@ -299,7 +299,8 @@ class API {
 
     private function get($resource, $data = NULL) {
         try {
-            $limit = $_COOKIE['table_limit'] ?? ($data['limit'] ?? 100);
+            // Explicit ?limit= in the query string wins over the per-user cookie default.
+            $limit = $data['limit'] ?? $_COOKIE['table_limit'] ?? 100;
             $page = $data['page'] ?? 1;
             $offset = ($page - 1) * $limit;
 

@@ -2049,7 +2049,10 @@ function renderSuggestionRow(suggestion) {
 
     const badge = document.createElement('div');
     badge.className = 'text-xs px-3 py-1 rounded-full bg-gray-200';
-    badge.textContent = suggestion.room;
+    let scopeLabel = '';
+    if (suggestion.scope === 'parent') scopeLabel = ' (übergeordneter Standort)';
+    else if (suggestion.scope === 'ancestor') scopeLabel = ' (Gebäude)';
+    badge.textContent = suggestion.room + scopeLabel;
 
     title.appendChild(text);
     title.appendChild(badge);
@@ -2106,7 +2109,7 @@ function setupConnectionSuggestions(container, forms) {
 
     const suggestionHeader = document.createElement('div');
     suggestionHeader.className = 'flex items-center justify-between';
-    suggestionHeader.innerHTML = '<div class="text-lg font-bold">Vorschläge</div><div class="text-sm text-gray-500">Gleiche Portnamen im gleichen Raum, unverbundene Paare</div>';
+    suggestionHeader.innerHTML = '<div class="text-lg font-bold">Vorschläge</div><div class="text-sm text-gray-500">Gleiche Portnamen im selben Standort, übergeordneten Standort oder Gebäude — unverbundene Paare</div>';
 
     const suggestionList = document.createElement('div');
     suggestionList.id = 'connectionSuggestionList';
@@ -2128,7 +2131,7 @@ function setupConnectionSuggestions(container, forms) {
     toggleConnectionView(container, forms, suggestionsPanel, 'manual');
 }
 
-function buildConnectionSuggestions(ports, connections) {
+function buildConnectionSuggestions(ports, connections, locations = []) {
     const connectedPorts = new Set();
     connections.forEach(connection => {
         if (connection.connection_device_port_source) {
@@ -2139,52 +2142,106 @@ function buildConnectionSuggestions(ports, connections) {
         }
     });
 
-    const grouped = new Map();
-
-    ports.forEach(port => {
-        const room = (
-            port.device_port_device_location_parent_location_metadata_caption ||
-            port.device_port_device_location_metadata_caption ||
-            port.device_port_device_location_caption ||
-            ''
-        ).trim();
-        const label = (port.device_port_metadata_caption || '').trim();
-        const deviceType = (port.device_port_device_type || '').trim().toLowerCase();
-        const uuid = port.device_port_uuid;
-
-        if (!room || !label || !uuid || connectedPorts.has(uuid)) {
-            return;
-        }
-
-        const key = `${room}::${label}`;
-        if (!grouped.has(key)) {
-            grouped.set(key, []);
-        }
-
-        grouped.get(key).push({
+    // Lookup table for the location chain.
+    const locById = new Map();
+    locations.forEach(loc => {
+        const uuid = loc.location_uuid;
+        if (!uuid) return;
+        locById.set(uuid, {
             uuid,
-            room,
-            label,
-            deviceType,
-            deviceCaption: port.device_port_device_metadata_caption || port.device_port_device_type || 'Device'
+            parent: loc.location_parent_location || null,
+            type: loc.location_type !== undefined && loc.location_type !== null ? String(loc.location_type) : '',
+            caption: (loc.location_metadata_caption || '').trim()
         });
     });
 
-    const suggestions = [];
-
-    grouped.forEach((group) => {
-        const patchPanels = group.filter(item => item.deviceType === 'patchpanel').sort((a, b) => a.deviceCaption.localeCompare(b.deviceCaption));
-        const outlets = group.filter(item => item.deviceType === 'net_outlet').sort((a, b) => a.deviceCaption.localeCompare(b.deviceCaption));
-        const count = Math.min(patchPanels.length, outlets.length);
-
-        for (let index = 0; index < count; index++) {
-            suggestions.push({
-                label: group[index].label,
-                room: group[index].room,
-                source: patchPanels[index],
-                destination: outlets[index]
-            });
+    // Walk ancestors from start uuid up to (and including) the first building (type=4).
+    function ancestorsOf(startUuid) {
+        const chain = [];
+        let cur = startUuid ? locById.get(startUuid) : null;
+        const seen = new Set();
+        let guard = 0;
+        while (cur && guard++ < 32 && !seen.has(cur.uuid)) {
+            seen.add(cur.uuid);
+            chain.push(cur);
+            if (cur.type === '4') break; // stop at building
+            cur = cur.parent ? locById.get(cur.parent) : null;
         }
+        return chain;
+    }
+
+    // For every port collect its scope chain (level 0 = own location, increasing
+    // levels for each ancestor up to and including the building).
+    const portInfo = new Map(); // portUuid -> {uuid,label,deviceType,deviceCaption,chain}
+    ports.forEach(port => {
+        const uuid = port.device_port_uuid;
+        const label = (port.device_port_metadata_caption || '').trim();
+        if (!uuid || !label || connectedPorts.has(uuid)) return;
+        const ownLocUuid = port.device_port_device_location_uuid || port.device_port_device_location || null;
+        const chain = ancestorsOf(ownLocUuid);
+        if (chain.length === 0) return; // no location at all -> nothing to group on
+        portInfo.set(uuid, {
+            uuid,
+            label,
+            deviceType: (port.device_port_device_type || '').trim().toLowerCase(),
+            deviceCaption: port.device_port_device_metadata_caption || port.device_port_device_type || 'Device',
+            chain
+        });
+    });
+
+    // Build buckets keyed by (location_uuid + label). For each bucket, remember the
+    // shallowest (= most precise) match level per port -- that becomes the match depth.
+    // bucketKey -> { caption, locType, entries: [ {port, level} ] }
+    const buckets = new Map();
+    portInfo.forEach(p => {
+        p.chain.forEach((loc, level) => {
+            const key = `${loc.uuid}::${p.label}`;
+            if (!buckets.has(key)) {
+                buckets.set(key, { caption: loc.caption || '(ohne Bezeichnung)', locType: loc.type, entries: [] });
+            }
+            buckets.get(key).entries.push({ port: p, level });
+        });
+    });
+
+    // Generate candidate pairings: a "candidate" is one bucket where both a patchpanel
+    // and a net_outlet exist. Score by max(level) of the involved ports -- lower is better.
+    const candidates = [];
+    buckets.forEach((bucket, key) => {
+        const patchPanels = bucket.entries
+            .filter(e => e.port.deviceType === 'patchpanel')
+            .sort((a, b) => a.port.deviceCaption.localeCompare(b.port.deviceCaption));
+        const outlets = bucket.entries
+            .filter(e => e.port.deviceType === 'net_outlet')
+            .sort((a, b) => a.port.deviceCaption.localeCompare(b.port.deviceCaption));
+        const count = Math.min(patchPanels.length, outlets.length);
+        for (let i = 0; i < count; i++) {
+            const src = patchPanels[i];
+            const dst = outlets[i];
+            const depth = Math.max(src.level, dst.level);
+            candidates.push({ key, depth, bucket, src: src.port, dst: dst.port });
+        }
+    });
+
+    // Pair greedily, preferring shallower depth.
+    candidates.sort((a, b) => a.depth - b.depth);
+    const usedPortUuids = new Set();
+    const suggestions = [];
+    candidates.forEach(c => {
+        if (usedPortUuids.has(c.src.uuid) || usedPortUuids.has(c.dst.uuid)) return;
+        usedPortUuids.add(c.src.uuid);
+        usedPortUuids.add(c.dst.uuid);
+        let scope;
+        if (c.depth === 0) scope = 'location';
+        else if (c.depth === 1) scope = 'parent';
+        else if (c.bucket.locType === '4') scope = 'building';
+        else scope = 'ancestor';
+        suggestions.push({
+            label: c.src.label,
+            room: c.bucket.caption,
+            scope,
+            source: { uuid: c.src.uuid, deviceCaption: c.src.deviceCaption },
+            destination: { uuid: c.dst.uuid, deviceCaption: c.dst.deviceCaption }
+        });
     });
 
     return suggestions.sort((a, b) => {
@@ -2201,15 +2258,21 @@ async function loadConnectionSuggestions(container) {
     container.innerHTML = '<div class="text-sm text-gray-500">Lade Vorschläge ...</div>';
 
     try {
-        const [portsResponse, connectionsResponse] = await Promise.all([
+        const [portsResponse, connectionsResponse, locationsResponse] = await Promise.all([
             fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port_details?limit=5000'),
-            fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/connection_details?limit=5000')
+            fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/connection_details?limit=5000'),
+            fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/location_details?limit=5000')
         ]);
 
         const portsData = await portsResponse.json();
         const connectionsData = await connectionsResponse.json();
+        const locationsData = await locationsResponse.json();
 
-        const suggestions = buildConnectionSuggestions(portsData.items || [], connectionsData.items || []);
+        const suggestions = buildConnectionSuggestions(
+            portsData.items || [],
+            connectionsData.items || [],
+            locationsData.items || []
+        );
 
         container.innerHTML = '';
 
@@ -2279,7 +2342,21 @@ async function createSuggestedConnection(suggestion, buttonElement) {
             throw new Error('Verbindung konnte nicht angelegt werden.');
         }
 
-        loadTable('connection_details');
+        // Stay on the suggestions tab: remove the just-handled card and refresh the list.
+        const card = buttonElement ? buttonElement.closest('.flex.flex-col.gap-2.p-4.border.rounded-2xl') : null;
+        if (card) {
+            card.remove();
+        }
+        const list = document.getElementById('connectionSuggestionList');
+        const panel = document.getElementById('connectionSuggestionsPanel');
+        if (panel) {
+            // Force a reload next time the user toggles tabs, and refresh now too.
+            delete panel.dataset.loaded;
+        }
+        if (list) {
+            await loadConnectionSuggestions(list);
+            if (panel) panel.dataset.loaded = 'true';
+        }
     } catch (error) {
         console.error('Fehler beim Erstellen der Vorschlagsverbindung:', error);
         if (buttonElement) {
@@ -3491,10 +3568,29 @@ function generatePagination(totalPages, currentPage, search, limit) {
     $('#pagination_bottom').html($pagination.clone(true));
 }
 
+// Set table page size: store in cookie and reload table from page 1.
+function setTableLimit(value) {
+    const limit = parseInt(value, 10) || 100;
+    document.cookie = 'table_limit=' + limit + '; path=/; max-age=' + (60 * 60 * 24 * 365);
+    loadTable(currentTable, '', limit, 1);
+}
+
 // Load table data
-function loadTable(table = 'location_details', search = '', limit = 100, page = 1) {
+function loadTable(table = 'location_details', search = '', limit = null, page = 1) {
     currentTable = table;
     const configUrl = `${'<?php echo PORTFLOW_HOSTNAME; ?>'}/includes/lang.php?nav`;
+
+    // Resolve effective limit: explicit arg > select > cookie > 100.
+    if (limit === null || limit === undefined || limit === '') {
+        const sel = document.getElementById('table_limit_1');
+        if (sel && sel.value) {
+            limit = parseInt(sel.value, 10);
+        }
+    }
+    if (!limit) {
+        const m = document.cookie.match(/(?:^|; )table_limit=([^;]+)/);
+        limit = m ? parseInt(m[1], 10) : 100;
+    }
 
     // Tabellenhervorhebung aktualisieren
     updateActiveTab(table);
@@ -3507,7 +3603,11 @@ function loadTable(table = 'location_details', search = '', limit = 100, page = 
         let { columns, default: defaultColumns } = config[table];
         let userColumns = loadUserColumns(table, defaultColumns);
 
-        if (search) { query = `?search=${search}`; } else { query = ''; }
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        if (limit) params.set('limit', limit);
+        if (page && page > 1) params.set('page', page);
+        const query = params.toString() ? ('?' + params.toString()) : '';
 
         ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
             $('#count').text('<?php echo $lang['datasets']; ?>: ' + parseInt(data.pageInfo.totalResults));
@@ -3945,6 +4045,8 @@ async function openEditEntry(rowData) {
 function closeNewEntry() {
     // Popup für neuen Eintrag ausblenden
     document.getElementById('formContainer').classList.add('hidden');
+    // reload table
+    loadTable(currentTable);
 }
 
 function escapeHtml(value) {
