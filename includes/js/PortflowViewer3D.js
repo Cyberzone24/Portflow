@@ -46,6 +46,7 @@ export class PortflowViewer3D {
       pointer: null,
       hoverTooltip: null,
       interactiveMeshes: [],
+      baseGrid: null,
       
       // Toggles
       showRackEars: true,
@@ -74,6 +75,7 @@ export class PortflowViewer3D {
       liveDevices: [],
       liveConnections: [],
       activeRack: null,
+      currentRoom: null,
       sceneMode: 'rack',
       roomFocusRackUuid: '',
       roomFocusDevicesOnly: false,
@@ -210,6 +212,7 @@ export class PortflowViewer3D {
       this.state.liveDevices = deviceModels;
       this.state.liveConnections = connectionModels;
       this.state.activeRack = rackModel;
+      this.state.currentRoom = null;
       this.state.sceneMode = 'rack';
       this.state.currentSceneUuid = locationUuid;
 
@@ -244,6 +247,12 @@ export class PortflowViewer3D {
       if (!rackRows.length) {
         throw new Error(`Keine Racks im Raum ${roomUuid} gefunden`);
       }
+
+      const roomRows = await this._fetchAllPages('location_details', {
+        location_uuid: roomUuid,
+        limit: 100
+      });
+      const roomRow = this._selectRackRowByUuid(roomRows, roomUuid);
 
       const rackModels = rackRows.map(row => this._normalizeRack(row)).filter(Boolean);
       const rackUuidSet = new Set(rackModels.map(r => String(r.uuid || '').trim()).filter(Boolean));
@@ -298,6 +307,7 @@ export class PortflowViewer3D {
       this.state.liveDevices = deviceModels;
       this.state.liveConnections = this._normalizeConnections(connections || []);
       this.state.activeRack = rackModels[0] || null;
+      this.state.currentRoom = this._normalizeRoom(roomRow);
       this.state.sceneMode = 'room';
       this.state.currentSceneUuid = roomUuid;
 
@@ -647,6 +657,7 @@ export class PortflowViewer3D {
 
     // Grid
     const gridHelper = new THREE.GridHelper(4, 40, 0x444444, 0x222222);
+    this.state.baseGrid = gridHelper;
     this.state.scene.add(gridHelper);
 
     this.state.loaded = true;
@@ -656,11 +667,17 @@ export class PortflowViewer3D {
   _renderSingleRack() {
     if (!this.state.loaded || !this.state.liveRacks.length) return;
 
+    if (this.state.baseGrid) {
+      this.state.baseGrid.visible = this.state.sceneMode !== 'room';
+    }
+
     // Cache check
     const sig = JSON.stringify({
-      racks: this.state.liveRacks.map(r => ({ uuid: r.uuid, geometry: r.geometry, position: r.position })),
+      racks: this.state.liveRacks.map(r => ({ uuid: r.uuid, geometry: r.geometry, position: r.position, rotation: r.rotation })),
       devices: this.state.liveDevices,
       connections: this.state.liveConnections,
+      currentRoom: this.state.currentRoom,
+      baseGridVisible: this.state.baseGrid ? this.state.baseGrid.visible : true,
       rackTransparent: this.state.rackTransparent,
       doorsOpen: this.state.doorsOpen,
       sidePanelsOpen: this.state.sidePanelsOpen,
@@ -695,6 +712,10 @@ export class PortflowViewer3D {
         }
       }
       this.state.scene.remove(child);
+    }
+
+    if (this.state.sceneMode === 'room') {
+      this._buildRoomFloor();
     }
 
     // Render rack(s)
@@ -930,15 +951,28 @@ export class PortflowViewer3D {
     group.add(frontDoorPivot);
     group.add(backDoorPivot);
 
+    const rackLabelText = String(rack?.name || '').trim();
+    if (rackLabelText) {
+      const rackLabel = this._createTextLabelSprite(THREE, rackLabelText, {
+        bgColor: 'rgba(15,23,42,0.86)',
+        textColor: '#f8fafc',
+        worldWidth: Math.max(0.22, Math.min(outerX * 0.75, 0.42))
+      });
+      rackLabel.position.set(0, outerY + 0.08, 0);
+      group.add(rackLabel);
+    }
+
     // Devices
     for (const device of devices) {
       const sizeX = Number(device?.size?.x) || 445;
       const sizeY = Number(device?.size?.y) || 44;
       const sizeZ = Number(device?.size?.z) || 300;
+      const isBlindPanel = !!device?.isBlindPanel;
+      const renderDepthMm = isBlindPanel ? Math.min(18, Math.max(6, sizeZ)) : sizeZ;
       const deviceGeo = new THREE.BoxGeometry(
         sizeX / 1000,
         sizeY / 1000,
-        sizeZ / 1000
+        renderDepthMm / 1000
       );
       
       // Wähle Farbe basierend auf Overlay-Metrik
@@ -949,8 +983,8 @@ export class PortflowViewer3D {
       
       const deviceMat = new THREE.MeshStandardMaterial({
         color: deviceColor,
-        metalness: 0.2,
-        roughness: 0.8
+        metalness: isBlindPanel ? 0.45 : 0.2,
+        roughness: isBlindPanel ? 0.68 : 0.8
       });
       const deviceMesh = new THREE.Mesh(deviceGeo, deviceMat);
       const deviceGroup = new THREE.Group();
@@ -963,7 +997,7 @@ export class PortflowViewer3D {
 
       const deviceCenterX = innerCenterX + (Number.isFinite(deviceX) ? (deviceX / 1000) : 0);
       const deviceCenterY = innerMinY + (Number.isFinite(deviceY) ? (deviceY / 1000) : 0) + (sizeY / 2000);
-      const deviceCenterZ = innerMaxZ - (Number.isFinite(deviceZ) ? (deviceZ / 1000) : 0) - (sizeZ / 2000);
+      const deviceCenterZ = innerMaxZ - (Number.isFinite(deviceZ) ? (deviceZ / 1000) : 0) - (renderDepthMm / 2000);
 
       deviceGroup.position.set(deviceCenterX, deviceCenterY, deviceCenterZ);
 
@@ -977,7 +1011,7 @@ export class PortflowViewer3D {
         THREE.MathUtils.degToRad(rotZ)
       );
 
-      if (this.state.showRackEars) {
+      if (this.state.showRackEars && !isBlindPanel) {
         const earThickness = Math.min(0.035, (sizeZ / 1000) * 0.25);
         const earDepth = 0.002;
         const earHeight = Math.max(0.006, sizeY / 1000);
@@ -994,7 +1028,7 @@ export class PortflowViewer3D {
         deviceGroup.add(rightEar);
       }
 
-      if (this.state.showPorts && Array.isArray(device.ports) && device.ports.length > 0) {
+      if (this.state.showPorts && !isBlindPanel && Array.isArray(device.ports) && device.ports.length > 0) {
         const portsGroup = new THREE.Group();
         for (const port of device.ports) {
           const pSize = port.size || { x: 12, y: 12, z: 10 };
@@ -1087,6 +1121,11 @@ export class PortflowViewer3D {
       (Number(worldPos?.y) || 0) / 1000,
       (Number(worldPos?.z) || 0) / 1000
     );
+    group.rotation.set(
+      THREE.MathUtils.degToRad(Number(rack?.rotation?.x) || 0),
+      THREE.MathUtils.degToRad(Number(rack?.rotation?.y) || 0),
+      THREE.MathUtils.degToRad(Number(rack?.rotation?.z) || 0)
+    );
     this.state.scene.add(group);
   }
 
@@ -1102,6 +1141,11 @@ export class PortflowViewer3D {
         (Number(rack?.position?.x) || 0) / 1000,
         (Number(rack?.position?.y) || 0) / 1000,
         (Number(rack?.position?.z) || 0) / 1000
+      );
+      const rackRotation = new THREE.Euler(
+        THREE.MathUtils.degToRad(Number(rack?.rotation?.x) || 0),
+        THREE.MathUtils.degToRad(Number(rack?.rotation?.y) || 0),
+        THREE.MathUtils.degToRad(Number(rack?.rotation?.z) || 0)
       );
 
       const outerX = (Number(rack?.geometry?.outer?.x) || 600) / 1000;
@@ -1173,9 +1217,10 @@ export class PortflowViewer3D {
           localPos.x = Math.max(-(sizeX / 2000) + (pw / 2), Math.min((sizeX / 2000) - (pw / 2), localPos.x));
           localPos.y = Math.max(-(sizeY / 2000) + (ph / 2), Math.min((sizeY / 2000) - (ph / 2), localPos.y));
 
-          const worldPoint = localPos.clone().applyEuler(deviceRotation).add(deviceCenter).add(rackWorld);
+          const rackLocalPoint = localPos.clone().applyEuler(deviceRotation).add(deviceCenter);
+          const worldPoint = rackLocalPoint.applyEuler(rackRotation).add(rackWorld);
           const localNormal = new THREE.Vector3(0, 0, portSide === 'rear' ? 1 : -1);
-          const worldNormal = localNormal.applyEuler(deviceRotation).normalize();
+          const worldNormal = localNormal.applyEuler(deviceRotation).applyEuler(rackRotation).normalize();
 
           anchors.set(portUuid, {
             portUuid,
@@ -1844,6 +1889,7 @@ export class PortflowViewer3D {
     try {
       const sizeRaw = row.size ?? row.location_size ?? null;
       const geom = this._parseJsonishObject(sizeRaw, {});
+      const rotation = this._parseJsonishObject(row.rotation ?? row.location_rotation ?? null, {});
       const outer = geom.outer || ((geom.x || geom.y || geom.z) ? {
         x: Number(geom.x) || 600,
         y: Number(geom.y) || 2200,
@@ -1868,6 +1914,7 @@ export class PortflowViewer3D {
         uuid: row.uuid || row.location_uuid || 'unknown-rack',
         name: row.location_metadata_caption || row.metadata_caption || row.caption || row.name || 'Rack',
         position: this._parseJsonishObject(row.position ?? row.location_position ?? null, { x: 0, y: 0, z: 0 }),
+        rotation: { x: Number(rotation.x) || 0, y: Number(rotation.y) || 0, z: Number(rotation.z) || 0 },
         geometry: {
           outer,
           inner,
@@ -1880,9 +1927,10 @@ export class PortflowViewer3D {
     } catch (e) {
       console.warn('Failed to normalize rack', row, e);
       return {
-        uuid: row?.uuid || 'unknown-rack',
+        uuid: row?.location_uuid || row?.uuid || 'unknown-rack',
         name: row?.location_metadata_caption || row?.metadata_caption || row?.caption || row?.name || 'Rack',
         position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
         geometry: { outer: { x: 600, y: 2200, z: 1000 }, inner: { x: 550, y: 2080, z: 920 }, between: { x_left: 25, x_right: 25, y_bottom: 60, y_top: 60, z_front: 40, z_back: 40 } }
       };
     }
@@ -1913,11 +1961,13 @@ export class PortflowViewer3D {
       const deviceName = row.device_metadata_caption || row.metadata_caption || row.device_caption || row.caption || row.device_name || row.name || null;
       const locationName = row.device_location_metadata_caption || row.location_metadata_caption || row.location_caption || row.location_name || row.location_label || null;
       const deviceType = String(row.device_type || row.type || '').trim().toLowerCase();
-      const resolvedDeviceColor = this._resolveDeviceColor(deviceType, specification, row);
+      const isBlindPanel = this._isBlindPanelDevice(deviceType, deviceName, specification, row);
+      const resolvedDeviceColor = this._resolveDeviceColor(isBlindPanel ? 'blindpanel' : deviceType, specification, row);
       return {
         uuid: row.device_uuid || row.uuid,
         name: deviceName,
         deviceType,
+        isBlindPanel,
         location: row.device_location || row.location || null,
         locationName,
         placement: { x: pos.x || 0, y: pos.y || 0, z: pos.z || 0 },
@@ -1937,6 +1987,7 @@ export class PortflowViewer3D {
       return {
         uuid: row?.device_uuid || row?.uuid || 'unknown-device',
         name: row?.device_metadata_caption || row?.metadata_caption || row?.caption || row?.name || 'Device',
+        isBlindPanel: this._isBlindPanelDevice(String(row?.device_type || row?.type || '').trim().toLowerCase(), row?.device_metadata_caption || row?.metadata_caption || row?.caption || row?.name || '', {}, row),
         location: row?.device_location || row?.location || null,
         locationName: row?.device_location_metadata_caption || row?.location_metadata_caption || row?.location_caption || row?.location_name || null,
         placement: { x: 0, y: 0, z: 0 },
@@ -2131,6 +2182,10 @@ export class PortflowViewer3D {
     }
 
     const defaults = {
+      blindpanel: 0x111827,
+      blankpanel: 0x111827,
+      blankingpanel: 0x111827,
+      fillerpanel: 0x111827,
       ups: 0xf59e0b,
       pdu: 0xf97316,
       switch: 0x0f766e,
@@ -2140,6 +2195,22 @@ export class PortflowViewer3D {
       storage: 0x0ea5a4
     };
     return defaults[String(deviceType || '').toLowerCase()] || 0x0f766e;
+  }
+
+  _isBlindPanelDevice(deviceType, deviceName = '', specification = {}, row = {}) {
+    const descriptor = [
+      deviceType,
+      deviceName,
+      row.device_model,
+      row.device_manufacturer,
+      specification.kind,
+      specification.deviceKind,
+      specification.panelType,
+      specification.description,
+      specification.role
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return /blind\s*panel|blank\s*panel|blanking\s*panel|filler\s*panel|abdeckung|blindblende|leerblende/.test(descriptor);
   }
 
   _resolveConnectionColor(cableKind, descriptor, specification = {}, row = {}) {
@@ -2182,6 +2253,7 @@ export class PortflowViewer3D {
     }
 
     const raw = String(input).trim();
+
     const attempts = [raw];
 
     const htmlDecoded = raw
@@ -2217,5 +2289,101 @@ export class PortflowViewer3D {
     }
 
     return { ...fallback };
+  }
+
+  _buildRoomFloor() {
+    const THREE = this.state.THREE;
+    if (!THREE) return;
+
+    let floorWidth = 4;
+    let floorDepth = 4;
+    let floorY = -0.001;
+    let centerX = 0;
+    let centerZ = 0;
+
+    const room = this.state.currentRoom;
+    if (room?.geometry?.outer) {
+      floorWidth = Math.max(1, Number(room.geometry.outer.x || 4000) / 1000);
+      floorDepth = Math.max(1, Number(room.geometry.outer.z || 4000) / 1000);
+      centerX = (Number(room.position?.x) || 0) / 1000;
+      centerZ = (Number(room.position?.z) || 0) / 1000;
+      floorY = (Number(room.position?.y) || 0) / 1000;
+    } else if (this.state.liveRacks.length > 0) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      let minY = Infinity;
+
+      for (const rack of this.state.liveRacks) {
+        const pos = rack.position || { x: 0, y: 0, z: 0 };
+        const px = (Number(pos.x) || 0) / 1000;
+        const pz = (Number(pos.z) || 0) / 1000;
+        const py = (Number(pos.y) || 0) / 1000;
+        const halfX = (Number(rack.geometry?.outer?.x) || 600) / 2000;
+        const halfZ = (Number(rack.geometry?.outer?.z) || 1000) / 2000;
+        minX = Math.min(minX, px - halfX);
+        maxX = Math.max(maxX, px + halfX);
+        minZ = Math.min(minZ, pz - halfZ);
+        maxZ = Math.max(maxZ, pz + halfZ);
+        minY = Math.min(minY, py);
+      }
+
+      if (Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minZ) && Number.isFinite(maxZ)) {
+        const padding = 0.4;
+        floorWidth = Math.max(1, (maxX - minX) + padding * 2);
+        floorDepth = Math.max(1, (maxZ - minZ) + padding * 2);
+        centerX = (minX + maxX) * 0.5;
+        centerZ = (minZ + maxZ) * 0.5;
+        floorY = Number.isFinite(minY) ? minY : floorY;
+      }
+    }
+
+    const floorGeo = new THREE.PlaneGeometry(floorWidth, floorDepth);
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x1f2937,
+      roughness: 0.96,
+      metalness: 0.02,
+      side: THREE.DoubleSide
+    });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(centerX, floorY, centerZ);
+    this.state.scene.add(floor);
+
+    const gridSize = Math.max(floorWidth, floorDepth);
+    const divisions = Math.max(8, Math.round(gridSize * 4));
+    const grid = new THREE.GridHelper(gridSize, divisions, 0x334155, 0x273449);
+    grid.scale.set(
+      gridSize > 0 ? floorWidth / gridSize : 1,
+      1,
+      gridSize > 0 ? floorDepth / gridSize : 1
+    );
+    grid.position.set(centerX, floorY + 0.001, centerZ);
+    this.state.scene.add(grid);
+  }
+
+  _normalizeRoom(row) {
+    if (!row || typeof row !== 'object') {
+      return null;
+    }
+    try {
+      const sizeRaw = row.location_size ?? row.size ?? null;
+      const geom = this._parseJsonishObject(sizeRaw, {});
+      const outer = geom.outer || ((geom.x || geom.y || geom.z) ? {
+        x: Number(geom.x) || 4000,
+        y: Number(geom.y) || 2600,
+        z: Number(geom.z) || 4000
+      } : { x: 4000, y: 2600, z: 4000 });
+
+      return {
+        uuid: row.location_uuid || row.uuid || 'unknown-room',
+        name: row.location_metadata_caption || row.metadata_caption || row.caption || row.name || 'Room',
+        position: this._parseJsonishObject(row.location_position ?? row.position ?? null, { x: 0, y: 0, z: 0 }),
+        geometry: { outer }
+      };
+    } catch (_error) {
+      return null;
+    }
   }
 }
