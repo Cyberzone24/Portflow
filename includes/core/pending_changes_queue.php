@@ -298,8 +298,14 @@ function runAutomationSshCommandsFromQueue(
 ): array {
     $host = trim((string)($connection['mgmt_ip'] ?? ''));
     $port = (int)($connection['ssh_port'] ?? 22);
+    $authMethod = trim((string)($connection['ssh_auth_method'] ?? 'password'));
     $username = trim((string)($connection['ssh_username'] ?? ''));
     $password = (string)($connection['ssh_password'] ?? '');
+    $privateKey = (string)($connection['ssh_private_key'] ?? '');
+
+    if (!in_array($authMethod, ['password', 'key'], true)) {
+        $authMethod = $privateKey !== '' ? 'key' : 'password';
+    }
 
     if ($host === '' || $username === '') {
         return [
@@ -318,6 +324,7 @@ function runAutomationSshCommandsFromQueue(
 
     $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
     $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
+    $keyFile = null;
 
     $commandFile = tempnam(sys_get_temp_dir(), 'portflow-queue-');
     if ($commandFile === false) {
@@ -341,17 +348,44 @@ function runAutomationSshCommandsFromQueue(
     file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
 
     $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
-    if ($password !== '') {
+    if ($authMethod === 'password' && $password !== '') {
         $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
     } else {
         $sshOptions .= ' -o BatchMode=yes';
     }
 
+    if ($authMethod === 'key') {
+        if (trim($privateKey) === '') {
+            @unlink($commandFile);
+            return [
+                'ok' => false,
+                'output' => 'Queue-Ausfuehrung fehlgeschlagen: SSH-Key ist leer.'
+            ];
+        }
+
+        $keyFile = tempnam(sys_get_temp_dir(), 'portflow-queue-key-');
+        if ($keyFile === false) {
+            @unlink($commandFile);
+            return [
+                'ok' => false,
+                'output' => 'Queue-Ausfuehrung fehlgeschlagen: Konnte keine temporaere Key-Datei anlegen.'
+            ];
+        }
+
+        file_put_contents($keyFile, rtrim($privateKey) . "\n");
+        @chmod($keyFile, 0600);
+        $sshOptions .= ' -o PreferredAuthentications=publickey -o PasswordAuthentication=no -i ' . escapeshellarg($keyFile);
+    }
+
     $target = escapeshellarg($username . '@' . $host);
     $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
 
-    if ($password !== '') {
+    if ($authMethod === 'password' && $password !== '') {
         if ($sshpassPath === '') {
+            @unlink($commandFile);
+            if ($keyFile !== null) {
+                @unlink($keyFile);
+            }
             return [
                 'ok' => false,
                 'output' => 'Queue-Ausfuehrung fehlgeschlagen: sshpass wurde nicht gefunden.'
@@ -372,6 +406,9 @@ function runAutomationSshCommandsFromQueue(
     exec($fullCommand . ' 2>&1', $lines, $exitCode);
     $durationSec = microtime(true) - $startedAt;
     @unlink($commandFile);
+    if ($keyFile !== null) {
+        @unlink($keyFile);
+    }
 
     $maxLines = 120;
     if (count($lines) > $maxLines) {
@@ -379,7 +416,7 @@ function runAutomationSshCommandsFromQueue(
         $lines[] = '... output truncated ...';
     }
 
-    $maskedCommand = ($password !== '')
+    $maskedCommand = ($authMethod === 'password' && $password !== '')
         ? 'sshpass -p ******** ssh ...'
         : trim((string)$fullCommand);
 

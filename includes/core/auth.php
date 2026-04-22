@@ -808,9 +808,80 @@ class Auth {
                 $this->logger->log('allowing automation access for admin role', 0);
 
                 // set FIRST_RUN to FALSE
-                $config = file_get_contents(__DIR__ . '/config.php');
-                $config = str_replace("const PORTFLOW_FIRST_RUN = TRUE;", "const PORTFLOW_FIRST_RUN = FALSE;", $config);
-                file_put_contents(__DIR__ . '/config.php', $config);
+                configWriteEnvValues(['FIRST_RUN' => 'FALSE']);
+    function configWriteEnvValues(array $updates): array {
+        $envPath = __DIR__ . '/.env';
+        if (!file_exists($envPath)) {
+            return ['ok' => false, 'message' => '.env wurde nicht gefunden.'];
+        }
+        if (!is_readable($envPath) || !is_writable($envPath)) {
+            return ['ok' => false, 'message' => '.env ist nicht lesbar oder nicht schreibbar.'];
+        }
+
+        $content = file_get_contents($envPath);
+        if (!is_string($content)) {
+            return ['ok' => false, 'message' => '.env konnte nicht gelesen werden.'];
+        }
+
+        $lines = preg_split('/\R/', $content);
+        if (!is_array($lines)) {
+            $lines = [];
+        }
+
+        $normalizedUpdates = [];
+        foreach ($updates as $key => $value) {
+            $normalizedKey = strtoupper(trim((string)$key));
+            if ($normalizedKey === '') {
+                continue;
+            }
+            $normalizedUpdates[$normalizedKey] = configNormalizeEnvValue((string)$value);
+        }
+
+        if (empty($normalizedUpdates)) {
+            return ['ok' => false, 'message' => 'Keine gueltigen Einstellungen zum Speichern uebergeben.'];
+        }
+
+        $found = [];
+        foreach ($lines as $idx => $line) {
+            if (!is_string($line)) {
+                continue;
+            }
+            if (preg_match('/^\s*([A-Z0-9_]+)\s*=/', $line, $matches) === 1) {
+                $lineKey = strtoupper((string)$matches[1]);
+                if (array_key_exists($lineKey, $normalizedUpdates)) {
+                    $lines[$idx] = $lineKey . '=' . $normalizedUpdates[$lineKey];
+                    $found[$lineKey] = true;
+                }
+            }
+        }
+
+        foreach ($normalizedUpdates as $lineKey => $lineValue) {
+            if (!isset($found[$lineKey])) {
+                $lines[] = $lineKey . '=' . $lineValue;
+            }
+        }
+
+        $newContent = implode(PHP_EOL, $lines) . PHP_EOL;
+        $tempPath = $envPath . '.tmp';
+        $backupPath = $envPath . '.bak.' . date('YmdHis');
+
+        if (@copy($envPath, $backupPath) === false) {
+            return ['ok' => false, 'message' => '.env Backup konnte nicht erstellt werden.'];
+        }
+
+        if (file_put_contents($tempPath, $newContent, LOCK_EX) === false) {
+            return ['ok' => false, 'message' => 'Temporare .env Datei konnte nicht geschrieben werden.'];
+        }
+
+        if (!@rename($tempPath, $envPath)) {
+            @unlink($tempPath);
+            return ['ok' => false, 'message' => '.env konnte nicht atomar ersetzt werden.'];
+        }
+
+        return ['ok' => true, 'message' => 'Einstellungen wurden gespeichert.'];
+    }
+
+
                 $this->logger->log('setting PORTFLOW_FIRST_RUN to FALSE', 0);
             } else {
                 // get user role uuid

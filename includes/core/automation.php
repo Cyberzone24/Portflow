@@ -87,6 +87,12 @@ class Automation {
         return $templates[$templateId] ?? null;
     }
 
+    public function setTemplates(array $templates): void {
+        $config = $this->getConfig();
+        $config['templates'] = $templates;
+        $this->config = $config;
+    }
+
     public function renderTemplate(string $templateId, string $profileId, array $variables = []): array {
         $template = $this->getTemplate($templateId);
         $profile = $this->getProfile($profileId);

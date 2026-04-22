@@ -110,7 +110,7 @@ function displayForm($step) {
             HTML;
 
             // Modules
-            $modules = ['fpm', 'session', 'mbstring', 'pdo', 'pdo_pgsql', 'openssl', 'ldap'];
+            $modules = ['fpm', 'session', 'mbstring', 'pdo', 'pdo_pgsql', 'openssl', 'ldap', 'snmp'];
             echo <<<HTML
             <div class="pb-6">
                 <p>PHP-Module</p>

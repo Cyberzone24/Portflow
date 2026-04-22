@@ -569,7 +569,8 @@ if (isset($_GET['nav'])) {
         $lang['scripts'] = 'Skripte';
         $lang['access_management'] = 'Zugangsverwaltung';
         $lang['search'] = 'Suchen';
-        $lang['it asset-management'] = 'IT-Anlagenmanagement';
+        $lang['it asset-management'] = 'IT Asset-Management';
+        $lang['it asset-management note'] = 'Verwaltung von Standorten, Geräten, Ports und Verbindungen';
         $lang['location'] = 'Standort';
         $lang['ipam'] = 'IPAM';
         $lang['vlan'] = 'VLAN';
@@ -577,6 +578,7 @@ if (isset($_GET['nav'])) {
         $lang['device ports'] = 'Geräteports';
         $lang['connections'] = 'Verbindungen';
         $lang['quantity'] = 'Anzahl';
+        $lang['datasets'] = 'Datensätze';
 
         return $lang;
     }

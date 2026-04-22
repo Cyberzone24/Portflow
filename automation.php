@@ -23,6 +23,87 @@
     use Portflow\Core\Auth;
     use Portflow\Core\PendingChangesQueue;
 
+    function mergeAutomationTemplatesWithDb(\Portflow\Core\DatabaseAdapter $db, array $baseTemplates): array {
+        $dataPath = __DIR__ . '/data/automation/automation.json';
+        if (!file_exists($dataPath)) {
+            return $baseTemplates;
+        }
+
+        $raw = (string)file_get_contents($dataPath);
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return $baseTemplates;
+        }
+
+        $templates = is_array($decoded['templates'] ?? null) ? $decoded['templates'] : [];
+        if (empty($templates)) {
+            return $baseTemplates;
+        }
+
+        foreach ($templates as $templateId => $template) {
+            if (!is_array($template)) {
+                continue;
+            }
+
+            $id = trim((string)$templateId);
+            if ($id === '') {
+                continue;
+            }
+
+            $baseTemplates[$id] = [
+                'label' => (string)($template['label'] ?? $id),
+                'description' => (string)($template['description'] ?? ''),
+                'supported_profiles' => array_values((array)($template['supported_profiles'] ?? [])),
+                'variables' => array_values((array)($template['variables'] ?? [])),
+                'commands' => array_values((array)($template['commands'] ?? [])),
+                'uses_description_convention' => !empty($template['uses_description_convention'])
+            ];
+        }
+
+        return $baseTemplates;
+    }
+
+    function resolveSwitchConnectionData(array $switchData, array $storedSettings): array {
+        $credentialMode = trim((string)($switchData['credential_mode'] ?? 'global'));
+        if (!in_array($credentialMode, ['global', 'individual'], true)) {
+            $credentialMode = 'global';
+        }
+
+        $authMethod = trim((string)($storedSettings['ssh_auth_method'] ?? 'password'));
+        $username = trim((string)($storedSettings['ssh_username'] ?? ''));
+        $password = (string)($storedSettings['ssh_password'] ?? '');
+        $privateKey = (string)($storedSettings['ssh_private_key'] ?? '');
+
+        if ($credentialMode === 'individual') {
+            $switchAuthMethod = trim((string)($switchData['ssh_auth_method'] ?? 'password'));
+            if (in_array($switchAuthMethod, ['password', 'key'], true)) {
+                $authMethod = $switchAuthMethod;
+            }
+
+            if (trim((string)($switchData['ssh_username'] ?? '')) !== '') {
+                $username = trim((string)$switchData['ssh_username']);
+            }
+            if ((string)($switchData['ssh_password'] ?? '') !== '') {
+                $password = (string)$switchData['ssh_password'];
+            }
+            if ((string)($switchData['ssh_private_key'] ?? '') !== '') {
+                $privateKey = (string)$switchData['ssh_private_key'];
+            }
+        }
+
+        if (!in_array($authMethod, ['password', 'key'], true)) {
+            $authMethod = $privateKey !== '' ? 'key' : 'password';
+        }
+
+        $switchData['ssh_port'] = (int)($storedSettings['ssh_port'] ?? 22);
+        $switchData['ssh_auth_method'] = $authMethod;
+        $switchData['ssh_username'] = $username;
+        $switchData['ssh_password'] = $password;
+        $switchData['ssh_private_key'] = $privateKey;
+
+        return $switchData;
+    }
+
     $automation = new Automation();
     $automationStore = new AutomationStore();
     $logger = new Logger();
@@ -32,6 +113,8 @@
     $config = $automation->getConfig();
     $profiles = $automation->getProfiles();
     $templates = $automation->getTemplates();
+    $templates = mergeAutomationTemplatesWithDb($db, $templates);
+    $automation->setTemplates($templates);
 
     $storedSettings = $automationStore->getSettings();
     $inventoryRaw = trim((string)($storedSettings['switch_inventory_json'] ?? ''));
@@ -111,10 +194,7 @@
             if ($queueAction === 'execute_all' && isset($_POST['execute_all_switch'])) {
                 $switchToExecute = (string)($_POST['execute_all_switch']);
                 if (isset($switches[$switchToExecute])) {
-                    $switchData = $switches[$switchToExecute];
-                    $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
-                    $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
-                    $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+                    $switchData = resolveSwitchConnectionData($switches[$switchToExecute], $storedSettings);
 
                     $pendingBefore = $queueManager->getPendingChanges($_SESSION['uuid'], $switchToExecute);
                     $batchCommands = [];
@@ -189,10 +269,7 @@
                             'output' => 'Ausfuehrung fehlgeschlagen: Switch des Queue-Eintrags ist nicht gueltig.'
                         ];
                     } else {
-                        $switchData = $switches[$switchToExecute];
-                        $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
-                        $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
-                        $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+                        $switchData = resolveSwitchConnectionData($switches[$switchToExecute], $storedSettings);
 
                         $commands = array_filter(
                             array_map('trim', explode("\n", (string)($pendingChange['commands'] ?? ''))),
@@ -264,10 +341,7 @@
                         'output' => 'Ausfuehrung fehlgeschlagen: Ungueltiger Switch fuer Auswahl-Ausfuehrung.'
                     ];
                 } else {
-                    $switchData = $switches[$switchToExecute];
-                    $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
-                    $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
-                    $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+                    $switchData = resolveSwitchConnectionData($switches[$switchToExecute], $storedSettings);
 
                     $executedCount = 0;
                     $failedCount = 0;
@@ -490,9 +564,7 @@
                 }
             } elseif (is_array($selectedSwitchData)) {
                 // Execute immediately
-                $selectedSwitchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
-                $selectedSwitchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
-                $selectedSwitchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+                $selectedSwitchData = resolveSwitchConnectionData($selectedSwitchData, $storedSettings);
 
                 if ($selectedErrorStrategy === 'stop_on_error' && count($pipelineGroups) > 1) {
                     $executionResult = executePipelineStopOnError(
@@ -613,8 +685,14 @@
     function runAutomationSshCommands(array $connection, array $commands, Logger $logger, string $switchName, string $profileId, string $templateId): array {
         $host = trim((string)($connection['mgmt_ip'] ?? ''));
         $port = (int)($connection['ssh_port'] ?? 22);
+        $authMethod = trim((string)($connection['ssh_auth_method'] ?? 'password'));
         $username = trim((string)($connection['ssh_username'] ?? ''));
         $password = (string)($connection['ssh_password'] ?? '');
+        $privateKey = (string)($connection['ssh_private_key'] ?? '');
+
+        if (!in_array($authMethod, ['password', 'key'], true)) {
+            $authMethod = $privateKey !== '' ? 'key' : 'password';
+        }
 
         if ($host === '' || $username === '') {
             return [
@@ -633,6 +711,7 @@
 
         $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
         $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
+        $keyFile = null;
 
         $commandFile = tempnam(sys_get_temp_dir(), 'portflow-automation-');
         if ($commandFile === false) {
@@ -657,17 +736,44 @@
         file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
 
         $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
-        if ($password !== '') {
+        if ($authMethod === 'password' && $password !== '') {
             $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
         } else {
             $sshOptions .= ' -o BatchMode=yes';
         }
 
+        if ($authMethod === 'key') {
+            if (trim($privateKey) === '') {
+                @unlink($commandFile);
+                return [
+                    'ok' => false,
+                    'output' => 'Ausfuehrung fehlgeschlagen: SSH-Key ist leer.'
+                ];
+            }
+
+            $keyFile = tempnam(sys_get_temp_dir(), 'portflow-key-');
+            if ($keyFile === false) {
+                @unlink($commandFile);
+                return [
+                    'ok' => false,
+                    'output' => 'Ausfuehrung fehlgeschlagen: Konnte keine temporaere Key-Datei anlegen.'
+                ];
+            }
+
+            file_put_contents($keyFile, rtrim($privateKey) . "\n");
+            @chmod($keyFile, 0600);
+            $sshOptions .= ' -o PreferredAuthentications=publickey -o PasswordAuthentication=no -i ' . escapeshellarg($keyFile);
+        }
+
         $target = escapeshellarg($username . '@' . $host);
         $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
 
-        if ($password !== '') {
+        if ($authMethod === 'password' && $password !== '') {
             if ($sshpassPath === '') {
+                @unlink($commandFile);
+                if ($keyFile !== null) {
+                    @unlink($keyFile);
+                }
                 return [
                     'ok' => false,
                     'output' => 'Ausfuehrung fehlgeschlagen: sshpass wurde nicht gefunden.'
@@ -688,6 +794,9 @@
         exec($fullCommand . ' 2>&1', $lines, $exitCode);
         $durationSec = microtime(true) - $startedAt;
         @unlink($commandFile);
+        if ($keyFile !== null) {
+            @unlink($keyFile);
+        }
 
         $maxLines = 120;
         if (count($lines) > $maxLines) {
@@ -695,7 +804,7 @@
             $lines[] = '... output truncated ...';
         }
 
-        $maskedCommand = ($password !== '')
+        $maskedCommand = ($authMethod === 'password' && $password !== '')
             ? 'sshpass -p ******** ssh ...'
             : trim((string)$fullCommand);
 

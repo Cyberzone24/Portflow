@@ -100,9 +100,8 @@
 <div class="itam-shell mx-4 mb-4 mt-0 grid min-h-0 grid-cols-1 gap-4" id="itamShell">
     <aside class="itam-sidebar relative hidden min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white p-4 lg:flex lg:flex-col lg:justify-between" id="itamSidebar">  
         <div class="itam-sidebar-head mb-3 flex flex-col justify-between gap-2">
-            <div class="itam-sidebar-copy">
+            <div class="itam-sidebar-copy mb-4">
                 <p class="text-lg font-bold"><?php echo $lang['it asset-management']; ?></p>
-                <p class="text-sm text-slate-500"><?php echo $lang['navigation'] ?? 'Navigation'; ?></p>
             </div>
             <ul class="itam-nav grid gap-2.5 lg:gap-3" id="itam_nav">
                 <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-blue-600 bg-blue-600 px-3 py-2.5 font-semibold text-white transition hover:bg-slate-100 hover:text-slate-800"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="map-pin"></i><span class="itam-nav-label truncate"><?php echo $lang['location']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
@@ -121,7 +120,7 @@
         <div class="flex h-full min-h-0 w-full flex-col p-4">
             <div class="mb-4">
                 <div class="text-2xl font-bold text-slate-900"><?php echo $lang['it asset-management']; ?></div>
-                <div class="mt-1 text-sm text-slate-500"><?php echo $lang['quick note'] ?? 'Verwaltung von Standorten, Geräten, Ports und Verbindungen'; ?></div>
+                <div class="mt-1 text-sm text-slate-500"><?php echo $lang['it asset-management note']; ?></div>
             </div>
 
             <ul class="itam-mobile-subnav flex items-center gap-2 overflow-x-auto pb-1 lg:hidden" id="itam_nav_mobile">
@@ -137,7 +136,7 @@
                 <div class="block">
                     <div class="flex min-w-0 flex-nowrap items-center gap-2.5">
                         <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="searchTable(event)">
-                            <input type="text" name="search" placeholder="Suchen ..." class="min-w-0 flex-1 rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            <input type="text" name="search" placeholder="<?php echo $lang['search']; ?> ..." class="min-w-0 flex-1 rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
                             <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white shadow-md hover:bg-blue-700">
                                 <button type="submit" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="search"></i></button>
                             </div>
@@ -3513,7 +3512,7 @@ function loadTable(table = 'location_details', search = '', limit = 100, page = 
         if (search) { query = `?search=${search}`; } else { query = ''; }
 
         ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
-            $('#count').text('Datensätze: ' + parseInt(data.pageInfo.totalResults));
+            $('#count').text('<?php echo $lang['datasets']; ?>: ' + parseInt(data.pageInfo.totalResults));
             displayTable(columns, userColumns, data.items);
             generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
         });

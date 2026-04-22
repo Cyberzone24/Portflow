@@ -25,13 +25,76 @@
     $automationTestResult = null;
     $automationFormDataOverride = null;
 
+    function normalizeSnmpV3AuthProtocol(string $protocol): string {
+        $trimmed = trim($protocol);
+        if ($trimmed === '') {
+            return '';
+        }
+
+        $normalized = strtoupper(str_replace(['-', '_'], '', $trimmed));
+        if ($normalized === 'SHA1') {
+            $normalized = 'SHA';
+        }
+
+        $allowed = ['MD5', 'SHA', 'SHA224', 'SHA256', 'SHA384', 'SHA512'];
+        if (!in_array($normalized, $allowed, true)) {
+            return 'SHA';
+        }
+
+        return $normalized;
+    }
+
+    function normalizeSnmpV3PrivProtocol(string $protocol): string {
+        $trimmed = trim($protocol);
+        if ($trimmed === '') {
+            return '';
+        }
+
+        $normalized = strtoupper(str_replace(['-', '_'], '', $trimmed));
+        if ($normalized === 'AES256C' || $normalized === 'AES256CFB') {
+            $normalized = 'AES256';
+        }
+
+        $allowed = ['DES', 'AES', 'AES128', 'AES192', 'AES256'];
+        if (!in_array($normalized, $allowed, true)) {
+            return 'AES';
+        }
+
+        return $normalized;
+    }
+
+    function mapSnmpV3AuthProtocolForCli(string $normalizedProtocol): string {
+        $protocol = normalizeSnmpV3AuthProtocol($normalizedProtocol);
+        $cliMap = [
+            'SHA224' => 'SHA-224',
+            'SHA256' => 'SHA-256',
+            'SHA384' => 'SHA-384',
+            'SHA512' => 'SHA-512'
+        ];
+
+        return $cliMap[$protocol] ?? $protocol;
+    }
+
+    function mapSnmpV3PrivProtocolForCli(string $normalizedProtocol): string {
+        $protocol = normalizeSnmpV3PrivProtocol($normalizedProtocol);
+        $cliMap = [
+            'AES128' => 'AES',
+            'AES192' => 'AES-192',
+            'AES256' => 'AES-256'
+        ];
+
+        return $cliMap[$protocol] ?? $protocol;
+    }
+
     function runAutomationSshTest(array $formData, AutomationStore $store, Logger $logger): array {
         $saved = $store->getSettings();
 
         $host = trim((string)($formData['ssh_host'] ?? ''));
         $port = (int)($formData['ssh_port'] ?? 22);
+        $authMethod = trim((string)($formData['ssh_auth_method'] ?? 'password'));
         $username = trim((string)($formData['ssh_username'] ?? ''));
         $password = (string)($formData['ssh_password'] ?? '');
+        $privateKey = trim((string)($formData['ssh_private_key'] ?? ''));
 
         if ($host === '') {
             $host = trim((string)($saved['ssh_host'] ?? ''));
@@ -44,6 +107,15 @@
         }
         if ($password === '') {
             $password = (string)($saved['ssh_password'] ?? '');
+        }
+        if ($privateKey === '') {
+            $privateKey = (string)($saved['ssh_private_key'] ?? '');
+        }
+        if (!in_array($authMethod, ['password', 'key'], true)) {
+            $authMethod = ((string)($saved['ssh_auth_method'] ?? 'password'));
+        }
+        if (!in_array($authMethod, ['password', 'key'], true)) {
+            $authMethod = $privateKey !== '' ? 'key' : 'password';
         }
 
         if ($host === '' || $username === '') {
@@ -70,13 +142,34 @@
 
         $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
         $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
+        $keyFile = null;
 
         $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
 
-        if ($password !== '') {
+        if ($authMethod === 'password' && $password !== '') {
             $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
         } else {
             $sshOptions .= ' -o BatchMode=yes';
+        }
+
+        if ($authMethod === 'key') {
+            if ($privateKey === '') {
+                return [
+                    'ok' => false,
+                    'output' => "SSH-Test fehlgeschlagen: SSH-Key ist leer."
+                ];
+            }
+
+            $keyFile = tempnam(sys_get_temp_dir(), 'portflow-ssh-key-test-');
+            if ($keyFile === false) {
+                return [
+                    'ok' => false,
+                    'output' => 'SSH-Test fehlgeschlagen: Konnte keine temporaere Key-Datei anlegen.'
+                ];
+            }
+            file_put_contents($keyFile, rtrim($privateKey) . "\n");
+            @chmod($keyFile, 0600);
+            $sshOptions .= ' -o PreferredAuthentications=publickey -o PasswordAuthentication=no -i ' . escapeshellarg($keyFile);
         }
 
         $commandFile = tempnam(sys_get_temp_dir(), 'portflow-ssh-test-');
@@ -92,8 +185,12 @@
         $target = escapeshellarg($username . '@' . $host);
         $sshCommand = $sshPath . ' ' . $sshOptions . ' -p ' . (int)$port . ' ' . $target . ' < ' . escapeshellarg($commandFile);
 
-        if ($password !== '') {
+        if ($authMethod === 'password' && $password !== '') {
             if ($sshpassPath === '') {
+                @unlink($commandFile);
+                if ($keyFile !== null) {
+                    @unlink($keyFile);
+                }
                 return [
                     'ok' => false,
                     'output' => "SSH-Test fehlgeschlagen: Passwortauthentifizierung benoetigt sshpass, ist aber nicht installiert."
@@ -112,6 +209,9 @@
         $exitCode = 1;
         exec($fullCommand . ' 2>&1', $lines, $exitCode);
         @unlink($commandFile);
+        if ($keyFile !== null) {
+            @unlink($keyFile);
+        }
 
         $maxLines = 60;
         if (count($lines) > $maxLines) {
@@ -119,7 +219,7 @@
             $lines[] = '... output truncated ...';
         }
 
-        $maskedCommand = ($password !== '')
+        $maskedCommand = ($authMethod === 'password' && $password !== '')
             ? 'sshpass -p ******** ssh ...'
             : trim((string)$fullCommand);
 
@@ -135,6 +235,290 @@
 
         return [
             'ok' => ($exitCode === 0),
+            'title' => 'SSH Test Output',
+            'output' => $outputText
+        ];
+    }
+
+    function runAutomationSnmpTest(array $formData, AutomationStore $store, Logger $logger): array {
+        $saved = $store->getSettings();
+        $switchName = trim((string)($formData['snmp_switch_name'] ?? ''));
+
+        $host = trim((string)($formData['snmp_host'] ?? $formData['ssh_host'] ?? ''));
+        $version = trim((string)($formData['snmp_version'] ?? ''));
+        $community = trim((string)($formData['snmp_community'] ?? ''));
+        $mib = trim((string)($formData['snmp_mib'] ?? ''));
+        $port = (int)($formData['snmp_port'] ?? 161);
+        $timeout = (int)($formData['snmp_timeout'] ?? 2);
+        $retries = (int)($formData['snmp_retries'] ?? 1);
+
+        $snmpV3Username = trim((string)($formData['snmp_v3_username'] ?? ''));
+        $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($formData['snmp_v3_auth_protocol'] ?? ''));
+        $snmpV3AuthPassphrase = (string)($formData['snmp_v3_auth_passphrase'] ?? '');
+        $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($formData['snmp_v3_priv_protocol'] ?? ''));
+        $snmpV3PrivPassphrase = (string)($formData['snmp_v3_priv_passphrase'] ?? '');
+
+        $inventoryRaw = trim((string)($saved['switch_inventory_json'] ?? ''));
+        $inventory = decodeJsonObject($inventoryRaw, ['switches' => []]);
+        $switches = is_array($inventory['switches'] ?? null) ? $inventory['switches'] : [];
+        if ($switchName !== '') {
+            foreach ($switches as $switchItem) {
+                if (!is_array($switchItem)) {
+                    continue;
+                }
+
+                if (strcasecmp((string)($switchItem['name'] ?? ''), $switchName) !== 0) {
+                    continue;
+                }
+
+                if ($host === '') {
+                    $host = trim((string)($switchItem['mgmt_ip'] ?? ''));
+                }
+
+                $switchSnmp = is_array($switchItem['snmp'] ?? null) ? $switchItem['snmp'] : [];
+                $profileDefaults = fetchAutomationProfilesFromFile();
+                $profileId = trim((string)($switchItem['profile'] ?? ''));
+                $profileSnmp = is_array($profileDefaults[$profileId]['snmp'] ?? null) ? $profileDefaults[$profileId]['snmp'] : [];
+
+                if ($version === '') {
+                    $version = trim((string)($switchSnmp['version'] ?? ''));
+                }
+                if ($version === '') {
+                    $version = trim((string)($profileSnmp['version'] ?? '2c'));
+                }
+                if ($community === '') {
+                    $community = trim((string)($switchSnmp['community'] ?? ''));
+                }
+                if ($community === '') {
+                    $community = trim((string)($profileSnmp['community'] ?? ''));
+                }
+                if ($mib === '') {
+                    $mib = trim((string)($switchSnmp['mib'] ?? ''));
+                }
+                if ($mib === '') {
+                    $mib = trim((string)($profileSnmp['default_mib'] ?? ''));
+                }
+                if ($port <= 0) {
+                    $port = (int)($switchSnmp['port'] ?? 161);
+                }
+                if ($timeout <= 0) {
+                    $timeout = (int)($switchSnmp['timeout'] ?? 2);
+                }
+                if ($retries < 0) {
+                    $retries = (int)($switchSnmp['retries'] ?? 1);
+                }
+
+                if ($snmpV3Username === '') {
+                    $snmpV3Username = trim((string)($switchSnmp['v3_username'] ?? ''));
+                }
+                if ($snmpV3Username === '') {
+                    $snmpV3Username = trim((string)($profileSnmp['v3_username'] ?? ''));
+                }
+                if ($snmpV3AuthPassphrase === '') {
+                    $snmpV3AuthPassphrase = (string)($switchSnmp['v3_auth_passphrase'] ?? '');
+                }
+                if ($snmpV3AuthPassphrase === '') {
+                    $snmpV3AuthPassphrase = (string)($profileSnmp['v3_auth_passphrase'] ?? '');
+                }
+                if ($snmpV3PrivPassphrase === '') {
+                    $snmpV3PrivPassphrase = (string)($switchSnmp['v3_priv_passphrase'] ?? '');
+                }
+                if ($snmpV3PrivPassphrase === '') {
+                    $snmpV3PrivPassphrase = (string)($profileSnmp['v3_priv_passphrase'] ?? '');
+                }
+                if ($snmpV3AuthProtocol === '') {
+                    $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($switchSnmp['v3_auth_protocol'] ?? ''));
+                }
+                if ($snmpV3AuthProtocol === '') {
+                    $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($profileSnmp['v3_auth_protocol'] ?? 'SHA'));
+                }
+                if ($snmpV3PrivProtocol === '') {
+                    $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($switchSnmp['v3_priv_protocol'] ?? ''));
+                }
+                if ($snmpV3PrivProtocol === '') {
+                    $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($profileSnmp['v3_priv_protocol'] ?? 'AES'));
+                }
+
+                // If v2c has no usable community but profile is v3, prefer profile v3 defaults for tests.
+                $profileSnmpVersion = trim((string)($profileSnmp['version'] ?? ''));
+                if ($version === '2c' && $community === '' && $profileSnmpVersion === '3') {
+                    $version = '3';
+                }
+
+                break;
+            }
+        }
+
+        if ($host === '') {
+            $host = trim((string)($saved['ssh_host'] ?? ''));
+        }
+
+        if ($host === '') {
+            return [
+                'ok' => false,
+                'title' => 'SNMP Test Output',
+                'output' => 'SNMP-Test fehlgeschlagen: Host ist erforderlich.'
+            ];
+        }
+
+        if (!preg_match('/^[a-zA-Z0-9.:_-]+$/', $host)) {
+            return [
+                'ok' => false,
+                'title' => 'SNMP Test Output',
+                'output' => 'SNMP-Test fehlgeschlagen: Host enthaelt unzulaessige Zeichen.'
+            ];
+        }
+
+        if (!in_array($version, ['2c', '3'], true)) {
+            $version = '2c';
+        }
+
+        $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol($snmpV3AuthProtocol);
+        $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol($snmpV3PrivProtocol);
+
+        $snmpV3AuthProtocolCli = mapSnmpV3AuthProtocolForCli($snmpV3AuthProtocol);
+        $snmpV3PrivProtocolCli = mapSnmpV3PrivProtocolForCli($snmpV3PrivProtocol);
+
+        if ($port < 1 || $port > 65535) {
+            $port = 161;
+        }
+        if ($timeout < 1 || $timeout > 30) {
+            $timeout = 2;
+        }
+        if ($retries < 0 || $retries > 10) {
+            $retries = 1;
+        }
+
+        $snmpgetPath = trim((string)shell_exec('command -v snmpget 2>/dev/null'));
+        if ($snmpgetPath === '') {
+            return [
+                'ok' => false,
+                'title' => 'SNMP Test Output',
+                'output' => 'SNMP-Test fehlgeschlagen: snmpget Binary wurde nicht gefunden.'
+            ];
+        }
+
+        $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
+        $oid = '.1.3.6.1.2.1.1.5.0';
+
+        $cmdParts = [
+            $snmpgetPath,
+            '-v',
+            escapeshellarg($version),
+            '-On',
+            '-t',
+            escapeshellarg((string)$timeout),
+            '-r',
+            escapeshellarg((string)$retries)
+        ];
+
+        $maskedParts = $cmdParts;
+
+        if ($version === '3') {
+            if ($snmpV3Username === '') {
+                return [
+                    'ok' => false,
+                    'title' => 'SNMP Test Output',
+                    'output' => 'SNMP-Test fehlgeschlagen: Fuer SNMPv3 ist ein Username erforderlich.'
+                ];
+            }
+
+            $securityLevel = 'noAuthNoPriv';
+            if ($snmpV3AuthPassphrase !== '' && $snmpV3PrivPassphrase !== '') {
+                $securityLevel = 'authPriv';
+            } elseif ($snmpV3AuthPassphrase !== '') {
+                $securityLevel = 'authNoPriv';
+            }
+
+            $cmdParts[] = '-l';
+            $cmdParts[] = escapeshellarg($securityLevel);
+            $cmdParts[] = '-u';
+            $cmdParts[] = escapeshellarg($snmpV3Username);
+
+            $maskedParts[] = '-l';
+            $maskedParts[] = escapeshellarg($securityLevel);
+            $maskedParts[] = '-u';
+            $maskedParts[] = escapeshellarg($snmpV3Username);
+
+            if ($snmpV3AuthPassphrase !== '') {
+                $cmdParts[] = '-a';
+                $cmdParts[] = escapeshellarg($snmpV3AuthProtocolCli);
+                $cmdParts[] = '-A';
+                $cmdParts[] = escapeshellarg($snmpV3AuthPassphrase);
+
+                $maskedParts[] = '-a';
+                $maskedParts[] = escapeshellarg($snmpV3AuthProtocolCli);
+                $maskedParts[] = '-A';
+                $maskedParts[] = "'********'";
+            }
+
+            if ($securityLevel === 'authPriv') {
+                $cmdParts[] = '-x';
+                $cmdParts[] = escapeshellarg($snmpV3PrivProtocolCli);
+                $cmdParts[] = '-X';
+                $cmdParts[] = escapeshellarg($snmpV3PrivPassphrase);
+
+                $maskedParts[] = '-x';
+                $maskedParts[] = escapeshellarg($snmpV3PrivProtocolCli);
+                $maskedParts[] = '-X';
+                $maskedParts[] = "'********'";
+            }
+        } else {
+            if ($community === '') {
+                return [
+                    'ok' => false,
+                    'title' => 'SNMP Test Output',
+                    'output' => 'SNMP-Test fehlgeschlagen: Fuer SNMPv2c ist eine Community erforderlich.'
+                ];
+            }
+
+            $cmdParts[] = '-c';
+            $cmdParts[] = escapeshellarg($community);
+
+            $maskedParts[] = '-c';
+            $maskedParts[] = "'********'";
+        }
+
+        $agentTarget = $host . ':' . (string)$port;
+        $cmdParts[] = escapeshellarg($agentTarget);
+        $cmdParts[] = escapeshellarg($oid);
+        $command = implode(' ', $cmdParts);
+
+        $maskedParts[] = escapeshellarg($agentTarget);
+        $maskedParts[] = escapeshellarg($oid);
+        $maskedCommand = implode(' ', $maskedParts);
+
+        if ($timeoutPath !== '') {
+            $command = $timeoutPath . ' 12s ' . $command;
+            $maskedCommand = $timeoutPath . ' 12s ' . $maskedCommand;
+        }
+
+        $lines = [];
+        $exitCode = 1;
+        exec($command . ' 2>&1', $lines, $exitCode);
+
+        $maxLines = 60;
+        if (count($lines) > $maxLines) {
+            $lines = array_slice($lines, 0, $maxLines);
+            $lines[] = '... output truncated ...';
+        }
+
+        $outputText = 'Command: ' . $maskedCommand . "\n";
+        $outputText .= 'Exit Code: ' . $exitCode . "\n";
+        if ($mib !== '') {
+            $outputText .= 'Hinweis: Profil/Switch-MIB fuer diesen Test: ' . $mib . "\n";
+        }
+        $outputText .= "\n" . implode("\n", $lines);
+
+        if ($exitCode === 124) {
+            $outputText .= "\n\nHinweis: Timeout erreicht. SNMP-Ziel hat nicht rechtzeitig geantwortet.";
+        }
+
+        $logger->log('automation snmp test for ' . $host . ' returned exit code ' . $exitCode, $exitCode === 0 ? 1 : 3);
+
+        return [
+            'ok' => ($exitCode === 0),
+            'title' => 'SNMP Test Output',
             'output' => $outputText
         ];
     }
@@ -171,12 +555,307 @@
 
     function getScriptsTabFromRequest(): string {
         $rawTab = trim((string)($_POST['scripts_active_tab'] ?? ($_GET['tab'] ?? 'switch')));
-        return in_array($rawTab, ['switch', 'templates', 'history'], true) ? $rawTab : 'switch';
+        return in_array($rawTab, ['switch', 'profiles', 'templates', 'history'], true) ? $rawTab : 'switch';
     }
 
     function getConfigTabFromRequest(): string {
         $rawTab = trim((string)($_GET['tab'] ?? 'system'));
         return in_array($rawTab, ['system', 'notifications'], true) ? $rawTab : 'system';
+    }
+
+    function decodeJsonArrayString(?string $raw, array $fallback = []): array {
+        if (!is_string($raw) || trim($raw) === '') {
+            return $fallback;
+        }
+
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : $fallback;
+    }
+
+    function getAutomationTemplateDataFilePath(): string {
+        return __DIR__ . '/data/automation/automation.json';
+    }
+
+    function readAutomationTemplateDataFile(): array {
+        $path = getAutomationTemplateDataFilePath();
+
+        if (!file_exists($path)) {
+            $directory = dirname($path);
+            if (!is_dir($directory)) {
+                @mkdir($directory, 0750, true);
+            }
+
+            $basePath = __DIR__ . '/includes/core/automation.json';
+            if (file_exists($basePath)) {
+                $baseRaw = (string)file_get_contents($basePath);
+                if (trim($baseRaw) !== '') {
+                    @file_put_contents($path, $baseRaw, LOCK_EX);
+                }
+            }
+        }
+
+        if (!file_exists($path)) {
+            return [
+                'description_convention' => [],
+                'profiles' => [],
+                'templates' => []
+            ];
+        }
+
+        $raw = (string)file_get_contents($path);
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            $decoded = [];
+        }
+
+        if (!isset($decoded['description_convention']) || !is_array($decoded['description_convention'])) {
+            $decoded['description_convention'] = [];
+        }
+        if (!isset($decoded['profiles']) || !is_array($decoded['profiles'])) {
+            $decoded['profiles'] = [];
+        }
+        if (!isset($decoded['templates']) || !is_array($decoded['templates'])) {
+            $decoded['templates'] = [];
+        }
+
+        return $decoded;
+    }
+
+    function writeAutomationTemplateDataFile(array $data): void {
+        $path = getAutomationTemplateDataFilePath();
+        $directory = dirname($path);
+        if (!is_dir($directory)) {
+            if (!mkdir($directory, 0750, true) && !is_dir($directory)) {
+                throw new \RuntimeException('Ablageordner fuer automation.json konnte nicht erstellt werden.');
+            }
+        }
+
+        $encoded = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($encoded === false) {
+            throw new \RuntimeException('automation.json konnte nicht serialisiert werden.');
+        }
+
+        if (file_put_contents($path, $encoded, LOCK_EX) === false) {
+            throw new \RuntimeException('automation.json konnte nicht geschrieben werden.');
+        }
+    }
+
+    function fetchAutomationTemplatesFromDb(\Portflow\Core\DatabaseAdapter $db): array {
+        $data = readAutomationTemplateDataFile();
+        $templates = is_array($data['templates'] ?? null) ? $data['templates'] : [];
+        $normalized = [];
+
+        foreach ($templates as $templateId => $template) {
+            if (!is_array($template)) {
+                continue;
+            }
+
+            $id = trim((string)$templateId);
+            if ($id === '') {
+                continue;
+            }
+
+            $normalized[$id] = [
+                'template_id' => $id,
+                'label' => (string)($template['label'] ?? $id),
+                'description' => (string)($template['description'] ?? ''),
+                'supported_profiles' => array_values((array)($template['supported_profiles'] ?? [])),
+                'variables' => array_values((array)($template['variables'] ?? [])),
+                'commands' => array_values((array)($template['commands'] ?? [])),
+                'uses_description_convention' => !empty($template['uses_description_convention']),
+                'source' => (string)($template['source'] ?? 'file')
+            ];
+        }
+
+        ksort($normalized);
+        return $normalized;
+    }
+
+    function upsertAutomationTemplateInDb(\Portflow\Core\DatabaseAdapter $db, string $templateId, array $template, string $source = 'custom'): void {
+        $data = readAutomationTemplateDataFile();
+        $templates = is_array($data['templates'] ?? null) ? $data['templates'] : [];
+
+        $templates[$templateId] = [
+            'label' => (string)($template['label'] ?? $templateId),
+            'description' => (string)($template['description'] ?? ''),
+            'supported_profiles' => array_values((array)($template['supported_profiles'] ?? [])),
+            'variables' => array_values((array)($template['variables'] ?? [])),
+            'commands' => array_values((array)($template['commands'] ?? [])),
+            'uses_description_convention' => !empty($template['uses_description_convention']),
+            'source' => $source
+        ];
+
+        $data['templates'] = $templates;
+        writeAutomationTemplateDataFile($data);
+    }
+
+    function deactivateAutomationTemplateInDb(\Portflow\Core\DatabaseAdapter $db, string $templateId): bool {
+        $data = readAutomationTemplateDataFile();
+        $templates = is_array($data['templates'] ?? null) ? $data['templates'] : [];
+
+        if (!isset($templates[$templateId])) {
+            return false;
+        }
+
+        unset($templates[$templateId]);
+        $data['templates'] = $templates;
+        writeAutomationTemplateDataFile($data);
+        return true;
+    }
+
+    function fetchAutomationProfilesFromFile(): array {
+        $data = readAutomationTemplateDataFile();
+        $profiles = is_array($data['profiles'] ?? null) ? $data['profiles'] : [];
+        $normalized = [];
+
+        foreach ($profiles as $profileId => $profile) {
+            if (!is_array($profile)) {
+                continue;
+            }
+
+            $id = trim((string)$profileId);
+            if ($id === '') {
+                continue;
+            }
+
+            $snmp = is_array($profile['snmp'] ?? null) ? $profile['snmp'] : [];
+            $snmpVersion = (string)($snmp['version'] ?? '2c');
+            if (!in_array($snmpVersion, ['2c', '3'], true)) {
+                $snmpVersion = '2c';
+            }
+            $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($snmp['v3_auth_protocol'] ?? 'SHA'));
+            $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($snmp['v3_priv_protocol'] ?? 'AES'));
+            $mibOverrides = array_values(array_filter(array_map('trim', (array)($snmp['mib_overrides'] ?? [])), static function ($value) {
+                return $value !== '';
+            }));
+
+            $normalized[$id] = [
+                'profile_id' => $id,
+                'label' => (string)($profile['label'] ?? $id),
+                'description' => (string)($profile['description'] ?? ''),
+                'supports_commit' => !empty($profile['supports_commit']),
+                'enter_config' => (string)($profile['enter_config'] ?? ''),
+                'commit' => (string)($profile['commit'] ?? ''),
+                'exit_config' => (string)($profile['exit_config'] ?? ''),
+                'save' => (string)($profile['save'] ?? ''),
+                'write_config' => (string)($profile['write_config'] ?? ''),
+                'snmp' => [
+                    'enabled' => !empty($snmp['enabled']),
+                    'version' => $snmpVersion,
+                    'port' => max(1, min(65535, (int)($snmp['port'] ?? 161))),
+                    'timeout' => max(1, min(30, (int)($snmp['timeout'] ?? 2))),
+                    'retries' => max(0, min(10, (int)($snmp['retries'] ?? 1))),
+                    'community' => (string)($snmp['community'] ?? ''),
+                    'v3_username' => trim((string)($snmp['v3_username'] ?? '')),
+                    'v3_auth_protocol' => $snmpV3AuthProtocol,
+                    'v3_auth_passphrase' => (string)($snmp['v3_auth_passphrase'] ?? ''),
+                    'v3_priv_protocol' => $snmpV3PrivProtocol,
+                    'v3_priv_passphrase' => (string)($snmp['v3_priv_passphrase'] ?? ''),
+                    'default_mib' => trim((string)($snmp['default_mib'] ?? '')),
+                    'mib_overrides' => $mibOverrides
+                ]
+            ];
+        }
+
+        ksort($normalized);
+        return $normalized;
+    }
+
+    function upsertAutomationProfileInFile(string $profileId, array $profile): void {
+        $data = readAutomationTemplateDataFile();
+        $profiles = is_array($data['profiles'] ?? null) ? $data['profiles'] : [];
+        $profileSnmp = is_array($profile['snmp'] ?? null) ? $profile['snmp'] : [];
+        $snmpVersion = (string)($profileSnmp['version'] ?? '2c');
+        if (!in_array($snmpVersion, ['2c', '3'], true)) {
+            $snmpVersion = '2c';
+        }
+        $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($profileSnmp['v3_auth_protocol'] ?? 'SHA'));
+        $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($profileSnmp['v3_priv_protocol'] ?? 'AES'));
+
+        $profiles[$profileId] = [
+            'label' => (string)($profile['label'] ?? $profileId),
+            'description' => (string)($profile['description'] ?? ''),
+            'supports_commit' => !empty($profile['supports_commit']),
+            'enter_config' => (string)($profile['enter_config'] ?? ''),
+            'commit' => (string)($profile['commit'] ?? ''),
+            'exit_config' => (string)($profile['exit_config'] ?? ''),
+            'save' => (string)($profile['save'] ?? ''),
+            'write_config' => (string)($profile['write_config'] ?? ''),
+            'snmp' => [
+                'enabled' => !empty($profileSnmp['enabled'] ?? false),
+                'version' => $snmpVersion,
+                'port' => max(1, min(65535, (int)($profileSnmp['port'] ?? 161))),
+                'timeout' => max(1, min(30, (int)($profileSnmp['timeout'] ?? 2))),
+                'retries' => max(0, min(10, (int)($profileSnmp['retries'] ?? 1))),
+                'community' => (string)($profileSnmp['community'] ?? ''),
+                'v3_username' => trim((string)($profileSnmp['v3_username'] ?? '')),
+                'v3_auth_protocol' => $snmpV3AuthProtocol,
+                'v3_auth_passphrase' => (string)($profileSnmp['v3_auth_passphrase'] ?? ''),
+                'v3_priv_protocol' => $snmpV3PrivProtocol,
+                'v3_priv_passphrase' => (string)($profileSnmp['v3_priv_passphrase'] ?? ''),
+                'default_mib' => trim((string)($profileSnmp['default_mib'] ?? '')),
+                'mib_overrides' => array_values(array_filter(array_map('trim', (array)($profileSnmp['mib_overrides'] ?? [])), static function ($value) {
+                    return $value !== '';
+                }))
+            ]
+        ];
+
+        $data['profiles'] = $profiles;
+        writeAutomationTemplateDataFile($data);
+    }
+
+    function deactivateAutomationProfileInFile(string $profileId): bool {
+        $data = readAutomationTemplateDataFile();
+        $profiles = is_array($data['profiles'] ?? null) ? $data['profiles'] : [];
+
+        if (!isset($profiles[$profileId])) {
+            return false;
+        }
+
+        unset($profiles[$profileId]);
+        $data['profiles'] = $profiles;
+        writeAutomationTemplateDataFile($data);
+        return true;
+    }
+
+    function migrateLegacyTemplateOverridesToDb(\Portflow\Core\DatabaseAdapter $db, AutomationStore $store, Logger $logger): int {
+        $structured = loadAutomationStructuredSettings($store);
+        $settings = $structured['settings'];
+        $scripts = $structured['scripts'];
+        $inventory = $structured['inventory'];
+
+        $legacyTemplates = is_array($scripts['templates'] ?? null) ? $scripts['templates'] : [];
+        if (empty($legacyTemplates)) {
+            return 0;
+        }
+
+        $migrated = 0;
+        foreach ($legacyTemplates as $templateId => $templatePayload) {
+            $templateId = trim((string)$templateId);
+            if ($templateId === '' || !is_array($templatePayload)) {
+                continue;
+            }
+
+            upsertAutomationTemplateInDb($db, $templateId, $templatePayload, 'legacy_override');
+            $migrated++;
+        }
+
+        if ($migrated > 0) {
+            unset($scripts['templates']);
+            $store->saveSettings([
+                'ssh_host' => $settings['ssh_host'] ?? '',
+                'ssh_port' => $settings['ssh_port'] ?? 22,
+                'ssh_auth_method' => $settings['ssh_auth_method'] ?? 'password',
+                'ssh_username' => $settings['ssh_username'] ?? '',
+                'ssh_password' => $settings['ssh_password'] ?? '',
+                'ssh_private_key' => $settings['ssh_private_key'] ?? '',
+                'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+                'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+            ]);
+            $logger->log('legacy template overrides migrated to data/automation/automation.json: ' . $migrated, 1);
+        }
+
+        return $migrated;
     }
 
     function getDefaultUserSettings(): array {
@@ -417,7 +1096,7 @@
     }
 
     function scriptsUrlWithTab(string $tab): string {
-        $safeTab = in_array($tab, ['switch', 'templates', 'history'], true) ? $tab : 'switch';
+        $safeTab = in_array($tab, ['switch', 'profiles', 'templates', 'history'], true) ? $tab : 'switch';
         return '?site=scripts&tab=' . rawurlencode($safeTab);
     }
 
@@ -1970,9 +2649,69 @@
                 $mgmtIp = trim((string)($_POST['switch_mgmt_ip'] ?? ''));
                 $profile = trim((string)($_POST['switch_profile'] ?? ''));
                 $deviceId = trim((string)($_POST['switch_device_id'] ?? ''));
+                $credentialMode = trim((string)($_POST['switch_credential_mode'] ?? 'global'));
+                $switchAuthMethod = trim((string)($_POST['switch_auth_method'] ?? 'password'));
+                $switchUsername = trim((string)($_POST['switch_ssh_username'] ?? ''));
+                $switchPassword = (string)($_POST['switch_ssh_password'] ?? '');
+                $switchPrivateKey = trim((string)($_POST['switch_ssh_private_key'] ?? ''));
+                $snmpEnabled = isset($_POST['switch_snmp_enabled']) && (string)$_POST['switch_snmp_enabled'] === '1';
+                $snmpVersion = trim((string)($_POST['switch_snmp_version'] ?? '2c'));
+                $snmpCommunity = trim((string)($_POST['switch_snmp_community'] ?? ''));
+                $snmpMib = trim((string)($_POST['switch_snmp_mib'] ?? ''));
+                $snmpV3Username = trim((string)($_POST['switch_snmp_v3_username'] ?? ''));
+                $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($_POST['switch_snmp_v3_auth_protocol'] ?? 'SHA'));
+                $snmpV3AuthPassphrase = (string)($_POST['switch_snmp_v3_auth_passphrase'] ?? '');
+                $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($_POST['switch_snmp_v3_priv_protocol'] ?? 'AES'));
+                $snmpV3PrivPassphrase = (string)($_POST['switch_snmp_v3_priv_passphrase'] ?? '');
 
                 if ($name === '' || $mgmtIp === '' || $profile === '') {
                     $logger->log('automation inventory add failed: name, mgmt_ip and profile are required', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                if (!in_array($credentialMode, ['global', 'individual'], true)) {
+                    $credentialMode = 'global';
+                }
+                if (!in_array($switchAuthMethod, ['password', 'key'], true)) {
+                    $switchAuthMethod = 'password';
+                }
+                if ($credentialMode === 'individual' && $switchUsername === '') {
+                    $logger->log('automation inventory add failed: individual credentials require username', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+                if (!in_array($snmpVersion, ['2c', '3'], true)) {
+                    $snmpVersion = '2c';
+                }
+                $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol($snmpV3AuthProtocol);
+                $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol($snmpV3PrivProtocol);
+
+                $profileDefaults = fetchAutomationProfilesFromFile();
+                $profileSnmpDefaults = is_array($profileDefaults[$profile]['snmp'] ?? null) ? $profileDefaults[$profile]['snmp'] : [];
+
+                if ($snmpMib === '') {
+                    $snmpMib = trim((string)($profileSnmpDefaults['default_mib'] ?? ''));
+                }
+                if ($snmpVersion === '3') {
+                    if ($snmpV3Username === '') {
+                        $snmpV3Username = trim((string)($profileSnmpDefaults['v3_username'] ?? ''));
+                    }
+                    if ($snmpV3AuthPassphrase === '') {
+                        $snmpV3AuthPassphrase = (string)($profileSnmpDefaults['v3_auth_passphrase'] ?? '');
+                    }
+                    if ($snmpV3PrivPassphrase === '') {
+                        $snmpV3PrivPassphrase = (string)($profileSnmpDefaults['v3_priv_passphrase'] ?? '');
+                    }
+                }
+
+                if ($snmpEnabled && $snmpVersion === '2c' && $snmpCommunity === '') {
+                    $logger->log('automation inventory add failed: SNMPv2c requires community', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+                if ($snmpEnabled && $snmpVersion === '3' && $snmpV3Username === '') {
+                    $logger->log('automation inventory add failed: SNMPv3 requires username', 2, echoToWeb: true);
                     redirectToScriptsTab(getScriptsTabFromRequest());
                     die();
                 }
@@ -2003,10 +2742,35 @@
                 $newSwitch = [
                     'name' => $name,
                     'mgmt_ip' => $mgmtIp,
-                    'profile' => $profile
+                    'profile' => $profile,
+                    'credential_mode' => $credentialMode,
+                    'ssh_auth_method' => $switchAuthMethod,
+                    'snmp' => [
+                        'enabled' => $snmpEnabled,
+                        'version' => $snmpVersion,
+                        'port' => 161,
+                        'timeout' => 2,
+                        'retries' => 1,
+                        'community' => $snmpCommunity,
+                        'mib' => $snmpMib,
+                        'v3_username' => $snmpV3Username,
+                        'v3_auth_protocol' => $snmpV3AuthProtocol,
+                        'v3_auth_passphrase' => $snmpV3AuthPassphrase,
+                        'v3_priv_protocol' => $snmpV3PrivProtocol,
+                        'v3_priv_passphrase' => $snmpV3PrivPassphrase
+                    ]
                 ];
                 if ($deviceId !== '') {
                     $newSwitch['device_id'] = $deviceId;
+                }
+                if ($credentialMode === 'individual') {
+                    $newSwitch['ssh_username'] = $switchUsername;
+                    if ($switchPassword !== '') {
+                        $newSwitch['ssh_password'] = $switchPassword;
+                    }
+                    if ($switchPrivateKey !== '') {
+                        $newSwitch['ssh_private_key'] = $switchPrivateKey;
+                    }
                 }
 
                 $inventory['switches'][] = $newSwitch;
@@ -2015,8 +2779,10 @@
                     $automationStore->saveSettings([
                         'ssh_host' => $settings['ssh_host'] ?? '',
                         'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_auth_method' => $settings['ssh_auth_method'] ?? 'password',
                         'ssh_username' => $settings['ssh_username'] ?? '',
                         'ssh_password' => $settings['ssh_password'] ?? '',
+                        'ssh_private_key' => $settings['ssh_private_key'] ?? '',
                         'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
                         'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
                     ]);
@@ -2050,11 +2816,60 @@
                 $mgmtIp = trim((string)($_POST['switch_mgmt_ip'] ?? ''));
                 $profile = trim((string)($_POST['switch_profile'] ?? ''));
                 $deviceId = trim((string)($_POST['switch_device_id'] ?? ''));
+                $credentialMode = trim((string)($_POST['switch_credential_mode'] ?? 'global'));
+                $switchAuthMethod = trim((string)($_POST['switch_auth_method'] ?? 'password'));
+                $switchUsername = trim((string)($_POST['switch_ssh_username'] ?? ''));
+                $switchPassword = (string)($_POST['switch_ssh_password'] ?? '');
+                $switchPrivateKey = trim((string)($_POST['switch_ssh_private_key'] ?? ''));
+                $snmpEnabled = isset($_POST['switch_snmp_enabled']) && (string)$_POST['switch_snmp_enabled'] === '1';
+                $snmpVersion = trim((string)($_POST['switch_snmp_version'] ?? '2c'));
+                $snmpCommunity = trim((string)($_POST['switch_snmp_community'] ?? ''));
+                $snmpMib = trim((string)($_POST['switch_snmp_mib'] ?? ''));
+                $snmpV3Username = trim((string)($_POST['switch_snmp_v3_username'] ?? ''));
+                $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($_POST['switch_snmp_v3_auth_protocol'] ?? 'SHA'));
+                $snmpV3AuthPassphrase = (string)($_POST['switch_snmp_v3_auth_passphrase'] ?? '');
+                $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($_POST['switch_snmp_v3_priv_protocol'] ?? 'AES'));
+                $snmpV3PrivPassphrase = (string)($_POST['switch_snmp_v3_priv_passphrase'] ?? '');
 
                 if ($originalName === '' || $name === '' || $mgmtIp === '' || $profile === '') {
                     $logger->log('automation inventory update failed: required fields missing', 2, echoToWeb: true);
                     redirectToScriptsTab(getScriptsTabFromRequest());
                     die();
+                }
+
+                if (!in_array($credentialMode, ['global', 'individual'], true)) {
+                    $credentialMode = 'global';
+                }
+                if (!in_array($switchAuthMethod, ['password', 'key'], true)) {
+                    $switchAuthMethod = 'password';
+                }
+                if ($credentialMode === 'individual' && $switchUsername === '') {
+                    $logger->log('automation inventory update failed: individual credentials require username', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+                if (!in_array($snmpVersion, ['2c', '3'], true)) {
+                    $snmpVersion = '2c';
+                }
+                $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol($snmpV3AuthProtocol);
+                $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol($snmpV3PrivProtocol);
+
+                $profileDefaults = fetchAutomationProfilesFromFile();
+                $profileSnmpDefaults = is_array($profileDefaults[$profile]['snmp'] ?? null) ? $profileDefaults[$profile]['snmp'] : [];
+
+                if ($snmpMib === '') {
+                    $snmpMib = trim((string)($profileSnmpDefaults['default_mib'] ?? ''));
+                }
+                if ($snmpVersion === '3') {
+                    if ($snmpV3Username === '') {
+                        $snmpV3Username = trim((string)($profileSnmpDefaults['v3_username'] ?? ''));
+                    }
+                    if ($snmpV3AuthPassphrase === '') {
+                        $snmpV3AuthPassphrase = (string)($profileSnmpDefaults['v3_auth_passphrase'] ?? '');
+                    }
+                    if ($snmpV3PrivPassphrase === '') {
+                        $snmpV3PrivPassphrase = (string)($profileSnmpDefaults['v3_priv_passphrase'] ?? '');
+                    }
                 }
 
                 if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $mgmtIp)) {
@@ -2092,13 +2907,72 @@
                     die();
                 }
 
+                $existingSwitch = is_array($inventory['switches'][$targetIndex])
+                    ? $inventory['switches'][$targetIndex]
+                    : [];
+                $existingSnmp = is_array($existingSwitch['snmp'] ?? null) ? $existingSwitch['snmp'] : [];
+
+                if ($snmpV3Username === '' && isset($existingSnmp['v3_username'])) {
+                    $snmpV3Username = trim((string)$existingSnmp['v3_username']);
+                }
+                if ($snmpV3AuthPassphrase === '' && isset($existingSnmp['v3_auth_passphrase'])) {
+                    $snmpV3AuthPassphrase = (string)$existingSnmp['v3_auth_passphrase'];
+                }
+                if ($snmpV3PrivPassphrase === '' && isset($existingSnmp['v3_priv_passphrase'])) {
+                    $snmpV3PrivPassphrase = (string)$existingSnmp['v3_priv_passphrase'];
+                }
+
+                if ($snmpEnabled && $snmpVersion === '2c' && $snmpCommunity === '' && isset($existingSnmp['community'])) {
+                    $snmpCommunity = trim((string)$existingSnmp['community']);
+                }
+
+                if ($snmpEnabled && $snmpVersion === '2c' && $snmpCommunity === '') {
+                    $logger->log('automation inventory update failed: SNMPv2c requires community', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+                if ($snmpEnabled && $snmpVersion === '3' && $snmpV3Username === '') {
+                    $logger->log('automation inventory update failed: SNMPv3 requires username', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
                 $updatedSwitch = [
                     'name' => $name,
                     'mgmt_ip' => $mgmtIp,
-                    'profile' => $profile
+                    'profile' => $profile,
+                    'credential_mode' => $credentialMode,
+                    'ssh_auth_method' => $switchAuthMethod,
+                    'snmp' => [
+                        'enabled' => $snmpEnabled,
+                        'version' => $snmpVersion,
+                        'port' => 161,
+                        'timeout' => 2,
+                        'retries' => 1,
+                        'community' => $snmpCommunity,
+                        'mib' => $snmpMib,
+                        'v3_username' => $snmpV3Username,
+                        'v3_auth_protocol' => $snmpV3AuthProtocol,
+                        'v3_auth_passphrase' => $snmpV3AuthPassphrase,
+                        'v3_priv_protocol' => $snmpV3PrivProtocol,
+                        'v3_priv_passphrase' => $snmpV3PrivPassphrase
+                    ]
                 ];
                 if ($deviceId !== '') {
                     $updatedSwitch['device_id'] = $deviceId;
+                }
+                if ($credentialMode === 'individual') {
+                    $updatedSwitch['ssh_username'] = $switchUsername;
+                    if ($switchPassword !== '') {
+                        $updatedSwitch['ssh_password'] = $switchPassword;
+                    } elseif (isset($existingSwitch['ssh_password'])) {
+                        $updatedSwitch['ssh_password'] = (string)$existingSwitch['ssh_password'];
+                    }
+                    if ($switchPrivateKey !== '') {
+                        $updatedSwitch['ssh_private_key'] = $switchPrivateKey;
+                    } elseif (isset($existingSwitch['ssh_private_key'])) {
+                        $updatedSwitch['ssh_private_key'] = (string)$existingSwitch['ssh_private_key'];
+                    }
                 }
 
                 $inventory['switches'][$targetIndex] = $updatedSwitch;
@@ -2107,8 +2981,10 @@
                     $automationStore->saveSettings([
                         'ssh_host' => $settings['ssh_host'] ?? '',
                         'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_auth_method' => $settings['ssh_auth_method'] ?? 'password',
                         'ssh_username' => $settings['ssh_username'] ?? '',
                         'ssh_password' => $settings['ssh_password'] ?? '',
+                        'ssh_private_key' => $settings['ssh_private_key'] ?? '',
                         'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
                         'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
                     ]);
@@ -2164,8 +3040,10 @@
                     $automationStore->saveSettings([
                         'ssh_host' => $settings['ssh_host'] ?? '',
                         'ssh_port' => $settings['ssh_port'] ?? 22,
+                        'ssh_auth_method' => $settings['ssh_auth_method'] ?? 'password',
                         'ssh_username' => $settings['ssh_username'] ?? '',
                         'ssh_password' => $settings['ssh_password'] ?? '',
+                        'ssh_private_key' => $settings['ssh_private_key'] ?? '',
                         'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
                         'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
                     ]);
@@ -2225,44 +3103,16 @@
                     die();
                 }
 
-                $automationStore = new AutomationStore();
-                $structured = loadAutomationStructuredSettings($automationStore);
-                $settings = $structured['settings'];
-                $scripts = $structured['scripts'];
-                $inventory = $structured['inventory'];
-
-                if (!isset($scripts['templates']) || !is_array($scripts['templates'])) {
-                    $scripts['templates'] = [];
-                }
-
-                $existingTemplate = [];
-                if (isset($scripts['templates'][$templateId]) && is_array($scripts['templates'][$templateId])) {
-                    $existingTemplate = $scripts['templates'][$templateId];
-                }
-
-                $templatePayload = $existingTemplate;
-                $templatePayload['label'] = $label;
-                $templatePayload['description'] = $description;
-                $templatePayload['supported_profiles'] = $supportedProfiles;
-                $templatePayload['commands'] = $commands;
-                if ($usesDescriptionConvention) {
-                    $templatePayload['uses_description_convention'] = true;
-                } else {
-                    unset($templatePayload['uses_description_convention']);
-                }
-
-                $scripts['templates'][$templateId] = $templatePayload;
-
                 try {
-                    $automationStore->saveSettings([
-                        'ssh_host' => $settings['ssh_host'] ?? '',
-                        'ssh_port' => $settings['ssh_port'] ?? 22,
-                        'ssh_username' => $settings['ssh_username'] ?? '',
-                        'ssh_password' => $settings['ssh_password'] ?? '',
-                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
-                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-                    ]);
-                    $logger->log('automation template override upserted: ' . $templateId, 1, echoToWeb: true);
+                    upsertAutomationTemplateInDb($db_adapter, $templateId, [
+                        'label' => $label,
+                        'description' => $description,
+                        'supported_profiles' => $supportedProfiles,
+                        'commands' => $commands,
+                        'uses_description_convention' => $usesDescriptionConvention,
+                        'variables' => []
+                    ], 'custom');
+                    $logger->log('automation template upserted in data file: ' . $templateId, 1, echoToWeb: true);
                     logAutomationChange($db_adapter, 'UPDATE', 'template_upsert', [
                         'template_id' => $templateId,
                         'commands_count' => count($commands)
@@ -2293,35 +3143,197 @@
                     die();
                 }
 
-                $automationStore = new AutomationStore();
-                $structured = loadAutomationStructuredSettings($automationStore);
-                $settings = $structured['settings'];
-                $scripts = $structured['scripts'];
-                $inventory = $structured['inventory'];
-
-                if (!isset($scripts['templates'][$templateId])) {
-                    $logger->log('automation template delete failed: template not found', 2, echoToWeb: true);
-                    redirectToScriptsTab(getScriptsTabFromRequest());
-                    die();
-                }
-
-                unset($scripts['templates'][$templateId]);
-
                 try {
-                    $automationStore->saveSettings([
-                        'ssh_host' => $settings['ssh_host'] ?? '',
-                        'ssh_port' => $settings['ssh_port'] ?? 22,
-                        'ssh_username' => $settings['ssh_username'] ?? '',
-                        'ssh_password' => $settings['ssh_password'] ?? '',
-                        'scripts_json' => json_encode($scripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
-                        'switch_inventory_json' => json_encode($inventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-                    ]);
-                    $logger->log('automation template override deleted: ' . $templateId, 1, echoToWeb: true);
+                    $deleted = deactivateAutomationTemplateInDb($db_adapter, $templateId);
+                    if (!$deleted) {
+                        $logger->log('automation template delete failed: template not found', 2, echoToWeb: true);
+                        redirectToScriptsTab(getScriptsTabFromRequest());
+                        die();
+                    }
+                    $logger->log('automation template removed from data file: ' . $templateId, 1, echoToWeb: true);
                     logAutomationChange($db_adapter, 'DELETE', 'template_delete', [
                         'template_id' => $templateId
                     ]);
                 } catch (\Exception $e) {
                     $logger->log('automation template delete failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_profile_upsert':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation profile upsert', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $profileId = trim((string)($_POST['profile_id'] ?? ''));
+                $label = trim((string)($_POST['profile_label'] ?? ''));
+                $description = trim((string)($_POST['profile_description'] ?? ''));
+                $enterConfig = trim((string)($_POST['profile_enter_config'] ?? ''));
+                $commit = trim((string)($_POST['profile_commit'] ?? ''));
+                $exitConfig = trim((string)($_POST['profile_exit_config'] ?? ''));
+                $saveCommand = trim((string)($_POST['profile_save'] ?? ''));
+                $writeConfig = trim((string)($_POST['profile_write_config'] ?? ''));
+                $supportsCommit = isset($_POST['profile_supports_commit']) && (string)($_POST['profile_supports_commit']) === '1';
+
+                $snmpEnabled = isset($_POST['profile_snmp_enabled']) && (string)$_POST['profile_snmp_enabled'] === '1';
+                $snmpVersion = trim((string)($_POST['profile_snmp_version'] ?? '2c'));
+                $snmpPort = (int)($_POST['profile_snmp_port'] ?? 161);
+                $snmpTimeout = (int)($_POST['profile_snmp_timeout'] ?? 2);
+                $snmpRetries = (int)($_POST['profile_snmp_retries'] ?? 1);
+                $snmpCommunity = trim((string)($_POST['profile_snmp_community'] ?? ''));
+                $snmpV3Username = trim((string)($_POST['profile_snmp_v3_username'] ?? ''));
+                $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol((string)($_POST['profile_snmp_v3_auth_protocol'] ?? 'SHA'));
+                $snmpV3AuthPassphrase = (string)($_POST['profile_snmp_v3_auth_passphrase'] ?? '');
+                $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol((string)($_POST['profile_snmp_v3_priv_protocol'] ?? 'AES'));
+                $snmpV3PrivPassphrase = (string)($_POST['profile_snmp_v3_priv_passphrase'] ?? '');
+                $defaultMib = trim((string)($_POST['profile_snmp_default_mib'] ?? ''));
+                $mibOverridesRaw = trim((string)($_POST['profile_snmp_mib_overrides'] ?? ''));
+
+                if ($profileId === '' || !preg_match('/^[a-zA-Z0-9_.-]+$/', $profileId)) {
+                    $logger->log('automation profile upsert failed: invalid profile id', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                if ($label === '') {
+                    $logger->log('automation profile upsert failed: label is required', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                if (!in_array($snmpVersion, ['2c', '3'], true)) {
+                    $snmpVersion = '2c';
+                }
+                if ($snmpPort < 1 || $snmpPort > 65535) {
+                    $snmpPort = 161;
+                }
+                if ($snmpTimeout < 1 || $snmpTimeout > 30) {
+                    $snmpTimeout = 2;
+                }
+                if ($snmpRetries < 0 || $snmpRetries > 10) {
+                    $snmpRetries = 1;
+                }
+                $snmpV3AuthProtocol = normalizeSnmpV3AuthProtocol($snmpV3AuthProtocol);
+                $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol($snmpV3PrivProtocol);
+
+                if ($snmpVersion === '3' && $snmpV3Username === '') {
+                    $logger->log('automation profile upsert failed: SNMPv3 requires username', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $mibOverrides = array_values(array_filter(array_map('trim', preg_split('/[\n,]+/', $mibOverridesRaw) ?: []), static function ($value) {
+                    return $value !== '';
+                }));
+
+                try {
+                    upsertAutomationProfileInFile($profileId, [
+                        'label' => $label,
+                        'description' => $description,
+                        'supports_commit' => $supportsCommit,
+                        'enter_config' => $enterConfig,
+                        'commit' => $commit,
+                        'exit_config' => $exitConfig,
+                        'save' => $saveCommand,
+                        'write_config' => $writeConfig,
+                        'snmp' => [
+                            'enabled' => $snmpEnabled,
+                            'version' => $snmpVersion,
+                            'port' => $snmpPort,
+                            'timeout' => $snmpTimeout,
+                            'retries' => $snmpRetries,
+                            'community' => $snmpCommunity,
+                            'v3_username' => $snmpV3Username,
+                            'v3_auth_protocol' => $snmpV3AuthProtocol,
+                            'v3_auth_passphrase' => $snmpV3AuthPassphrase,
+                            'v3_priv_protocol' => $snmpV3PrivProtocol,
+                            'v3_priv_passphrase' => $snmpV3PrivPassphrase,
+                            'default_mib' => $defaultMib,
+                            'mib_overrides' => $mibOverrides
+                        ]
+                    ]);
+                    $logger->log('automation profile upserted in data file: ' . $profileId, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'profile_upsert', [
+                        'profile_id' => $profileId,
+                        'snmp_default_mib' => $defaultMib,
+                        'snmp_mib_overrides' => count($mibOverrides)
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation profile upsert failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_profile_delete':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation profile delete', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $profileId = trim((string)($_POST['profile_id'] ?? ''));
+                if ($profileId === '') {
+                    $logger->log('automation profile delete failed: profile id missing', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $structured = loadAutomationStructuredSettings(new AutomationStore());
+                $inventory = $structured['inventory'];
+                $switches = is_array($inventory['switches'] ?? null) ? $inventory['switches'] : [];
+                foreach ($switches as $switchItem) {
+                    if (!is_array($switchItem)) {
+                        continue;
+                    }
+
+                    if ((string)($switchItem['profile'] ?? '') === $profileId) {
+                        $logger->log('automation profile delete blocked: profile is in use by switch inventory', 2, echoToWeb: true);
+                        redirectToScriptsTab(getScriptsTabFromRequest());
+                        die();
+                    }
+                }
+
+                $templates = fetchAutomationTemplatesFromDb($db_adapter);
+                foreach ($templates as $templateId => $templateData) {
+                    if (!is_array($templateData)) {
+                        continue;
+                    }
+
+                    $supportedProfiles = is_array($templateData['supported_profiles'] ?? null) ? $templateData['supported_profiles'] : [];
+                    if (in_array($profileId, $supportedProfiles, true)) {
+                        $logger->log('automation profile delete blocked: profile is referenced by template ' . $templateId, 2, echoToWeb: true);
+                        redirectToScriptsTab(getScriptsTabFromRequest());
+                        die();
+                    }
+                }
+
+                try {
+                    $deleted = deactivateAutomationProfileInFile($profileId);
+                    if (!$deleted) {
+                        $logger->log('automation profile delete failed: profile not found', 2, echoToWeb: true);
+                        redirectToScriptsTab(getScriptsTabFromRequest());
+                        die();
+                    }
+                    $logger->log('automation profile removed from data file: ' . $profileId, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'DELETE', 'profile_delete', [
+                        'profile_id' => $profileId
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation profile delete failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
                 redirectToScriptsTab(getScriptsTabFromRequest());
@@ -2355,8 +3367,10 @@
                     $automationStore->saveSettings([
                         'ssh_host' => $_POST['ssh_host'] ?? '',
                         'ssh_port' => $_POST['ssh_port'] ?? 22,
+                        'ssh_auth_method' => $_POST['ssh_auth_method'] ?? 'password',
                         'ssh_username' => $_POST['ssh_username'] ?? '',
                         'ssh_password' => $_POST['ssh_password'] ?? '',
+                        'ssh_private_key' => $_POST['ssh_private_key'] ?? '',
                         'scripts_json' => $_POST['scripts_json'] ?? '{}',
                         'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
                     ]);
@@ -2387,13 +3401,46 @@
                 $automationFormDataOverride = [
                     'ssh_host' => $_POST['ssh_host'] ?? '',
                     'ssh_port' => (int)($_POST['ssh_port'] ?? 22),
+                    'ssh_auth_method' => $_POST['ssh_auth_method'] ?? 'password',
                     'ssh_username' => $_POST['ssh_username'] ?? '',
                     'ssh_password' => '',
+                    'ssh_private_key' => $_POST['ssh_private_key'] ?? '',
                     'scripts_json' => $_POST['scripts_json'] ?? '{}',
                     'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
                 ];
 
                 $automationTestResult = runAutomationSshTest($_POST, $automationStore, $logger);
+
+                include_once __DIR__ . '/includes/header.php';
+                $site = 'scripts';
+                $_GET['tab'] = getScriptsTabFromRequest();
+                break;
+            case 'automation_test_snmp':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation snmp test', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $automationFormDataOverride = [
+                    'ssh_host' => $_POST['ssh_host'] ?? '',
+                    'ssh_port' => (int)($_POST['ssh_port'] ?? 22),
+                    'ssh_auth_method' => $_POST['ssh_auth_method'] ?? 'password',
+                    'ssh_username' => $_POST['ssh_username'] ?? '',
+                    'ssh_password' => '',
+                    'ssh_private_key' => $_POST['ssh_private_key'] ?? '',
+                    'scripts_json' => $_POST['scripts_json'] ?? '{}',
+                    'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
+                ];
+
+                $automationTestResult = runAutomationSnmpTest($_POST, $automationStore, $logger);
 
                 include_once __DIR__ . '/includes/header.php';
                 $site = 'scripts';
@@ -2583,14 +3630,6 @@
         cursor: pointer;
     }
 
-    .settings-surface {
-        background: var(--pf-surface-alt);
-        border: 1px solid var(--pf-border);
-        border-radius: 1rem;
-        padding: 1rem;
-        box-shadow: 0 2px 10px rgba(2, 6, 23, 0.25);
-    }
-
     .settings-table-wrap {
         border: 1px solid var(--pf-border);
         border-radius: 0.9rem;
@@ -2609,23 +3648,6 @@
     .settings-data-row:hover {
         background: var(--pf-hover);
     }
-
-    .settings-icon-btn {
-        height: 2.1rem;
-        width: 2.1rem;
-        border-radius: 9999px;
-        color: #ffffff;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-    }
-
-    .settings-icon-btn i[data-lucide] {
-        width: 0.95rem;
-        height: 0.95rem;
-    }
-
 </style>
 <div class="mx-4 mb-4 mt-0 grid grid-cols-1 gap-4 lg:h-[calc(100vh-7.2rem)] lg:grid-cols-[minmax(220px,18rem)_minmax(0,1fr)] lg:items-stretch">
     <div class="settings-sidebar flex min-h-0 flex-col gap-6 overflow-y-auto rounded-2xl border p-4" style="background: var(--pf-surface); border-color: var(--pf-border);">  
@@ -2645,7 +3667,8 @@
             <?php if ($role == 'admin' && $site == 'scripts') : ?>
                 <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
                     <a href="?site=scripts&tab=switch"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'switch') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="switch">Switch/SSH</li></a>
-                    <a href="?site=scripts&tab=templates"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'templates') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="templates">Template Overrides</li></a>
+                    <a href="?site=scripts&tab=profiles"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'profiles') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="profiles">Profile</li></a>
+                    <a href="?site=scripts&tab=templates"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'templates') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="templates">Templates</li></a>
                     <a href="?site=scripts&tab=history"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'history') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="history">Historie</li></a>
                 </div>
             <?php endif; ?>
@@ -2808,7 +3831,7 @@ switch ($site) {
 
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <div class="settings-surface max-w-3xl">
+            <div class="max-w-3xl">
                 <div class="text-xl font-bold pb-2">Benachrichtigungen</div>
                 <p class="text-sm text-gray-600 pb-6">Globales Benachrichtigungssystem mit Levels und kanalbasiertem Versand (aktuell: Mail).</p>
                 {$notificationFeedbackHtml}
@@ -2981,7 +4004,7 @@ switch ($site) {
         echo '<div class="h-fit w-full p-2 space-y-6">';
 
         echo '<div class="cfg-section-system' . ($activeConfigTab !== 'system' ? ' hidden' : '') . '">';
-        echo '<section id="cfg-db" class="settings-surface">';
+        echo '<section id="cfg-db">';
         echo '<div class="text-xl font-bold pb-1">Datenbank</div>';
         echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes DB Passwort beibehalten.</p>';
         echo $renderFeedback($cfgFeedback, 'db');
@@ -3002,7 +4025,7 @@ switch ($site) {
         echo '</form>';
         echo '</section>';
 
-        echo '<section id="cfg-ldap" class="settings-surface">';
+        echo '<section id="cfg-ldap">';
         echo '<div class="text-xl font-bold pb-1">LDAP</div>';
         echo '<p class="text-sm text-gray-500 pb-4">Leeres Bind-Passwort bedeutet: bestehendes LDAP Bind Passwort beibehalten.</p>';
         echo $renderFeedback($cfgFeedback, 'ldap');
@@ -3027,7 +4050,7 @@ switch ($site) {
         echo '</form>';
         echo '</section>';
 
-        echo '<section id="cfg-mail" class="settings-surface">';
+        echo '<section id="cfg-mail">';
         echo '<div class="text-xl font-bold pb-1">Mail</div>';
         echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes Mail Passwort beibehalten.</p>';
         echo $renderFeedback($cfgFeedback, 'mail');
@@ -3064,7 +4087,7 @@ switch ($site) {
             $currentRetentionDays = 30;
         }
 
-        echo '<section id="cfg-notification" class="settings-surface">';
+        echo '<section id="cfg-notification">';
         echo '<div class="text-xl font-bold pb-1">Benachrichtigungen</div>';
         echo '<p class="text-sm text-gray-500 pb-4">Zeitzone und Uhrzeit f&uuml;r den t&auml;glichen Benachrichtigungsversand.</p>';
         echo $renderFeedback($cfgFeedback, 'notification');
@@ -3272,7 +4295,7 @@ switch ($site) {
         $results = $db_adapter->db_query($query);
 
         if ($results) {
-            echo "<div class='settings-surface'><div class='text-xl font-bold pb-4'>Accounts</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<div class='text-xl font-bold pb-4'>Accounts</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
@@ -3327,7 +4350,7 @@ switch ($site) {
 
                 $uuid = NULL;}
 
-            echo "</tbody></table></div></div>";
+            echo "</tbody></table></div>";
         } else {
             echo "No results found.";
         }
@@ -3335,7 +4358,7 @@ switch ($site) {
         $results = $allRoleRows;
 
         if ($results) {
-            echo "<div class='settings-surface'><div class='text-xl font-bold pb-4'>Roles</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<div class='text-xl font-bold pb-4'>Roles</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
@@ -3348,7 +4371,7 @@ switch ($site) {
                 }
                 echo "</tr>";
             }
-            echo "</tbody></table></div></div>";
+            echo "</tbody></table></div>";
         } else {
             echo "No results found.";
         }
@@ -3386,7 +4409,7 @@ switch ($site) {
         });
 
         if (!empty($results)) {
-            echo "<div class='settings-surface'><div class='text-xl font-bold pb-2'>Access Rights</div>";
+            echo "<div class='text-xl font-bold pb-2'>Access Rights</div>";
             echo "<p class='text-sm text-gray-600 pb-4'>Rechte direkt per Klick setzen: Read (4), Write (2), Execute (1).</p>";
             echo "<div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
@@ -3424,7 +4447,7 @@ switch ($site) {
                 echo "</td>";
                 echo "</tr>";
             }
-            echo "</tbody></table></div></div>";
+            echo "</tbody></table></div>";
         } else {
             echo "No access rights found.";
         }
@@ -3534,21 +4557,27 @@ HTML;
         $automationSettings = $automationStore->getSettings();
         $csrf = $auth->csrf();
 
+        try {
+            migrateLegacyTemplateOverridesToDb($db_adapter, $automationStore, $logger);
+            $automationSettings = $automationStore->getSettings();
+        } catch (\Throwable $ignored) {
+            // Ignore migration issues in UI rendering path.
+        }
+
         if (is_array($automationFormDataOverride)) {
             $automationSettings = array_merge($automationSettings, $automationFormDataOverride);
         }
 
         $sshHost = htmlspecialchars((string)($automationSettings['ssh_host'] ?? ''), ENT_QUOTES, 'UTF-8');
         $sshPort = (int)($automationSettings['ssh_port'] ?? 22);
+        $sshAuthMethod = (string)($automationSettings['ssh_auth_method'] ?? 'password');
         $sshUsername = htmlspecialchars((string)($automationSettings['ssh_username'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $sshPrivateKey = htmlspecialchars((string)($automationSettings['ssh_private_key'] ?? ''), ENT_QUOTES, 'UTF-8');
         $scriptsJson = trim((string)($automationSettings['scripts_json'] ?? ''));
         if ($scriptsJson === '') {
             $scriptsJson = "{}";
         }
         $decodedScriptsConfig = decodeJsonObject($scriptsJson, []);
-        if (!isset($decodedScriptsConfig['templates']) || !is_array($decodedScriptsConfig['templates'])) {
-            $decodedScriptsConfig['templates'] = [];
-        }
         $scriptsJsonEscaped = htmlspecialchars($scriptsJson, ENT_QUOTES, 'UTF-8');
         $switchInventoryJson = trim((string)($automationSettings['switch_inventory_json'] ?? ''));
         if ($switchInventoryJson === '') {
@@ -3560,7 +4589,40 @@ HTML;
         }
         $switchInventoryJsonEscaped = htmlspecialchars($switchInventoryJson, ENT_QUOTES, 'UTF-8');
         $passwordHint = !empty($automationSettings['ssh_password']) ? 'Gespeichert (leer lassen zum Beibehalten)' : 'Noch nicht gesetzt';
+        $privateKeyHint = !empty($automationSettings['ssh_private_key']) ? 'Gespeichert (leer lassen zum Beibehalten)' : 'Noch nicht gesetzt';
         $activeScriptsTab = getScriptsTabFromRequest();
+
+        $dbTemplateOverrides = [];
+        try {
+            $dbTemplateOverrides = fetchAutomationTemplatesFromDb($db_adapter);
+        } catch (\Throwable $ignored) {
+            $dbTemplateOverrides = [];
+        }
+
+        $itamSwitchOptions = [];
+        try {
+            $itamSwitchOptions = $db_adapter->db_query(
+                "SELECT device_uuid, device_metadata_caption, device_location_metadata_caption, device_location
+                 FROM device_details
+                 WHERE LOWER(COALESCE(device_type, '')) LIKE '%switch%'
+                 ORDER BY device_metadata_caption ASC"
+            ) ?: [];
+        } catch (\Throwable $ignored) {
+            $itamSwitchOptions = [];
+        }
+
+        if (empty($itamSwitchOptions)) {
+            try {
+                $itamSwitchOptions = $db_adapter->db_query(
+                    "SELECT device_uuid, device_metadata_caption, device_location_metadata_caption, device_location
+                     FROM device_details
+                     ORDER BY device_metadata_caption ASC
+                     LIMIT 300"
+                ) ?: [];
+            } catch (\Throwable $ignored) {
+                $itamSwitchOptions = [];
+            }
+        }
 
         $historyRows = [];
         try {
@@ -3647,8 +4709,8 @@ HTML;
             $historyRowsHtml = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-500">Noch keine Historie verfuegbar.</td></tr>';
         }
 
-        $automationConfig = new Automation();
-        $availableProfiles = array_keys($automationConfig->getProfiles());
+        $profileDefinitions = fetchAutomationProfilesFromFile();
+        $availableProfiles = array_keys($profileDefinitions);
         if (empty($availableProfiles)) {
             $availableProfiles = ['huawei_core_commit', 'huawei_access_no_commit'];
         }
@@ -3657,6 +4719,113 @@ HTML;
         foreach ($availableProfiles as $profileId) {
             $profileEscaped = htmlspecialchars((string)$profileId, ENT_QUOTES, 'UTF-8');
             $profileOptionsHtml .= "<option value=\"{$profileEscaped}\">{$profileEscaped}</option>";
+        }
+
+        $profileSnmpDefaultsByProfile = [];
+        $profileRowsHtml = '';
+        foreach ($profileDefinitions as $profileId => $profileDefinition) {
+            if (!is_array($profileDefinition)) {
+                continue;
+            }
+
+            $profileIdEscaped = htmlspecialchars((string)$profileId, ENT_QUOTES, 'UTF-8');
+            $profileLabelEscaped = htmlspecialchars((string)($profileDefinition['label'] ?? $profileId), ENT_QUOTES, 'UTF-8');
+            $profileDescriptionEscaped = htmlspecialchars((string)($profileDefinition['description'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $enterConfigEscaped = htmlspecialchars((string)($profileDefinition['enter_config'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $commitEscaped = htmlspecialchars((string)($profileDefinition['commit'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $exitConfigEscaped = htmlspecialchars((string)($profileDefinition['exit_config'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $saveEscaped = htmlspecialchars((string)($profileDefinition['save'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $writeConfigEscaped = htmlspecialchars((string)($profileDefinition['write_config'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $supportsCommit = !empty($profileDefinition['supports_commit']) ? '1' : '0';
+
+            $snmpConfig = is_array($profileDefinition['snmp'] ?? null) ? $profileDefinition['snmp'] : [];
+            $snmpEnabled = !empty($snmpConfig['enabled']) ? '1' : '0';
+            $snmpVersion = htmlspecialchars((string)($snmpConfig['version'] ?? '2c'), ENT_QUOTES, 'UTF-8');
+            $snmpPort = (int)($snmpConfig['port'] ?? 161);
+            $snmpTimeout = (int)($snmpConfig['timeout'] ?? 2);
+            $snmpRetries = (int)($snmpConfig['retries'] ?? 1);
+            $snmpCommunityEscaped = htmlspecialchars((string)($snmpConfig['community'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpV3UsernameEscaped = htmlspecialchars((string)($snmpConfig['v3_username'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpV3AuthProtocolEscaped = htmlspecialchars((string)($snmpConfig['v3_auth_protocol'] ?? 'SHA'), ENT_QUOTES, 'UTF-8');
+            $snmpV3AuthPassphraseEscaped = htmlspecialchars((string)($snmpConfig['v3_auth_passphrase'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpV3PrivProtocolEscaped = htmlspecialchars((string)($snmpConfig['v3_priv_protocol'] ?? 'AES'), ENT_QUOTES, 'UTF-8');
+            $snmpV3PrivPassphraseEscaped = htmlspecialchars((string)($snmpConfig['v3_priv_passphrase'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $defaultMibEscaped = htmlspecialchars((string)($snmpConfig['default_mib'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $mibOverridesList = array_values((array)($snmpConfig['mib_overrides'] ?? []));
+            $mibOverridesTextEscaped = htmlspecialchars(implode("\n", array_map('strval', $mibOverridesList)), ENT_QUOTES, 'UTF-8');
+            $mibOverridesCount = count($mibOverridesList);
+
+            $profileSnmpDefaultsByProfile[$profileId] = [
+                'default_mib' => (string)($snmpConfig['default_mib'] ?? ''),
+                'version' => (string)($snmpConfig['version'] ?? '2c'),
+                'community' => (string)($snmpConfig['community'] ?? ''),
+                'v3_username' => (string)($snmpConfig['v3_username'] ?? ''),
+                'v3_auth_protocol' => (string)($snmpConfig['v3_auth_protocol'] ?? 'SHA'),
+                'v3_auth_passphrase' => (string)($snmpConfig['v3_auth_passphrase'] ?? ''),
+                'v3_priv_protocol' => (string)($snmpConfig['v3_priv_protocol'] ?? 'AES'),
+                'v3_priv_passphrase' => (string)($snmpConfig['v3_priv_passphrase'] ?? '')
+            ];
+
+            $profileRowsHtml .= <<<HTML
+                <tr class="border-b border-gray-100">
+                    <td class="py-2 px-3 font-mono text-xs text-gray-900">{$profileIdEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-800">{$profileLabelEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-700">{$snmpVersion}</td>
+                    <td class="py-2 px-3 font-mono text-xs text-gray-700">{$defaultMibEscaped}</td>
+                    <td class="py-2 px-3 text-sm text-gray-700">{$mibOverridesCount}</td>
+                    <td class="py-2 px-3 text-right whitespace-nowrap">
+                        <button
+                            type="button"
+                            class="settings-icon-btn bg-amber-500 hover:bg-amber-700"
+                            title="Bearbeiten"
+                            aria-label="Bearbeiten"
+                            data-profile-id="{$profileIdEscaped}"
+                            data-profile-label="{$profileLabelEscaped}"
+                            data-profile-description="{$profileDescriptionEscaped}"
+                            data-profile-enter-config="{$enterConfigEscaped}"
+                            data-profile-commit="{$commitEscaped}"
+                            data-profile-exit-config="{$exitConfigEscaped}"
+                            data-profile-save="{$saveEscaped}"
+                            data-profile-write-config="{$writeConfigEscaped}"
+                            data-profile-supports-commit="{$supportsCommit}"
+                            data-profile-snmp-enabled="{$snmpEnabled}"
+                            data-profile-snmp-version="{$snmpVersion}"
+                            data-profile-snmp-port="{$snmpPort}"
+                            data-profile-snmp-timeout="{$snmpTimeout}"
+                            data-profile-snmp-retries="{$snmpRetries}"
+                            data-profile-snmp-community="{$snmpCommunityEscaped}"
+                            data-profile-snmp-v3-username="{$snmpV3UsernameEscaped}"
+                            data-profile-snmp-v3-auth-protocol="{$snmpV3AuthProtocolEscaped}"
+                            data-profile-snmp-v3-auth-passphrase="{$snmpV3AuthPassphraseEscaped}"
+                            data-profile-snmp-v3-priv-protocol="{$snmpV3PrivProtocolEscaped}"
+                            data-profile-snmp-v3-priv-passphrase="{$snmpV3PrivPassphraseEscaped}"
+                            data-profile-snmp-default-mib="{$defaultMibEscaped}"
+                            data-profile-snmp-mib-overrides="{$mibOverridesTextEscaped}"
+                            onclick="loadProfileDefinition(this)">
+                            <i data-lucide="pencil"></i>
+                        </button>
+                        <button class="settings-icon-btn bg-red-500 hover:bg-red-700 ml-2" type="button" title="Loeschen" aria-label="Loeschen" onclick="submitProfileDelete('{$profileIdEscaped}')"><i data-lucide="trash-2"></i></button>
+                    </td>
+                </tr>
+            HTML;
+        }
+        if ($profileRowsHtml === '') {
+            $profileRowsHtml = '<tr><td colspan="6" class="py-4 px-3 text-sm text-gray-500">Noch keine Profile vorhanden.</td></tr>';
+        }
+
+        $itamDeviceOptionsHtml = '<option value="">(kein ITAM Geraet verknuepft)</option>';
+        foreach ($itamSwitchOptions as $itamDeviceRow) {
+            $deviceUuid = htmlspecialchars((string)($itamDeviceRow['device_uuid'] ?? ''), ENT_QUOTES, 'UTF-8');
+            if ($deviceUuid === '') {
+                continue;
+            }
+            $deviceCaption = htmlspecialchars((string)($itamDeviceRow['device_metadata_caption'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $locationCaption = htmlspecialchars((string)($itamDeviceRow['device_location_metadata_caption'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $label = trim($deviceCaption . ($locationCaption !== '' ? ' | ' . $locationCaption : ''));
+            if ($label === '') {
+                $label = $deviceUuid;
+            }
+            $itamDeviceOptionsHtml .= '<option value="' . $deviceUuid . '">' . $label . '</option>';
         }
 
         $inventoryRowsHtml = '';
@@ -3669,6 +4838,22 @@ HTML;
             $mgmtIpEscaped = htmlspecialchars((string)($switchItem['mgmt_ip'] ?? ''), ENT_QUOTES, 'UTF-8');
             $profileEscaped = htmlspecialchars((string)($switchItem['profile'] ?? ''), ENT_QUOTES, 'UTF-8');
             $deviceEscaped = htmlspecialchars((string)($switchItem['device_id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $credentialModeEscaped = htmlspecialchars((string)($switchItem['credential_mode'] ?? 'global'), ENT_QUOTES, 'UTF-8');
+            $switchAuthMethodEscaped = htmlspecialchars((string)($switchItem['ssh_auth_method'] ?? 'password'), ENT_QUOTES, 'UTF-8');
+            $switchUsernameEscaped = htmlspecialchars((string)($switchItem['ssh_username'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpConfig = is_array($switchItem['snmp'] ?? null) ? $switchItem['snmp'] : [];
+            $snmpEnabledEscaped = !empty($snmpConfig['enabled']) ? '1' : '0';
+            $snmpVersionEscaped = htmlspecialchars((string)($snmpConfig['version'] ?? '2c'), ENT_QUOTES, 'UTF-8');
+            $snmpCommunityEscaped = htmlspecialchars((string)($snmpConfig['community'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpMibEscaped = htmlspecialchars((string)($snmpConfig['mib'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpPortEscaped = htmlspecialchars((string)($snmpConfig['port'] ?? 161), ENT_QUOTES, 'UTF-8');
+            $snmpTimeoutEscaped = htmlspecialchars((string)($snmpConfig['timeout'] ?? 2), ENT_QUOTES, 'UTF-8');
+            $snmpRetriesEscaped = htmlspecialchars((string)($snmpConfig['retries'] ?? 1), ENT_QUOTES, 'UTF-8');
+            $snmpV3UsernameEscaped = htmlspecialchars((string)($snmpConfig['v3_username'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpV3AuthProtocolEscaped = htmlspecialchars((string)($snmpConfig['v3_auth_protocol'] ?? 'SHA'), ENT_QUOTES, 'UTF-8');
+            $snmpV3AuthPassphraseEscaped = htmlspecialchars((string)($snmpConfig['v3_auth_passphrase'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $snmpV3PrivProtocolEscaped = htmlspecialchars((string)($snmpConfig['v3_priv_protocol'] ?? 'AES'), ENT_QUOTES, 'UTF-8');
+            $snmpV3PrivPassphraseEscaped = htmlspecialchars((string)($snmpConfig['v3_priv_passphrase'] ?? ''), ENT_QUOTES, 'UTF-8');
             $nameDataEscaped = htmlspecialchars((string)($switchItem['name'] ?? ''), ENT_QUOTES, 'UTF-8');
             $mgmtIpDataEscaped = htmlspecialchars((string)($switchItem['mgmt_ip'] ?? ''), ENT_QUOTES, 'UTF-8');
             $profileDataEscaped = htmlspecialchars((string)($switchItem['profile'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -3677,24 +4862,26 @@ HTML;
 
             $inventoryRowsHtml .= <<<HTML
                 <tr class="border-b border-gray-100">
-                    <td class="py-2 px-3 font-medium text-gray-900">{$nameEscaped}</td>
-                    <td class="py-2 px-3 font-mono text-sm text-gray-700">{$mgmtIpEscaped}</td>
-                    <td class="py-2 px-3"><span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold">{$profileEscaped}</span></td>
-                    <td class="py-2 px-3 text-sm text-gray-700">{$deviceEscaped}</td>
-                    <td class="py-2 px-3 text-right">
-                        <button class="settings-icon-btn bg-emerald-500 hover:bg-emerald-700 mr-2" type="button" title="SSH testen" aria-label="SSH testen" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" onclick="submitInventorySshTest(this)"><i data-lucide="terminal"></i></button>
-                        <button class="settings-icon-btn bg-amber-500 hover:bg-amber-700 mr-2" type="button" title="Bearbeiten" aria-label="Bearbeiten" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" onclick="loadInventoryEntry(this)"><i data-lucide="pencil"></i></button>
-                        <button class="settings-icon-btn bg-red-500 hover:bg-red-700" type="button" title="Loeschen" aria-label="Loeschen" onclick="submitInventoryDelete({$indexValue})"><i data-lucide="trash-2"></i></button>
+                    <td class="p-2 border-b font-medium text-gray-900">{$nameEscaped}</td>
+                    <td class="p-2 border-b font-mono text-sm text-gray-700">{$mgmtIpEscaped}</td>
+                    <td class="p-2 border-b"><span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold">{$profileEscaped}</span></td>
+                    <td class="p-2 border-b text-sm text-gray-700">{$deviceEscaped}</td>
+                    <td class="p-2 border-b text-xs text-gray-700">{$credentialModeEscaped}/{$switchAuthMethodEscaped}</td>
+                    <td class="p-2 border-b flex flex-row gap-2">
+                        <button class="h-10 w-10 rounded-full bg-emerald-500 hover:bg-emerald-700 text-white flex items-center justify-center" type="button" title="SSH testen" aria-label="SSH testen" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-credential-mode="{$credentialModeEscaped}" data-switch-auth-method="{$switchAuthMethodEscaped}" data-switch-ssh-username="{$switchUsernameEscaped}" onclick="submitInventorySshTest(this)"><i data-lucide="terminal"></i></button>
+                        <button class="h-10 w-10 rounded-full bg-cyan-500 hover:bg-cyan-700 text-white flex items-center justify-center" type="button" title="SNMP testen" aria-label="SNMP testen" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-snmp-version="{$snmpVersionEscaped}" data-switch-snmp-community="{$snmpCommunityEscaped}" data-switch-snmp-mib="{$snmpMibEscaped}" data-switch-snmp-port="{$snmpPortEscaped}" data-switch-snmp-timeout="{$snmpTimeoutEscaped}" data-switch-snmp-retries="{$snmpRetriesEscaped}" data-switch-snmp-v3-username="{$snmpV3UsernameEscaped}" data-switch-snmp-v3-auth-protocol="{$snmpV3AuthProtocolEscaped}" data-switch-snmp-v3-priv-protocol="{$snmpV3PrivProtocolEscaped}" onclick="submitInventorySnmpTest(this)"><i data-lucide="activity"></i></button>
+                        <button class="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-700 text-white flex items-center justify-center" type="button" title="Bearbeiten" aria-label="Bearbeiten" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" data-switch-credential-mode="{$credentialModeEscaped}" data-switch-auth-method="{$switchAuthMethodEscaped}" data-switch-ssh-username="{$switchUsernameEscaped}" data-switch-snmp-enabled="{$snmpEnabledEscaped}" data-switch-snmp-version="{$snmpVersionEscaped}" data-switch-snmp-community="{$snmpCommunityEscaped}" data-switch-snmp-mib="{$snmpMibEscaped}" data-switch-snmp-v3-username="{$snmpV3UsernameEscaped}" data-switch-snmp-v3-auth-protocol="{$snmpV3AuthProtocolEscaped}" data-switch-snmp-v3-priv-protocol="{$snmpV3PrivProtocolEscaped}" onclick="loadInventoryEntry(this)"><i data-lucide="pencil"></i></button>
+                        <button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center" type="button" title="Loeschen" aria-label="Loeschen" onclick="submitInventoryDelete({$indexValue})"><i data-lucide="trash-2"></i></button>
                     </td>
                 </tr>
             HTML;
         }
         if ($inventoryRowsHtml === '') {
-            $inventoryRowsHtml = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-500">Noch keine Switch-Eintraege vorhanden.</td></tr>';
+            $inventoryRowsHtml = '<tr><td colspan="6" class="py-4 px-3 text-sm text-gray-500">Noch keine Switch-Eintraege vorhanden.</td></tr>';
         }
 
         $templateRowsHtml = '';
-        foreach ($decodedScriptsConfig['templates'] as $templateId => $templateOverride) {
+        foreach ($dbTemplateOverrides as $templateId => $templateOverride) {
             if (!is_array($templateOverride)) {
                 continue;
             }
@@ -3748,377 +4935,843 @@ HTML;
                 ? 'bg-green-50 border-green-200 text-green-900'
                 : 'bg-red-50 border-red-200 text-red-900';
             $testOutputEscaped = htmlspecialchars((string)$automationTestResult['output'], ENT_QUOTES, 'UTF-8');
-            $testOutputHtml = "<div class=\"rounded-2xl border p-4 {$testStateClass}\"><div class=\"text-sm font-semibold pb-2\">SSH Test Output</div><pre class=\"text-xs whitespace-pre-wrap leading-5\">{$testOutputEscaped}</pre></div>";
+            $testTitleEscaped = htmlspecialchars((string)($automationTestResult['title'] ?? 'Test Output'), ENT_QUOTES, 'UTF-8');
+            $testOutputHtml = "<div class=\"rounded-2xl border p-4 {$testStateClass}\"><div class=\"text-sm font-semibold pb-2\">{$testTitleEscaped}</div><pre class=\"text-xs whitespace-pre-wrap leading-5\">{$testOutputEscaped}</pre></div>";
+        }
+
+        $globalAuthPasswordSelected = ($sshAuthMethod === 'key') ? '' : 'selected';
+        $globalAuthKeySelected = ($sshAuthMethod === 'key') ? 'selected' : '';
+        $profileSnmpDefaultsJson = json_encode($profileSnmpDefaultsByProfile, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($profileSnmpDefaultsJson)) {
+            $profileSnmpDefaultsJson = '{}';
         }
 
         echo <<<HTML
-        <div class="grid grid-cols-1 gap-6">
-            <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
-                <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Skript-Overrides werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert.</p>
-                {$testOutputHtml}
-                <form action="?set=automation_scripts" method="post">
-                    <input type="hidden" name="csrf" value="$csrf">
-                    <input type="hidden" id="scripts_active_tab" name="scripts_active_tab" value="$activeScriptsTab">
+        <div class="h-fit w-full p-4">
+            <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
+            <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Switch-Inventar werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert. Templates werden in <span class="font-semibold">data/automation/automation.json</span> gepflegt.</p>
+            {$testOutputHtml}
+            <form action="?set=automation_scripts" method="post">
+                <input type="hidden" name="csrf" value="$csrf">
+                <input type="hidden" id="scripts_active_tab" name="scripts_active_tab" value="$activeScriptsTab">
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
-                        <div>
-                            <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
-                        </div>
-                        <div>
-                            <label class="block mb-2 text-sm font-semibold" for="ssh_port">SSH Port</label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_port" type="number" min="1" max="65535" name="ssh_port" value="$sshPort">
-                        </div>
-                        <div>
-                            <label class="block mb-2 text-sm font-semibold" for="ssh_username">SSH Username</label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_username" type="text" name="ssh_username" value="$sshUsername" placeholder="netadmin">
-                        </div>
-                        <div>
-                            <label class="block mb-2 text-sm font-semibold" for="ssh_password">SSH Password</label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_password" type="password" name="ssh_password" placeholder="$passwordHint">
-                            <p class="text-xs text-gray-500 mt-2">$passwordHint</p>
-                        </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
                     </div>
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_port">SSH Port</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_port" type="number" min="1" max="65535" name="ssh_port" value="$sshPort">
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_auth_method">Globale SSH Auth Methode</label>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_auth_method" name="ssh_auth_method">
+                            <option value="password" {$globalAuthPasswordSelected}>Passwort</option>
+                            <option value="key" {$globalAuthKeySelected}>SSH Key</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_username">SSH Username</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_username" type="text" name="ssh_username" value="$sshUsername" placeholder="netadmin">
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_password">SSH Password</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_password" type="password" name="ssh_password" placeholder="$passwordHint">
+                        <p class="text-xs text-gray-500 mt-2">$passwordHint</p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_private_key">SSH Private Key (PEM, optional)</label>
+                        <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-xs" id="ssh_private_key" name="ssh_private_key" rows="6" placeholder="$privateKeyHint">$sshPrivateKey</textarea>
+                        <p class="text-xs text-gray-500 mt-2">$privateKeyHint</p>
+                    </div>
+                </div>
 
-                    <div class="pb-6 scripts-section-switch">
-                        <div class="flex items-center justify-between pb-2">
-                            <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
-                        </div>
-                        <div class="border border-gray-200 rounded-2xl overflow-hidden">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 text-gray-700">
-                                    <tr>
-                                        <th class="py-2 px-3">Name</th>
-                                        <th class="py-2 px-3">Mgmt IP</th>
-                                        <th class="py-2 px-3">Profil</th>
-                                        <th class="py-2 px-3">Device ID</th>
-                                        <th class="py-2 px-3 text-right">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {$inventoryRowsHtml}
-                                </tbody>
-                            </table>
-                        </div>
-                        <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. Optional: device_id (UUID des verknuepften ITAM-Geraets).</p>
+                <div class="pb-6 scripts-section-switch">
+                    <div class="flex items-center justify-between pb-2">
+                        <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
+                    </div>
+                    <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-700">
+                                <tr>
+                                    <th class="py-2 px-3">Name</th>
+                                    <th class="py-2 px-3">Mgmt IP</th>
+                                    <th class="py-2 px-3">Profil</th>
+                                    <th class="py-2 px-3">Device ID</th>
+                                    <th class="py-2 px-3">Credentials</th>
+                                    <th class="py-2 px-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {$inventoryRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. ITAM-Verknuepfung per Dropdown, Credentials global oder individuell.</p>
 
-                        <input type="hidden" id="switch_original_name" value="">
-                        <div class="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_name" placeholder="SW-Core-01" required>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_mgmt_ip" placeholder="10.0.0.10" required>
-                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_profile" required>
-                                {$profileOptionsHtml}
+                    <input type="hidden" id="switch_original_name" value="">
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_name" placeholder="SW-Core-01" required>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_mgmt_ip" placeholder="10.0.0.10" required>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_profile" required>
+                            {$profileOptionsHtml}
+                        </select>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_device_id">{$itamDeviceOptionsHtml}</select>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_credential_mode">
+                            <option value="global">globale Credentials</option>
+                            <option value="individual">individuelle Credentials</option>
+                        </select>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_auth_method">
+                            <option value="password">Passwort</option>
+                            <option value="key">SSH Key</option>
+                        </select>
+                    </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_ssh_username" placeholder="individueller SSH Username">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="password" id="switch_ssh_password" placeholder="individuelles SSH Passwort (optional)">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_snmp_community" placeholder="SNMP Community (v2c)">
+                    </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-5 gap-3">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_snmp_v3_username" placeholder="SNMPv3 Username">
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_snmp_v3_auth_protocol">
+                            <option value="SHA">Auth SHA</option>
+                            <option value="MD5">Auth MD5</option>
+                            <option value="SHA224">Auth SHA224</option>
+                            <option value="SHA256">Auth SHA256</option>
+                            <option value="SHA384">Auth SHA384</option>
+                            <option value="SHA512">Auth SHA512</option>
+                        </select>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="password" id="switch_snmp_v3_auth_passphrase" placeholder="SNMPv3 Auth Passphrase">
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_snmp_v3_priv_protocol">
+                            <option value="AES">Priv AES</option>
+                            <option value="AES128">Priv AES128</option>
+                            <option value="AES192">Priv AES192</option>
+                            <option value="AES256">Priv AES256</option>
+                            <option value="DES">Priv DES</option>
+                        </select>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="password" id="switch_snmp_v3_priv_passphrase" placeholder="SNMPv3 Priv Passphrase">
+                    </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-1 gap-3">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" type="text" id="switch_snmp_mib" placeholder="SNMP MIB (optional, z. B. IF-MIB)">
+                    </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-xs" id="switch_ssh_private_key" rows="4" placeholder="individueller SSH Private Key (optional)"></textarea>
+                        <div class="flex flex-col gap-3">
+                            <label class="inline-flex items-center gap-2"><input type="checkbox" id="switch_snmp_enabled"> SNMP fuer Switch aktivieren</label>
+                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_snmp_version">
+                                <option value="2c">SNMP v2c</option>
+                                <option value="3">SNMP v3</option>
                             </select>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_device_id" placeholder="optional UUID">
-                            <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">Switch hinzufuegen</button>
-                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">Formular leeren</button>
                         </div>
                     </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <button class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitCurrentSnmpTest()">SNMP testen</button>
+                        <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">Switch hinzufuegen</button>
+                        <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">Formular leeren</button>
+                    </div>
+                </div>
 
-                    <div class="pb-6 scripts-section-template">
-                        <div class="flex items-center justify-between pb-2">
-                            <label class="block text-sm font-semibold">Template Overrides (Grafische Verwaltung)</label>
-                        </div>
-                        <div class="border border-gray-200 rounded-2xl overflow-hidden">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 text-gray-700">
-                                    <tr>
-                                        <th class="py-2 px-3">Template ID</th>
-                                        <th class="py-2 px-3">Label</th>
-                                        <th class="py-2 px-3">Profiles</th>
-                                        <th class="py-2 px-3">Commands</th>
-                                        <th class="py-2 px-3 text-right">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {$templateRowsHtml}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="mt-4 space-y-3" id="template_override_form">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                    <label class="block mb-1 text-xs font-semibold" for="template_id">Template ID</label>
-                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_id" type="text" placeholder="my_custom_template" required>
-                                </div>
-                                <div>
-                                    <label class="block mb-1 text-xs font-semibold" for="template_label">Label</label>
-                                    <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="Mein Template" required>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block mb-1 text-xs font-semibold" for="template_description">Beschreibung</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="Kurze Beschreibung">
-                            </div>
-                            <div>
-                                <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">Supported Profiles (comma-separated)</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_supported_profiles" type="text" placeholder="huawei_core_commit,huawei_access_no_commit">
-                            </div>
-                            <div>
-                                <label class="block mb-1 text-xs font-semibold" for="template_commands">Commands (eine Zeile = ein Command)</label>
-                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_commands" rows="8" placeholder="interface {{interface}}&#10;shutdown&#10;quit" required></textarea>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <input id="template_uses_description_convention" type="checkbox" value="1">
-                                <label for="template_uses_description_convention" class="text-xs text-gray-700">Description Convention verwenden</label>
-                            </div>
-                            <div class="flex items-center justify-between gap-3">
-                                <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">Formular leeren</button>
-                                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">Template speichern</button>
-                            </div>
-                        </div>
+                <div class="pb-6 scripts-section-profile">
+                    <div class="flex items-center justify-between pb-2">
+                        <label class="block text-sm font-semibold">Profile inkl. SNMP/MIB (Grafische Verwaltung)</label>
+                    </div>
+                    <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-700">
+                                <tr>
+                                    <th class="py-2 px-3">Profile ID</th>
+                                    <th class="py-2 px-3">Label</th>
+                                    <th class="py-2 px-3">SNMP Version</th>
+                                    <th class="py-2 px-3">Default MIB</th>
+                                    <th class="py-2 px-3">MIB Overrides</th>
+                                    <th class="py-2 px-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {$profileRowsHtml}
+                            </tbody>
+                        </table>
                     </div>
 
-                    <div class="pb-6 scripts-section-history">
-                        <div class="flex items-center justify-between pb-2">
-                            <label class="block text-sm font-semibold">Aenderungshistorie (letzte 30)</label>
-                        </div>
-                        <div class="pb-3">
-                            <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="Historie filtern: Benutzer, Action, Operation, Details..." oninput="filterHistoryRows()">
-                        </div>
-                        <div class="border border-gray-200 rounded-2xl overflow-hidden">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 text-gray-700">
-                                    <tr>
-                                        <th class="py-2 px-3">Zeit</th>
-                                        <th class="py-2 px-3">Benutzer</th>
-                                        <th class="py-2 px-3">Operation</th>
-                                        <th class="py-2 px-3">Action</th>
-                                        <th class="py-2 px-3">Details</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {$historyRowsHtml}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <details class="pb-4 scripts-section-switch">
-                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
-                        <div class="pt-3 space-y-4">
+                    <div class="mt-4 space-y-3" id="profile_definition_form">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
-                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
+                                <label class="block mb-1 text-xs font-semibold" for="profile_id">Profile ID</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_id" type="text" placeholder="huawei_core_commit" required>
                             </div>
-
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
-                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
-                                <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles, templates. Diese Daten erweitern die Basisdatei aus includes/core/automation.json.</p>
+                                <label class="block mb-1 text-xs font-semibold" for="profile_label">Label</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="profile_label" type="text" placeholder="Huawei Core" required>
                             </div>
                         </div>
-                    </details>
+                        <div>
+                            <label class="block mb-1 text-xs font-semibold" for="profile_description">Beschreibung</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="profile_description" type="text" placeholder="Kurzbeschreibung des Profils">
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_enter_config" type="text" placeholder="enter_config">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_commit" type="text" placeholder="commit">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_exit_config" type="text" placeholder="exit_config">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_save" type="text" placeholder="save">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_write_config" type="text" placeholder="write_config">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input id="profile_supports_commit" type="checkbox" value="1">
+                            <label for="profile_supports_commit" class="text-xs text-gray-700">supports_commit aktivieren</label>
+                        </div>
 
-                    <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
+                        <div class="rounded-2xl border border-gray-200 p-3 space-y-3">
+                            <div class="text-xs font-semibold text-gray-700 uppercase tracking-wide">SNMP + MIB Defaults (pro Profil)</div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <label class="inline-flex items-center gap-2"><input type="checkbox" id="profile_snmp_enabled"> SNMP aktiv</label>
+                                <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_version">
+                                    <option value="2c">SNMP v2c</option>
+                                    <option value="3">SNMP v3</option>
+                                </select>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_community" type="text" placeholder="Community (v2c)">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_v3_username" type="text" placeholder="SNMPv3 Username">
+                                <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_v3_auth_protocol">
+                                    <option value="SHA">Auth SHA</option>
+                                    <option value="MD5">Auth MD5</option>
+                                    <option value="SHA224">Auth SHA224</option>
+                                    <option value="SHA256">Auth SHA256</option>
+                                    <option value="SHA384">Auth SHA384</option>
+                                    <option value="SHA512">Auth SHA512</option>
+                                </select>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_v3_auth_passphrase" type="password" placeholder="SNMPv3 Auth Passphrase">
+                                <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_v3_priv_protocol">
+                                    <option value="AES">Priv AES</option>
+                                    <option value="AES128">Priv AES128</option>
+                                    <option value="AES192">Priv AES192</option>
+                                    <option value="AES256">Priv AES256</option>
+                                    <option value="DES">Priv DES</option>
+                                </select>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_v3_priv_passphrase" type="password" placeholder="SNMPv3 Priv Passphrase">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_port" type="number" min="1" max="65535" value="161" placeholder="Port">
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_timeout" type="number" min="1" max="30" value="2" placeholder="Timeout (s)">
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_retries" type="number" min="0" max="10" value="1" placeholder="Retries">
+                            </div>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_snmp_default_mib" type="text" placeholder="Default MIB, z. B. IF-MIB">
+                            <div>
+                                <label class="block mb-1 text-xs font-semibold" for="profile_snmp_mib_overrides">MIB Overrides (eine Zeile oder comma-separated)</label>
+                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_snmp_mib_overrides" rows="4" placeholder="HUAWEI-L2IF-MIB&#10;ENTITY-MIB"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-3">
+                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetProfileDefinitionForm()">Formular leeren</button>
+                            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitProfileUpsert()">Profil speichern</button>
+                        </div>
                     </div>
-                </form>
+                </div>
 
-                <script>
-                    const automationCsrfToken = '$csrf';
-                    const initialScriptsTab = '$activeScriptsTab';
-                    let currentScriptsTab = initialScriptsTab;
+                <div class="pb-6 scripts-section-template">
+                    <div class="flex items-center justify-between pb-2">
+                        <label class="block text-sm font-semibold">Automation Templates (Grafische Verwaltung)</label>
+                    </div>
+                    <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-700">
+                                <tr>
+                                    <th class="py-2 px-3">Template ID</th>
+                                    <th class="py-2 px-3">Label</th>
+                                    <th class="py-2 px-3">Profiles</th>
+                                    <th class="py-2 px-3">Commands</th>
+                                    <th class="py-2 px-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {$templateRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
 
-                    function postAutomationAction(action, payload) {
-                        const form = document.createElement('form');
-                        form.method = 'post';
-                        form.action = '?set=' + encodeURIComponent(action);
+                    <div class="mt-4 space-y-3" id="template_override_form">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block mb-1 text-xs font-semibold" for="template_id">Template ID</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_id" type="text" placeholder="my_custom_template" required>
+                            </div>
+                            <div>
+                                <label class="block mb-1 text-xs font-semibold" for="template_label">Label</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="Mein Template" required>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block mb-1 text-xs font-semibold" for="template_description">Beschreibung</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="Kurze Beschreibung">
+                        </div>
+                        <div>
+                            <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">Supported Profiles (comma-separated)</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_supported_profiles" type="text" placeholder="huawei_core_commit,huawei_access_no_commit">
+                        </div>
+                        <div>
+                            <label class="block mb-1 text-xs font-semibold" for="template_commands">Commands (eine Zeile = ein Command)</label>
+                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_commands" rows="8" placeholder="interface {{interface}}&#10;shutdown&#10;quit" required></textarea>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input id="template_uses_description_convention" type="checkbox" value="1">
+                            <label for="template_uses_description_convention" class="text-xs text-gray-700">Description Convention verwenden</label>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">Formular leeren</button>
+                            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">Template speichern</button>
+                        </div>
+                    </div>
+                </div>
 
-                        const fields = Object.assign({
-                            csrf: automationCsrfToken,
-                            scripts_active_tab: currentScriptsTab
-                        }, payload || {});
-                        Object.keys(fields).forEach(function(key) {
-                            const input = document.createElement('input');
-                            input.type = 'hidden';
-                            input.name = key;
-                            input.value = fields[key];
-                            form.appendChild(input);
-                        });
+                <div class="pb-6 scripts-section-history">
+                    <div class="flex items-center justify-between pb-2">
+                        <label class="block text-sm font-semibold">Aenderungshistorie (letzte 30)</label>
+                    </div>
+                    <div class="pb-3">
+                        <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="Historie filtern: Benutzer, Action, Operation, Details..." oninput="filterHistoryRows()">
+                    </div>
+                    <div class="border border-gray-200 rounded-2xl overflow-hidden">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-700">
+                                <tr>
+                                    <th class="py-2 px-3">Zeit</th>
+                                    <th class="py-2 px-3">Benutzer</th>
+                                    <th class="py-2 px-3">Operation</th>
+                                    <th class="py-2 px-3">Action</th>
+                                    <th class="py-2 px-3">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {$historyRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
 
-                        document.body.appendChild(form);
-                        form.submit();
+                <details class="pb-4 scripts-section-switch">
+                    <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
+                    <div class="pt-3 space-y-4">
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
+                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
+                        </div>
+
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
+                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
+                            <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles. Templates werden in data/automation/automation.json gepflegt.</p>
+                        </div>
+                    </div>
+                </details>
+
+                <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
+                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
+                </div>
+            </form>
+
+            <script>
+                const automationCsrfToken = '$csrf';
+                const profileSnmpDefaults = $profileSnmpDefaultsJson;
+                const initialScriptsTab = '$activeScriptsTab';
+                let currentScriptsTab = initialScriptsTab;
+
+                function postAutomationAction(action, payload) {
+                    const form = document.createElement('form');
+                    form.method = 'post';
+                    form.action = '?set=' + encodeURIComponent(action);
+
+                    const fields = Object.assign({
+                        csrf: automationCsrfToken,
+                        scripts_active_tab: currentScriptsTab
+                    }, payload || {});
+                    Object.keys(fields).forEach(function(key) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = key;
+                        input.value = fields[key];
+                        form.appendChild(input);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+
+                function loadInventoryEntry(button) {
+                    document.getElementById('switch_original_name').value = button.dataset.switchName || '';
+                    document.getElementById('switch_name').value = button.dataset.switchName || '';
+                    document.getElementById('switch_mgmt_ip').value = button.dataset.switchMgmtIp || '';
+                    document.getElementById('switch_profile').value = button.dataset.switchProfile || '';
+                    document.getElementById('switch_device_id').value = button.dataset.switchDeviceId || '';
+                    document.getElementById('switch_credential_mode').value = button.dataset.switchCredentialMode || 'global';
+                    document.getElementById('switch_auth_method').value = button.dataset.switchAuthMethod || 'password';
+                    document.getElementById('switch_ssh_username').value = button.dataset.switchSshUsername || '';
+                    document.getElementById('switch_ssh_password').value = '';
+                    document.getElementById('switch_ssh_private_key').value = '';
+                    document.getElementById('switch_snmp_enabled').checked = (button.dataset.switchSnmpEnabled || '0') === '1';
+                    document.getElementById('switch_snmp_version').value = button.dataset.switchSnmpVersion || '2c';
+                    document.getElementById('switch_snmp_community').value = button.dataset.switchSnmpCommunity || '';
+                    document.getElementById('switch_snmp_mib').value = button.dataset.switchSnmpMib || '';
+                    document.getElementById('switch_snmp_v3_username').value = button.dataset.switchSnmpV3Username || '';
+                    document.getElementById('switch_snmp_v3_auth_protocol').value = button.dataset.switchSnmpV3AuthProtocol || 'SHA';
+                    document.getElementById('switch_snmp_v3_auth_passphrase').value = button.dataset.switchSnmpV3AuthPassphrase || '';
+                    document.getElementById('switch_snmp_v3_priv_protocol').value = button.dataset.switchSnmpV3PrivProtocol || 'AES';
+                    document.getElementById('switch_snmp_v3_priv_passphrase').value = button.dataset.switchSnmpV3PrivPassphrase || '';
+
+                    var submitButton = document.getElementById('inventory_submit_button');
+                    if (submitButton) {
+                        submitButton.textContent = 'Switch aktualisieren';
+                        submitButton.className = 'bg-amber-500 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
                     }
 
-                    function loadInventoryEntry(button) {
-                        document.getElementById('switch_original_name').value = button.dataset.switchName || '';
-                        document.getElementById('switch_name').value = button.dataset.switchName || '';
-                        document.getElementById('switch_mgmt_ip').value = button.dataset.switchMgmtIp || '';
-                        document.getElementById('switch_profile').value = button.dataset.switchProfile || '';
-                        document.getElementById('switch_device_id').value = button.dataset.switchDeviceId || '';
+                    syncCredentialInputs();
+                    syncSwitchSnmpFromProfile();
+                }
 
-                        var submitButton = document.getElementById('inventory_submit_button');
-                        if (submitButton) {
-                            submitButton.textContent = 'Switch aktualisieren';
-                            submitButton.className = 'bg-amber-500 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
-                        }
+                function resetInventoryForm() {
+                    document.getElementById('switch_original_name').value = '';
+                    document.getElementById('switch_name').value = '';
+                    document.getElementById('switch_mgmt_ip').value = '';
+                    document.getElementById('switch_profile').selectedIndex = 0;
+                    document.getElementById('switch_device_id').value = '';
+                    document.getElementById('switch_credential_mode').value = 'global';
+                    document.getElementById('switch_auth_method').value = 'password';
+                    document.getElementById('switch_ssh_username').value = '';
+                    document.getElementById('switch_ssh_password').value = '';
+                    document.getElementById('switch_ssh_private_key').value = '';
+                    document.getElementById('switch_snmp_enabled').checked = false;
+                    document.getElementById('switch_snmp_version').value = '2c';
+                    document.getElementById('switch_snmp_community').value = '';
+                    document.getElementById('switch_snmp_mib').value = '';
+                    document.getElementById('switch_snmp_v3_username').value = '';
+                    document.getElementById('switch_snmp_v3_auth_protocol').value = 'SHA';
+                    document.getElementById('switch_snmp_v3_auth_passphrase').value = '';
+                    document.getElementById('switch_snmp_v3_priv_protocol').value = 'AES';
+                    document.getElementById('switch_snmp_v3_priv_passphrase').value = '';
+
+                    var submitButton = document.getElementById('inventory_submit_button');
+                    if (submitButton) {
+                        submitButton.textContent = 'Switch hinzufuegen';
+                        submitButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
                     }
 
-                    function resetInventoryForm() {
-                        document.getElementById('switch_original_name').value = '';
-                        document.getElementById('switch_name').value = '';
-                        document.getElementById('switch_mgmt_ip').value = '';
-                        document.getElementById('switch_profile').selectedIndex = 0;
-                        document.getElementById('switch_device_id').value = '';
+                    syncCredentialInputs();
+                    syncSwitchSnmpFromProfile();
+                }
 
-                        var submitButton = document.getElementById('inventory_submit_button');
-                        if (submitButton) {
-                            submitButton.textContent = 'Switch hinzufuegen';
-                            submitButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
-                        }
-                    }
+                function syncCredentialInputs() {
+                    const mode = document.getElementById('switch_credential_mode').value;
+                    const disabled = mode !== 'individual';
 
-                    function submitInventorySave() {
-                        const name = document.getElementById('switch_name').value.trim();
-                        const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
-                        const profile = document.getElementById('switch_profile').value.trim();
-                        const deviceId = document.getElementById('switch_device_id').value.trim();
-                        const originalName = document.getElementById('switch_original_name').value.trim();
-                        const action = originalName !== '' ? 'automation_inventory_update' : 'automation_inventory_add';
-
-                        if (name === '' || mgmtIp === '' || profile === '') {
-                            alert('Bitte Name, Mgmt IP und Profil ausfuellen.');
+                    ['switch_auth_method', 'switch_ssh_username', 'switch_ssh_password', 'switch_ssh_private_key'].forEach(function(id) {
+                        const el = document.getElementById(id);
+                        if (!el) {
                             return;
                         }
-
-                        postAutomationAction(action, {
-                            original_switch_name: originalName,
-                            switch_name: name,
-                            switch_mgmt_ip: mgmtIp,
-                            switch_profile: profile,
-                            switch_device_id: deviceId
-                        });
-                    }
-
-                    function submitInventoryDelete(index) {
-                        if (!confirm('Switch-Eintrag wirklich loeschen?')) {
-                            return;
+                        el.disabled = disabled;
+                        if (disabled && (id === 'switch_ssh_password' || id === 'switch_ssh_private_key')) {
+                            el.value = '';
                         }
-                        postAutomationAction('automation_inventory_delete', {
-                            inventory_index: String(index)
-                        });
+                    });
+                }
+
+                function submitInventorySave() {
+                    const name = document.getElementById('switch_name').value.trim();
+                    const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
+                    const profile = document.getElementById('switch_profile').value.trim();
+                    const deviceId = document.getElementById('switch_device_id').value.trim();
+                    const credentialMode = document.getElementById('switch_credential_mode').value;
+                    const authMethod = document.getElementById('switch_auth_method').value;
+                    const switchUsername = document.getElementById('switch_ssh_username').value.trim();
+                    const switchPassword = document.getElementById('switch_ssh_password').value;
+                    const switchPrivateKey = document.getElementById('switch_ssh_private_key').value;
+                    const snmpEnabled = document.getElementById('switch_snmp_enabled').checked ? '1' : '0';
+                    const snmpVersion = document.getElementById('switch_snmp_version').value;
+                    const snmpCommunity = document.getElementById('switch_snmp_community').value.trim();
+                    const snmpMib = document.getElementById('switch_snmp_mib').value.trim();
+                    const snmpV3Username = document.getElementById('switch_snmp_v3_username').value.trim();
+                    const snmpV3AuthProtocol = document.getElementById('switch_snmp_v3_auth_protocol').value;
+                    const snmpV3AuthPassphrase = document.getElementById('switch_snmp_v3_auth_passphrase').value;
+                    const snmpV3PrivProtocol = document.getElementById('switch_snmp_v3_priv_protocol').value;
+                    const snmpV3PrivPassphrase = document.getElementById('switch_snmp_v3_priv_passphrase').value;
+                    const originalName = document.getElementById('switch_original_name').value.trim();
+                    const action = originalName !== '' ? 'automation_inventory_update' : 'automation_inventory_add';
+
+                    if (name === '' || mgmtIp === '' || profile === '') {
+                        alert('Bitte Name, Mgmt IP und Profil ausfuellen.');
+                        return;
                     }
 
-                    function submitInventorySshTest(button) {
-                        const name = button.dataset.switchName || '';
-                        const mgmtIp = button.dataset.switchMgmtIp || '';
+                    postAutomationAction(action, {
+                        original_switch_name: originalName,
+                        switch_name: name,
+                        switch_mgmt_ip: mgmtIp,
+                        switch_profile: profile,
+                        switch_device_id: deviceId,
+                        switch_credential_mode: credentialMode,
+                        switch_auth_method: authMethod,
+                        switch_ssh_username: switchUsername,
+                        switch_ssh_password: switchPassword,
+                        switch_ssh_private_key: switchPrivateKey,
+                        switch_snmp_enabled: snmpEnabled,
+                        switch_snmp_version: snmpVersion,
+                        switch_snmp_community: snmpCommunity,
+                        switch_snmp_mib: snmpMib,
+                        switch_snmp_v3_username: snmpV3Username,
+                        switch_snmp_v3_auth_protocol: snmpV3AuthProtocol,
+                        switch_snmp_v3_auth_passphrase: snmpV3AuthPassphrase,
+                        switch_snmp_v3_priv_protocol: snmpV3PrivProtocol,
+                        switch_snmp_v3_priv_passphrase: snmpV3PrivPassphrase
+                    });
+                }
 
-                        if (name === '' || mgmtIp === '') {
-                            alert('Switch-Daten fuer den SSH-Test konnten nicht gelesen werden.');
-                            return;
-                        }
-
-                        if (!confirm('SSH-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
-                            return;
-                        }
-
-                        postAutomationAction('automation_test_ssh', {
-                            ssh_host: mgmtIp,
-                            ssh_username: document.getElementById('ssh_username').value,
-                            ssh_port: document.getElementById('ssh_port').value,
-                            ssh_password: document.getElementById('ssh_password').value,
-                            scripts_json: document.getElementById('scripts_json').value,
-                            switch_inventory_json: document.getElementById('switch_inventory_json').value
-                        });
+                function syncSwitchSnmpFromProfile() {
+                    const profileId = document.getElementById('switch_profile').value || '';
+                    const defaults = profileSnmpDefaults[profileId] || null;
+                    if (!defaults) {
+                        return;
                     }
 
-                    function loadTemplateOverride(button) {
-                        document.getElementById('template_id').value = button.dataset.templateId || '';
-                        document.getElementById('template_label').value = button.dataset.templateLabel || '';
-                        document.getElementById('template_description').value = button.dataset.templateDescription || '';
-                        document.getElementById('template_supported_profiles').value = button.dataset.templateProfiles || '';
-                        document.getElementById('template_commands').value = button.dataset.templateCommands || '';
-                        document.getElementById('template_uses_description_convention').checked = (button.dataset.templateUsesConvention === '1' || button.dataset.templateUsesConvention === 'true');
-                        document.getElementById('template_id').focus();
+                    const snmpVersionEl = document.getElementById('switch_snmp_version');
+                    const snmpCommunityEl = document.getElementById('switch_snmp_community');
+                    const snmpMibEl = document.getElementById('switch_snmp_mib');
+                    const snmpV3UsernameEl = document.getElementById('switch_snmp_v3_username');
+                    const snmpV3AuthProtocolEl = document.getElementById('switch_snmp_v3_auth_protocol');
+                    const snmpV3AuthPassphraseEl = document.getElementById('switch_snmp_v3_auth_passphrase');
+                    const snmpV3PrivProtocolEl = document.getElementById('switch_snmp_v3_priv_protocol');
+                    const snmpV3PrivPassphraseEl = document.getElementById('switch_snmp_v3_priv_passphrase');
+                    if (!snmpVersionEl || !snmpCommunityEl || !snmpMibEl || !snmpV3UsernameEl || !snmpV3AuthProtocolEl || !snmpV3AuthPassphraseEl || !snmpV3PrivProtocolEl || !snmpV3PrivPassphraseEl) {
+                        return;
                     }
 
-                    function resetTemplateOverrideForm() {
-                        document.getElementById('template_id').value = '';
-                        document.getElementById('template_label').value = '';
-                        document.getElementById('template_description').value = '';
-                        document.getElementById('template_supported_profiles').value = '';
-                        document.getElementById('template_commands').value = '';
-                        document.getElementById('template_uses_description_convention').checked = false;
+                    if (!snmpVersionEl.value && defaults.version) {
+                        snmpVersionEl.value = defaults.version;
+                    }
+                    if (snmpCommunityEl.value.trim() === '' && defaults.community) {
+                        snmpCommunityEl.value = defaults.community;
+                    }
+                    if (snmpMibEl.value.trim() === '' && defaults.default_mib) {
+                        snmpMibEl.value = defaults.default_mib;
+                    }
+                    if (snmpV3UsernameEl.value.trim() === '' && defaults.v3_username) {
+                        snmpV3UsernameEl.value = defaults.v3_username;
+                    }
+                    if (snmpV3AuthPassphraseEl.value === '' && defaults.v3_auth_passphrase) {
+                        snmpV3AuthPassphraseEl.value = defaults.v3_auth_passphrase;
+                    }
+                    if (snmpV3PrivPassphraseEl.value === '' && defaults.v3_priv_passphrase) {
+                        snmpV3PrivPassphraseEl.value = defaults.v3_priv_passphrase;
+                    }
+                    if (defaults.v3_auth_protocol) {
+                        snmpV3AuthProtocolEl.value = defaults.v3_auth_protocol;
+                    }
+                    if (defaults.v3_priv_protocol) {
+                        snmpV3PrivProtocolEl.value = defaults.v3_priv_protocol;
+                    }
+                }
+
+                function submitInventoryDelete(index) {
+                    if (!confirm('Switch-Eintrag wirklich loeschen?')) {
+                        return;
+                    }
+                    postAutomationAction('automation_inventory_delete', {
+                        inventory_index: String(index)
+                    });
+                }
+
+                function submitInventorySshTest(button) {
+                    const name = button.dataset.switchName || '';
+                    const mgmtIp = button.dataset.switchMgmtIp || '';
+                    const credentialMode = button.dataset.switchCredentialMode || 'global';
+                    const switchUsername = button.dataset.switchSshUsername || '';
+                    const switchAuthMethod = button.dataset.switchAuthMethod || 'password';
+
+                    if (name === '' || mgmtIp === '') {
+                        alert('Switch-Daten fuer den SSH-Test konnten nicht gelesen werden.');
+                        return;
                     }
 
-                    function submitTemplateUpsert() {
-                        const templateId = document.getElementById('template_id').value.trim();
-                        const templateLabel = document.getElementById('template_label').value.trim();
-                        const templateDescription = document.getElementById('template_description').value.trim();
-                        const templateProfiles = document.getElementById('template_supported_profiles').value.trim();
-                        const templateCommands = document.getElementById('template_commands').value;
-                        const usesDescriptionConvention = document.getElementById('template_uses_description_convention').checked ? '1' : '0';
-
-                        if (templateId === '' || templateLabel === '' || templateCommands.trim() === '') {
-                            alert('Template ID, Label und mindestens ein Command sind erforderlich.');
-                            return;
-                        }
-
-                        postAutomationAction('automation_template_upsert', {
-                            template_id: templateId,
-                            template_label: templateLabel,
-                            template_description: templateDescription,
-                            template_supported_profiles: templateProfiles,
-                            template_commands: templateCommands,
-                            template_uses_description_convention: usesDescriptionConvention
-                        });
+                    if (!confirm('SSH-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
+                        return;
                     }
 
-                    function submitTemplateDelete(templateId) {
-                        if (!confirm('Template Override wirklich loeschen?')) {
-                            return;
-                        }
-                        postAutomationAction('automation_template_delete', {
-                            template_id: templateId
-                        });
+                    postAutomationAction('automation_test_ssh', {
+                        ssh_host: mgmtIp,
+                        ssh_auth_method: credentialMode === 'individual' ? switchAuthMethod : document.getElementById('ssh_auth_method').value,
+                        ssh_username: credentialMode === 'individual' ? switchUsername : document.getElementById('ssh_username').value,
+                        ssh_port: document.getElementById('ssh_port').value,
+                        ssh_password: document.getElementById('ssh_password').value,
+                        ssh_private_key: document.getElementById('ssh_private_key').value,
+                        scripts_json: document.getElementById('scripts_json').value,
+                        switch_inventory_json: document.getElementById('switch_inventory_json').value
+                    });
+                }
+
+                function submitInventorySnmpTest(button) {
+                    const name = button.dataset.switchName || '';
+                    const mgmtIp = button.dataset.switchMgmtIp || '';
+
+                    if (name === '' || mgmtIp === '') {
+                        alert('Switch-Daten fuer den SNMP-Test konnten nicht gelesen werden.');
+                        return;
                     }
 
-                    function filterHistoryRows() {
-                        var input = document.getElementById('history_filter');
-                        var query = input ? input.value.trim().toLowerCase() : '';
-
-                        document.querySelectorAll('.history-row').forEach(function(row) {
-                            var searchText = (row.getAttribute('data-history-search') || '').toLowerCase();
-                            var visible = query === '' || searchText.indexOf(query) !== -1;
-                            row.classList.toggle('hidden', !visible);
-                        });
+                    if (!confirm('SNMP-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
+                        return;
                     }
 
-                    function showScriptsTab(tabId) {
-                        const resolvedTab = (tabId === 'templates' || tabId === 'history') ? tabId : 'switch';
-                        currentScriptsTab = resolvedTab;
+                    postAutomationAction('automation_test_snmp', {
+                        snmp_switch_name: name,
+                        snmp_host: mgmtIp,
+                        // Let backend resolve effective SNMP values from inventory + profile.
+                        snmp_version: '',
+                        snmp_community: '',
+                        snmp_mib: '',
+                        snmp_port: '',
+                        snmp_timeout: '',
+                        snmp_retries: '',
+                        snmp_v3_username: '',
+                        snmp_v3_auth_protocol: '',
+                        snmp_v3_priv_protocol: '',
+                        scripts_json: document.getElementById('scripts_json').value,
+                        switch_inventory_json: document.getElementById('switch_inventory_json').value
+                    });
+                }
 
-                        const hiddenTabInput = document.getElementById('scripts_active_tab');
-                        if (hiddenTabInput) {
-                            hiddenTabInput.value = resolvedTab;
-                        }
+                function submitCurrentSnmpTest() {
+                    const name = document.getElementById('switch_name').value.trim() || 'aktueller Switch';
+                    const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
 
-                        const showSwitch = (resolvedTab === 'switch');
-                        const showTemplates = (resolvedTab === 'templates');
-                        const showHistory = (resolvedTab === 'history');
-
-                        document.querySelectorAll('.scripts-section-switch').forEach(function(el) {
-                            el.classList.toggle('hidden', !showSwitch);
-                        });
-                        document.querySelectorAll('.scripts-section-template').forEach(function(el) {
-                            el.classList.toggle('hidden', !showTemplates);
-                        });
-                        document.querySelectorAll('.scripts-section-history').forEach(function(el) {
-                            el.classList.toggle('hidden', !showHistory);
-                        });
-
-                        document.querySelectorAll('.settings-script-tab').forEach(function(item) {
-                            const itemTab = item.getAttribute('data-script-tab');
-                            item.classList.toggle('settings-nav-subitem-active', itemTab === resolvedTab);
-                        });
+                    if (mgmtIp === '') {
+                        alert('Bitte zuerst eine Mgmt IP eintragen.');
+                        return;
                     }
 
-                    showScriptsTab(initialScriptsTab);
-                </script>
-            </div>
+                    if (!confirm('SNMP-Verbindung fuer ' + name + ' (' + mgmtIp + ') testen?')) {
+                        return;
+                    }
+
+                    postAutomationAction('automation_test_snmp', {
+                        snmp_host: mgmtIp,
+                        snmp_version: document.getElementById('switch_snmp_version').value,
+                        snmp_community: document.getElementById('switch_snmp_community').value.trim(),
+                        snmp_mib: document.getElementById('switch_snmp_mib').value.trim(),
+                        snmp_port: '161',
+                        snmp_timeout: '2',
+                        snmp_retries: '1',
+                        snmp_v3_username: document.getElementById('switch_snmp_v3_username').value.trim(),
+                        snmp_v3_auth_protocol: document.getElementById('switch_snmp_v3_auth_protocol').value,
+                        snmp_v3_auth_passphrase: document.getElementById('switch_snmp_v3_auth_passphrase').value,
+                        snmp_v3_priv_protocol: document.getElementById('switch_snmp_v3_priv_protocol').value,
+                        snmp_v3_priv_passphrase: document.getElementById('switch_snmp_v3_priv_passphrase').value,
+                        scripts_json: document.getElementById('scripts_json').value,
+                        switch_inventory_json: document.getElementById('switch_inventory_json').value
+                    });
+                }
+
+                function loadTemplateOverride(button) {
+                    document.getElementById('template_id').value = button.dataset.templateId || '';
+                    document.getElementById('template_label').value = button.dataset.templateLabel || '';
+                    document.getElementById('template_description').value = button.dataset.templateDescription || '';
+                    document.getElementById('template_supported_profiles').value = button.dataset.templateProfiles || '';
+                    document.getElementById('template_commands').value = button.dataset.templateCommands || '';
+                    document.getElementById('template_uses_description_convention').checked = (button.dataset.templateUsesConvention === '1' || button.dataset.templateUsesConvention === 'true');
+                    document.getElementById('template_id').focus();
+                }
+
+                function resetTemplateOverrideForm() {
+                    document.getElementById('template_id').value = '';
+                    document.getElementById('template_label').value = '';
+                    document.getElementById('template_description').value = '';
+                    document.getElementById('template_supported_profiles').value = '';
+                    document.getElementById('template_commands').value = '';
+                    document.getElementById('template_uses_description_convention').checked = false;
+                }
+
+                function submitTemplateUpsert() {
+                    const templateId = document.getElementById('template_id').value.trim();
+                    const templateLabel = document.getElementById('template_label').value.trim();
+                    const templateDescription = document.getElementById('template_description').value.trim();
+                    const templateProfiles = document.getElementById('template_supported_profiles').value.trim();
+                    const templateCommands = document.getElementById('template_commands').value;
+                    const usesDescriptionConvention = document.getElementById('template_uses_description_convention').checked ? '1' : '0';
+
+                    if (templateId === '' || templateLabel === '' || templateCommands.trim() === '') {
+                        alert('Template ID, Label und mindestens ein Command sind erforderlich.');
+                        return;
+                    }
+
+                    postAutomationAction('automation_template_upsert', {
+                        template_id: templateId,
+                        template_label: templateLabel,
+                        template_description: templateDescription,
+                        template_supported_profiles: templateProfiles,
+                        template_commands: templateCommands,
+                        template_uses_description_convention: usesDescriptionConvention
+                    });
+                }
+
+                function submitTemplateDelete(templateId) {
+                    if (!confirm('Template wirklich loeschen?')) {
+                        return;
+                    }
+                    postAutomationAction('automation_template_delete', {
+                        template_id: templateId
+                    });
+                }
+
+                function loadProfileDefinition(button) {
+                    document.getElementById('profile_id').value = button.dataset.profileId || '';
+                    document.getElementById('profile_label').value = button.dataset.profileLabel || '';
+                    document.getElementById('profile_description').value = button.dataset.profileDescription || '';
+                    document.getElementById('profile_enter_config').value = button.dataset.profileEnterConfig || '';
+                    document.getElementById('profile_commit').value = button.dataset.profileCommit || '';
+                    document.getElementById('profile_exit_config').value = button.dataset.profileExitConfig || '';
+                    document.getElementById('profile_save').value = button.dataset.profileSave || '';
+                    document.getElementById('profile_write_config').value = button.dataset.profileWriteConfig || '';
+                    document.getElementById('profile_supports_commit').checked = (button.dataset.profileSupportsCommit || '0') === '1';
+                    document.getElementById('profile_snmp_enabled').checked = (button.dataset.profileSnmpEnabled || '0') === '1';
+                    document.getElementById('profile_snmp_version').value = button.dataset.profileSnmpVersion || '2c';
+                    document.getElementById('profile_snmp_port').value = button.dataset.profileSnmpPort || '161';
+                    document.getElementById('profile_snmp_timeout').value = button.dataset.profileSnmpTimeout || '2';
+                    document.getElementById('profile_snmp_retries').value = button.dataset.profileSnmpRetries || '1';
+                    document.getElementById('profile_snmp_community').value = button.dataset.profileSnmpCommunity || '';
+                    document.getElementById('profile_snmp_v3_username').value = button.dataset.profileSnmpV3Username || '';
+                    document.getElementById('profile_snmp_v3_auth_protocol').value = button.dataset.profileSnmpV3AuthProtocol || 'SHA';
+                    document.getElementById('profile_snmp_v3_auth_passphrase').value = button.dataset.profileSnmpV3AuthPassphrase || '';
+                    document.getElementById('profile_snmp_v3_priv_protocol').value = button.dataset.profileSnmpV3PrivProtocol || 'AES';
+                    document.getElementById('profile_snmp_v3_priv_passphrase').value = button.dataset.profileSnmpV3PrivPassphrase || '';
+                    document.getElementById('profile_snmp_default_mib').value = button.dataset.profileSnmpDefaultMib || '';
+                    document.getElementById('profile_snmp_mib_overrides').value = button.dataset.profileSnmpMibOverrides || '';
+                    document.getElementById('profile_id').focus();
+                }
+
+                function resetProfileDefinitionForm() {
+                    document.getElementById('profile_id').value = '';
+                    document.getElementById('profile_label').value = '';
+                    document.getElementById('profile_description').value = '';
+                    document.getElementById('profile_enter_config').value = '';
+                    document.getElementById('profile_commit').value = '';
+                    document.getElementById('profile_exit_config').value = '';
+                    document.getElementById('profile_save').value = '';
+                    document.getElementById('profile_write_config').value = '';
+                    document.getElementById('profile_supports_commit').checked = false;
+                    document.getElementById('profile_snmp_enabled').checked = false;
+                    document.getElementById('profile_snmp_version').value = '2c';
+                    document.getElementById('profile_snmp_port').value = '161';
+                    document.getElementById('profile_snmp_timeout').value = '2';
+                    document.getElementById('profile_snmp_retries').value = '1';
+                    document.getElementById('profile_snmp_community').value = '';
+                    document.getElementById('profile_snmp_v3_username').value = '';
+                    document.getElementById('profile_snmp_v3_auth_protocol').value = 'SHA';
+                    document.getElementById('profile_snmp_v3_auth_passphrase').value = '';
+                    document.getElementById('profile_snmp_v3_priv_protocol').value = 'AES';
+                    document.getElementById('profile_snmp_v3_priv_passphrase').value = '';
+                    document.getElementById('profile_snmp_default_mib').value = '';
+                    document.getElementById('profile_snmp_mib_overrides').value = '';
+                }
+
+                function submitProfileUpsert() {
+                    const profileId = document.getElementById('profile_id').value.trim();
+                    const profileLabel = document.getElementById('profile_label').value.trim();
+
+                    if (profileId === '' || profileLabel === '') {
+                        alert('Profile ID und Label sind erforderlich.');
+                        return;
+                    }
+
+                    postAutomationAction('automation_profile_upsert', {
+                        profile_id: profileId,
+                        profile_label: profileLabel,
+                        profile_description: document.getElementById('profile_description').value.trim(),
+                        profile_enter_config: document.getElementById('profile_enter_config').value.trim(),
+                        profile_commit: document.getElementById('profile_commit').value.trim(),
+                        profile_exit_config: document.getElementById('profile_exit_config').value.trim(),
+                        profile_save: document.getElementById('profile_save').value.trim(),
+                        profile_write_config: document.getElementById('profile_write_config').value.trim(),
+                        profile_supports_commit: document.getElementById('profile_supports_commit').checked ? '1' : '0',
+                        profile_snmp_enabled: document.getElementById('profile_snmp_enabled').checked ? '1' : '0',
+                        profile_snmp_version: document.getElementById('profile_snmp_version').value,
+                        profile_snmp_port: document.getElementById('profile_snmp_port').value,
+                        profile_snmp_timeout: document.getElementById('profile_snmp_timeout').value,
+                        profile_snmp_retries: document.getElementById('profile_snmp_retries').value,
+                        profile_snmp_community: document.getElementById('profile_snmp_community').value.trim(),
+                        profile_snmp_v3_username: document.getElementById('profile_snmp_v3_username').value.trim(),
+                        profile_snmp_v3_auth_protocol: document.getElementById('profile_snmp_v3_auth_protocol').value,
+                        profile_snmp_v3_auth_passphrase: document.getElementById('profile_snmp_v3_auth_passphrase').value,
+                        profile_snmp_v3_priv_protocol: document.getElementById('profile_snmp_v3_priv_protocol').value,
+                        profile_snmp_v3_priv_passphrase: document.getElementById('profile_snmp_v3_priv_passphrase').value,
+                        profile_snmp_default_mib: document.getElementById('profile_snmp_default_mib').value.trim(),
+                        profile_snmp_mib_overrides: document.getElementById('profile_snmp_mib_overrides').value
+                    });
+                }
+
+                function submitProfileDelete(profileId) {
+                    if (!confirm('Profil wirklich loeschen?')) {
+                        return;
+                    }
+                    postAutomationAction('automation_profile_delete', {
+                        profile_id: profileId
+                    });
+                }
+
+                function filterHistoryRows() {
+                    var input = document.getElementById('history_filter');
+                    var query = input ? input.value.trim().toLowerCase() : '';
+
+                    document.querySelectorAll('.history-row').forEach(function(row) {
+                        var searchText = (row.getAttribute('data-history-search') || '').toLowerCase();
+                        var visible = query === '' || searchText.indexOf(query) !== -1;
+                        row.classList.toggle('hidden', !visible);
+                    });
+                }
+
+                function showScriptsTab(tabId) {
+                    const resolvedTab = (tabId === 'profiles' || tabId === 'templates' || tabId === 'history') ? tabId : 'switch';
+                    currentScriptsTab = resolvedTab;
+
+                    const hiddenTabInput = document.getElementById('scripts_active_tab');
+                    if (hiddenTabInput) {
+                        hiddenTabInput.value = resolvedTab;
+                    }
+
+                    const showSwitch = (resolvedTab === 'switch');
+                    const showProfiles = (resolvedTab === 'profiles');
+                    const showTemplates = (resolvedTab === 'templates');
+                    const showHistory = (resolvedTab === 'history');
+
+                    document.querySelectorAll('.scripts-section-switch').forEach(function(el) {
+                        el.classList.toggle('hidden', !showSwitch);
+                    });
+                    document.querySelectorAll('.scripts-section-template').forEach(function(el) {
+                        el.classList.toggle('hidden', !showTemplates);
+                    });
+                    document.querySelectorAll('.scripts-section-profile').forEach(function(el) {
+                        el.classList.toggle('hidden', !showProfiles);
+                    });
+                    document.querySelectorAll('.scripts-section-history').forEach(function(el) {
+                        el.classList.toggle('hidden', !showHistory);
+                    });
+
+                    document.querySelectorAll('.settings-script-tab').forEach(function(item) {
+                        const itemTab = item.getAttribute('data-script-tab');
+                        item.classList.toggle('settings-nav-subitem-active', itemTab === resolvedTab);
+                    });
+                }
+
+                showScriptsTab(initialScriptsTab);
+                var credentialModeEl = document.getElementById('switch_credential_mode');
+                if (credentialModeEl) {
+                    credentialModeEl.addEventListener('change', syncCredentialInputs);
+                }
+                var profileEl = document.getElementById('switch_profile');
+                if (profileEl) {
+                    profileEl.addEventListener('change', syncSwitchSnmpFromProfile);
+                }
+                syncCredentialInputs();
+                syncSwitchSnmpFromProfile();
+            </script>
         </div>
         HTML;
         break; 
@@ -4148,55 +5801,53 @@ HTML;
 
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <div class="settings-surface max-w-3xl">
-                <div class="text-xl font-bold pb-2">Darstellung</div>
-                <p class="text-sm text-gray-600 pb-6">Farbschema, Schriftart und Schriftgroesse werden in deinem Nutzerprofil gespeichert.</p>
+            <div class="text-xl font-bold pb-2">Darstellung</div>
+            <p class="text-sm text-gray-600 pb-6">Farbschema, Schriftart und Schriftgroesse werden in deinem Nutzerprofil gespeichert.</p>
 
-                <form action="?set=appearance_preferences" method="post" class="space-y-5">
-                    <input type="hidden" name="csrf" value="$csrf">
+            <form action="?set=appearance_preferences" method="post" class="space-y-5">
+                <input type="hidden" name="csrf" value="$csrf">
 
-                    <div class="pb-6">
-                        <label class="block mb-2 text-sm font-semibold" for="language">
-                            Sprache
-                        </label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
-                            <option value="de-DE" $langDeSelected>Deutsch</option>
-                            <option value="en-EN" $langEnSelected>English</option>
-                        </select>
-                    </div>
+                <div class="pb-6">
+                    <label class="block mb-2 text-sm font-semibold" for="language">
+                        Sprache
+                    </label>
+                    <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
+                        <option value="de-DE" $langDeSelected>Deutsch</option>
+                        <option value="en-EN" $langEnSelected>English</option>
+                    </select>
+                </div>
 
-                    <div>
-                        <label class="block mb-2 text-sm font-semibold" for="theme">Farbschema</label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="theme" name="theme">
-                            <option value="light" $themeLightSelected>Lightmode</option>
-                            <option value="dark" $themeDarkSelected>Darkmode</option>
-                            <option value="contrast" $themeContrastSelected>Kontrastmodus</option>
-                        </select>
-                    </div>
+                <div>
+                    <label class="block mb-2 text-sm font-semibold" for="theme">Farbschema</label>
+                    <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="theme" name="theme">
+                        <option value="light" $themeLightSelected>Lightmode</option>
+                        <option value="dark" $themeDarkSelected>Darkmode</option>
+                        <option value="contrast" $themeContrastSelected>Kontrastmodus</option>
+                    </select>
+                </div>
 
-                    <div>
-                        <label class="block mb-2 text-sm font-semibold" for="font_family">Schriftart</label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_family" name="font_family">
-                            <option value="jetbrains" $fontJetbrainsSelected>JetBrains Mono</option>
-                            <option value="source_sans" $fontSourceSelected>Source Sans 3</option>
-                            <option value="fira_sans" $fontFiraSelected>Fira Sans</option>
-                        </select>
-                    </div>
+                <div>
+                    <label class="block mb-2 text-sm font-semibold" for="font_family">Schriftart</label>
+                    <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_family" name="font_family">
+                        <option value="jetbrains" $fontJetbrainsSelected>JetBrains Mono</option>
+                        <option value="source_sans" $fontSourceSelected>Source Sans 3</option>
+                        <option value="fira_sans" $fontFiraSelected>Fira Sans</option>
+                    </select>
+                </div>
 
-                    <div>
-                        <label class="block mb-2 text-sm font-semibold" for="font_size">Schriftgroesse</label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_size" name="font_size">
-                            <option value="small" $sizeSmallSelected>Kompakt</option>
-                            <option value="normal" $sizeNormalSelected>Standard</option>
-                            <option value="large" $sizeLargeSelected>Gross</option>
-                        </select>
-                    </div>
+                <div>
+                    <label class="block mb-2 text-sm font-semibold" for="font_size">Schriftgroesse</label>
+                    <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_size" name="font_size">
+                        <option value="small" $sizeSmallSelected>Kompakt</option>
+                        <option value="normal" $sizeNormalSelected>Standard</option>
+                        <option value="large" $sizeLargeSelected>Gross</option>
+                    </select>
+                </div>
 
-                    <div class="pb-6 flex justify-between items-center">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Darstellung speichern">
-                    </div>
-                </form>
-            </div>
+                <div class="pb-6 flex justify-between items-center">
+                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Darstellung speichern">
+                </div>
+            </form>
         </div>
         HTML;
         break;

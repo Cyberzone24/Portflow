@@ -32,6 +32,46 @@ use Portflow\Core\NotificationCenter;
 ob_end_clean();
 
 $logger = new Logger();
+
+function schedulerResolveSwitchConnection(array $switchData, array $storedSettings): array {
+    $credentialMode = trim((string)($switchData['credential_mode'] ?? 'global'));
+    if (!in_array($credentialMode, ['global', 'individual'], true)) {
+        $credentialMode = 'global';
+    }
+
+    $authMethod = trim((string)($storedSettings['ssh_auth_method'] ?? 'password'));
+    $username = trim((string)($storedSettings['ssh_username'] ?? ''));
+    $password = (string)($storedSettings['ssh_password'] ?? '');
+    $privateKey = (string)($storedSettings['ssh_private_key'] ?? '');
+
+    if ($credentialMode === 'individual') {
+        $switchAuthMethod = trim((string)($switchData['ssh_auth_method'] ?? 'password'));
+        if (in_array($switchAuthMethod, ['password', 'key'], true)) {
+            $authMethod = $switchAuthMethod;
+        }
+        if (trim((string)($switchData['ssh_username'] ?? '')) !== '') {
+            $username = trim((string)$switchData['ssh_username']);
+        }
+        if ((string)($switchData['ssh_password'] ?? '') !== '') {
+            $password = (string)$switchData['ssh_password'];
+        }
+        if ((string)($switchData['ssh_private_key'] ?? '') !== '') {
+            $privateKey = (string)$switchData['ssh_private_key'];
+        }
+    }
+
+    if (!in_array($authMethod, ['password', 'key'], true)) {
+        $authMethod = $privateKey !== '' ? 'key' : 'password';
+    }
+
+    $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
+    $switchData['ssh_auth_method'] = $authMethod;
+    $switchData['ssh_username'] = $username;
+    $switchData['ssh_password'] = $password;
+    $switchData['ssh_private_key'] = $privateKey;
+
+    return $switchData;
+}
 $db = new DatabaseAdapter();
 $queueManager = new PendingChangesQueue($db);
 $automationStore = new AutomationStore();
@@ -106,10 +146,7 @@ try {
             continue;
         }
 
-        $switchData = $switches[$switchName];
-        $switchData['ssh_port'] = $storedSettings['ssh_port'] ?? 22;
-        $switchData['ssh_username'] = $storedSettings['ssh_username'] ?? '';
-        $switchData['ssh_password'] = $storedSettings['ssh_password'] ?? '';
+        $switchData = schedulerResolveSwitchConnection($switches[$switchName], $storedSettings);
 
         $logger->log("Scheduler: Executing for switch=$switchName user=$userUuid", 1);
 
