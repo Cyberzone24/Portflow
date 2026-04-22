@@ -96,14 +96,6 @@
     .viewer-expert-menu summary::-webkit-details-marker {
         display: none;
     }
-
-    .itam-table-scroll thead th {
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        background-color: #e5e7eb;
-        box-shadow: inset 0 -1px 0 #cbd5e1;
-    }
 </style>
 <div class="itam-shell mx-4 mb-4 mt-0 grid min-h-0 grid-cols-1 gap-4" id="itamShell">
     <aside class="itam-sidebar relative hidden min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white p-4 lg:flex lg:flex-col lg:justify-between" id="itamSidebar">  
@@ -174,7 +166,7 @@
             <div class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
                 <div class="itam-table-scroll h-full w-full overflow-y-auto">
                     <table class="static w-full min-w-full table-auto rounded-lg text-left text-sm text-gray-500 shadow-md">
-                        <thead class="bg-white text-gray-800"></thead>
+                        <thead class="bg-white text-gray-800 top-0 sticky z-1"></thead>
                         <tbody></tbody>
                     </table>
                 </div>
