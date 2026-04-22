@@ -366,6 +366,55 @@
                 }
             ]
         },
+        "device_port_vlan_details": {
+            "formTitle": "New Device-Port VLAN",
+            "fields": {
+                "device_port": {
+                    "label": "Device-Port",
+                    "type": "searchDropdown",
+                    "resource": "device_port_details",
+                    "dependencies": {
+                        "device_port": "device_port"
+                    },
+                    "required": true
+                },
+                "vlan": {
+                    "label": "VLAN (current)",
+                    "type": "searchDropdown",
+                    "resource": "vlan_join_metadata",
+                    "dependencies": {
+                        "vlan": "vlan"
+                    },
+                    "required": false
+                },
+                "expected_vlan": {
+                    "label": "Expected VLAN",
+                    "type": "searchDropdown",
+                    "resource": "vlan_join_metadata",
+                    "dependencies": {
+                        "expected_vlan": "expected_vlan"
+                    },
+                    "required": false
+                },
+                "tagged": {
+                    "label": "Tagged (current)",
+                    "type": "boolean",
+                    "required": false
+                },
+                "expected_tagged": {
+                    "label": "Expected tagged",
+                    "type": "boolean",
+                    "required": false
+                }
+            },
+            "postOrder": [
+                {
+                    "table": "device_port_vlan",
+                    "sectionTitle": "Device-Port VLAN",
+                    "fields": ["device_port", "vlan", "expected_vlan", "tagged", "expected_tagged"]
+                }
+            ]
+        },
         "device_port_details": {
             "formTitle": "New Device-Port",
             "fields": {
@@ -538,11 +587,6 @@
                     "fields": ["status", "caption", "description", "specification", "tags"]
                 },
                 {
-                    "table": "device_port_vlan",
-                    "sectionTitle": "Device-Port VLAN",
-                    "fields": ["vlan", "expected_vlan", "tagged", "expected_tagged"]
-                },
-                {
                     "table": "device_port_ip",
                     "sectionTitle": "Device-Port IP",
                     "fields": ["ip", "expected_ip", "hostname", "expected_hostname", "dhcp_address", "expected_dhcp_address"]
@@ -550,8 +594,7 @@
                 {
                     "table": "device_port",
                     "sectionTitle": "Device-Port",
-                    "fields": ["device", "device_port_vlan", "device_port_ip", "poe", "mac_address", "speed", "expected_speed", "type", "size", "position", "rotation", "coupling"],
-                    "useVlanUUID": true,
+                    "fields": ["device", "device_port_ip", "poe", "mac_address", "speed", "expected_speed", "type", "size", "position", "rotation", "coupling"],
                     "useIpUUID": true,
                     "useMetadataUUID": true
                 }

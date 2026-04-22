@@ -30,6 +30,7 @@
     $itamClass = ($active_page == 'itam') ? $navActiveClass : $navInactiveClass;
     $automationClass = ($active_page == 'automation') ? $navActiveClass : $navInactiveClass;
     $portviewClass = ($active_page == 'portview') ? $navActiveClass : $navInactiveClass;
+    $reportsClass = ($active_page == 'reports') ? $navActiveClass : $navInactiveClass;
     
     // Check if user has access to automation
     $hasAutomationAccess = (isset($_SESSION['uuid']) && $auth->checkResourceAccess($_SESSION['uuid'], 'automation')) ? true : false;
@@ -487,6 +488,7 @@
             <a class="<?= $automationClass; ?>" href="automation.php" title="<?php echo $lang['automation']; ?>"><?php echo $lang['automation']; ?></a>
             <?php endif; ?>
             <a class="<?= $portviewClass; ?>" href="portview.php" title="<?php echo $lang['portview']; ?>"><?php echo $lang['portview']; ?></a>
+            <a class="<?= $reportsClass; ?>" href="reports.php" title="<?php echo $lang['reports'] ?? 'Reports'; ?>"><?php echo $lang['reports'] ?? 'Reports'; ?></a>
         </nav>
 
         <div class="flex items-center justify-end gap-2">
@@ -523,6 +525,9 @@
             <?php endif; ?>
             <a class="<?= $portviewClass; ?>" href="portview.php" title="<?php echo $lang['portview']; ?>">
                 <span><?php echo $lang['portview']; ?></span>
+            </a>
+            <a class="<?= $reportsClass; ?>" href="reports.php" title="<?php echo $lang['reports'] ?? 'Reports'; ?>">
+                <span><?php echo $lang['reports'] ?? 'Reports'; ?></span>
             </a>
 
             <div class="pf-mobile-section">

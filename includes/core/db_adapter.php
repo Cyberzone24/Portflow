@@ -629,7 +629,7 @@ class DatabaseAdapter {
                     $existingColumns = $this->getExistingColumns($dbTable);
 
                     foreach ($columns as $column => $columnType) {
-                        if ($column === 'PRIMARY KEY') {
+                        if ($column === 'PRIMARY KEY' || $column === 'UNIQUE') {
                             continue;
                         }
 

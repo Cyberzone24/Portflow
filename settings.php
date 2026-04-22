@@ -2649,6 +2649,7 @@
                 $mgmtIp = trim((string)($_POST['switch_mgmt_ip'] ?? ''));
                 $profile = trim((string)($_POST['switch_profile'] ?? ''));
                 $deviceId = trim((string)($_POST['switch_device_id'] ?? ''));
+                $itemGroupId = trim((string)($_POST['switch_item_group_id'] ?? ''));
                 $credentialMode = trim((string)($_POST['switch_credential_mode'] ?? 'global'));
                 $switchAuthMethod = trim((string)($_POST['switch_auth_method'] ?? 'password'));
                 $switchUsername = trim((string)($_POST['switch_ssh_username'] ?? ''));
@@ -2763,6 +2764,9 @@
                 if ($deviceId !== '') {
                     $newSwitch['device_id'] = $deviceId;
                 }
+                if ($itemGroupId !== '') {
+                    $newSwitch['item_group_id'] = $itemGroupId;
+                }
                 if ($credentialMode === 'individual') {
                     $newSwitch['ssh_username'] = $switchUsername;
                     if ($switchPassword !== '') {
@@ -2816,6 +2820,7 @@
                 $mgmtIp = trim((string)($_POST['switch_mgmt_ip'] ?? ''));
                 $profile = trim((string)($_POST['switch_profile'] ?? ''));
                 $deviceId = trim((string)($_POST['switch_device_id'] ?? ''));
+                $itemGroupId = trim((string)($_POST['switch_item_group_id'] ?? ''));
                 $credentialMode = trim((string)($_POST['switch_credential_mode'] ?? 'global'));
                 $switchAuthMethod = trim((string)($_POST['switch_auth_method'] ?? 'password'));
                 $switchUsername = trim((string)($_POST['switch_ssh_username'] ?? ''));
@@ -2960,6 +2965,9 @@
                 ];
                 if ($deviceId !== '') {
                     $updatedSwitch['device_id'] = $deviceId;
+                }
+                if ($itemGroupId !== '') {
+                    $updatedSwitch['item_group_id'] = $itemGroupId;
                 }
                 if ($credentialMode === 'individual') {
                     $updatedSwitch['ssh_username'] = $switchUsername;
@@ -3441,6 +3449,65 @@
                 ];
 
                 $automationTestResult = runAutomationSnmpTest($_POST, $automationStore, $logger);
+
+                include_once __DIR__ . '/includes/header.php';
+                $site = 'scripts';
+                $_GET['tab'] = getScriptsTabFromRequest();
+                break;
+            case 'automation_snmp_scan':
+            case 'automation_snmp_scan_all':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for snmp scan', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                include_once __DIR__ . '/includes/core/db_adapter.php';
+                include_once __DIR__ . '/includes/core/snmp_scanner.php';
+
+                $automationStore = new AutomationStore();
+                $db_adapter = new \Portflow\Core\DatabaseAdapter();
+                $scanner = new \Portflow\Core\SnmpScanner($db_adapter, $automationStore, $logger);
+
+                $userUuid = $_SESSION['user']['uuid'] ?? null;
+                $targets = [];
+                if ($set === 'automation_snmp_scan') {
+                    $targets[] = trim((string)($_POST['snmp_switch_name'] ?? ''));
+                } else {
+                    $savedSettings = $automationStore->getSettings();
+                    $inv = json_decode((string)($savedSettings['switch_inventory_json'] ?? '{}'), true);
+                    foreach (($inv['switches'] ?? []) as $sw) {
+                        if (is_array($sw) && trim((string)($sw['name'] ?? '')) !== '') {
+                            $targets[] = trim((string)$sw['name']);
+                        }
+                    }
+                }
+                $targets = array_values(array_filter(array_unique($targets), static fn($n) => $n !== ''));
+
+                $reports = [];
+                $okCount = 0;
+                $failCount = 0;
+                foreach ($targets as $name) {
+                    $r = $scanner->scanSwitch($name, $set === 'automation_snmp_scan' ? 'manual' : 'manual_all', $userUuid);
+                    if ($r['ok']) {
+                        $okCount++;
+                        $reports[] = sprintf('OK   %s -- interfaces=%d findings=%d run=%s', $name, $r['interfaces'], $r['findings'], substr((string)($r['run_uuid'] ?? ''), 0, 8));
+                    } else {
+                        $failCount++;
+                        $reports[] = sprintf('FAIL %s -- %s', $name, (string)($r['error'] ?? 'unbekannter Fehler'));
+                    }
+                }
+
+                $automationTestResult = [
+                    'ok' => ($failCount === 0),
+                    'title' => 'SNMP Scan',
+                    'output' => sprintf("Switches: %d  ok=%d  fail=%d\n\n%s", count($targets), $okCount, $failCount, implode("\n", $reports)),
+                ];
 
                 include_once __DIR__ . '/includes/header.php';
                 $site = 'scripts';
@@ -4624,6 +4691,24 @@ HTML;
             }
         }
 
+        // Item-Group options (Stacks): distinct item_group UUIDs across device, with concatenated member captions.
+        $itamItemGroupOptions = [];
+        try {
+            $itamItemGroupOptions = $db_adapter->db_query(
+                "SELECT d.item_group AS item_group_uuid,
+                        COUNT(*)::int AS member_count,
+                        STRING_AGG(COALESCE(m.caption, ''), ', ' ORDER BY m.caption) AS member_captions
+                 FROM device d
+                 LEFT JOIN metadata m ON m.uuid = d.metadata
+                 WHERE d.item_group IS NOT NULL
+                 GROUP BY d.item_group
+                 HAVING COUNT(*) > 1
+                 ORDER BY MIN(m.caption) ASC"
+            ) ?: [];
+        } catch (\Throwable $ignored) {
+            $itamItemGroupOptions = [];
+        }
+
         $historyRows = [];
         try {
             $historyRows = $db_adapter->db_query(
@@ -4828,6 +4913,21 @@ HTML;
             $itamDeviceOptionsHtml .= '<option value="' . $deviceUuid . '">' . $label . '</option>';
         }
 
+        $itamItemGroupOptionsHtml = '<option value="">(keine Item Group / kein Stack)</option>';
+        foreach ($itamItemGroupOptions as $groupRow) {
+            $groupUuid = htmlspecialchars((string)($groupRow['item_group_uuid'] ?? ''), ENT_QUOTES, 'UTF-8');
+            if ($groupUuid === '') {
+                continue;
+            }
+            $memberCount = (int)($groupRow['member_count'] ?? 0);
+            $memberCaptions = (string)($groupRow['member_captions'] ?? '');
+            if (mb_strlen($memberCaptions) > 80) {
+                $memberCaptions = mb_substr($memberCaptions, 0, 77) . '...';
+            }
+            $label = htmlspecialchars($memberCount . ' Member: ' . $memberCaptions, ENT_QUOTES, 'UTF-8');
+            $itamItemGroupOptionsHtml .= '<option value="' . $groupUuid . '">' . $label . '</option>';
+        }
+
         $inventoryRowsHtml = '';
         foreach ($decodedInventoryConfig['switches'] as $index => $switchItem) {
             if (!is_array($switchItem)) {
@@ -4858,6 +4958,11 @@ HTML;
             $mgmtIpDataEscaped = htmlspecialchars((string)($switchItem['mgmt_ip'] ?? ''), ENT_QUOTES, 'UTF-8');
             $profileDataEscaped = htmlspecialchars((string)($switchItem['profile'] ?? ''), ENT_QUOTES, 'UTF-8');
             $deviceDataEscaped = htmlspecialchars((string)($switchItem['device_id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $itemGroupIdEscaped = htmlspecialchars((string)($switchItem['item_group_id'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $stackBadge = ($switchItem['item_group_id'] ?? '') !== ''
+                ? '<span class="ml-1 inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800" title="Stack via Item Group">Stack</span>'
+                : '';
+            $deviceCellEscaped = $deviceEscaped . $stackBadge;
             $indexValue = (int)$index;
 
             $inventoryRowsHtml .= <<<HTML
@@ -4865,12 +4970,13 @@ HTML;
                     <td class="p-2 border-b font-medium text-gray-900">{$nameEscaped}</td>
                     <td class="p-2 border-b font-mono text-sm text-gray-700">{$mgmtIpEscaped}</td>
                     <td class="p-2 border-b"><span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold">{$profileEscaped}</span></td>
-                    <td class="p-2 border-b text-sm text-gray-700">{$deviceEscaped}</td>
+                    <td class="p-2 border-b text-sm text-gray-700">{$deviceCellEscaped}</td>
                     <td class="p-2 border-b text-xs text-gray-700">{$credentialModeEscaped}/{$switchAuthMethodEscaped}</td>
                     <td class="p-2 border-b flex flex-row gap-2">
                         <button class="h-10 w-10 rounded-full bg-emerald-500 hover:bg-emerald-700 text-white flex items-center justify-center" type="button" title="SSH testen" aria-label="SSH testen" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-credential-mode="{$credentialModeEscaped}" data-switch-auth-method="{$switchAuthMethodEscaped}" data-switch-ssh-username="{$switchUsernameEscaped}" onclick="submitInventorySshTest(this)"><i data-lucide="terminal"></i></button>
                         <button class="h-10 w-10 rounded-full bg-cyan-500 hover:bg-cyan-700 text-white flex items-center justify-center" type="button" title="SNMP testen" aria-label="SNMP testen" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-snmp-version="{$snmpVersionEscaped}" data-switch-snmp-community="{$snmpCommunityEscaped}" data-switch-snmp-mib="{$snmpMibEscaped}" data-switch-snmp-port="{$snmpPortEscaped}" data-switch-snmp-timeout="{$snmpTimeoutEscaped}" data-switch-snmp-retries="{$snmpRetriesEscaped}" data-switch-snmp-v3-username="{$snmpV3UsernameEscaped}" data-switch-snmp-v3-auth-protocol="{$snmpV3AuthProtocolEscaped}" data-switch-snmp-v3-priv-protocol="{$snmpV3PrivProtocolEscaped}" onclick="submitInventorySnmpTest(this)"><i data-lucide="activity"></i></button>
-                        <button class="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-700 text-white flex items-center justify-center" type="button" title="Bearbeiten" aria-label="Bearbeiten" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" data-switch-credential-mode="{$credentialModeEscaped}" data-switch-auth-method="{$switchAuthMethodEscaped}" data-switch-ssh-username="{$switchUsernameEscaped}" data-switch-snmp-enabled="{$snmpEnabledEscaped}" data-switch-snmp-version="{$snmpVersionEscaped}" data-switch-snmp-community="{$snmpCommunityEscaped}" data-switch-snmp-mib="{$snmpMibEscaped}" data-switch-snmp-v3-username="{$snmpV3UsernameEscaped}" data-switch-snmp-v3-auth-protocol="{$snmpV3AuthProtocolEscaped}" data-switch-snmp-v3-priv-protocol="{$snmpV3PrivProtocolEscaped}" onclick="loadInventoryEntry(this)"><i data-lucide="pencil"></i></button>
+                        <button class="h-10 w-10 rounded-full bg-indigo-500 hover:bg-indigo-700 text-white flex items-center justify-center" type="button" title="SNMP-Scan jetzt" aria-label="SNMP-Scan jetzt" data-switch-name="{$nameDataEscaped}" onclick="submitInventorySnmpScan(this)"><i data-lucide="radar"></i></button>
+                        <button class="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-700 text-white flex items-center justify-center" type="button" title="Bearbeiten" aria-label="Bearbeiten" data-switch-name="{$nameDataEscaped}" data-switch-mgmt-ip="{$mgmtIpDataEscaped}" data-switch-profile="{$profileDataEscaped}" data-switch-device-id="{$deviceDataEscaped}" data-switch-item-group-id="{$itemGroupIdEscaped}" data-switch-credential-mode="{$credentialModeEscaped}" data-switch-auth-method="{$switchAuthMethodEscaped}" data-switch-ssh-username="{$switchUsernameEscaped}" data-switch-snmp-enabled="{$snmpEnabledEscaped}" data-switch-snmp-version="{$snmpVersionEscaped}" data-switch-snmp-community="{$snmpCommunityEscaped}" data-switch-snmp-mib="{$snmpMibEscaped}" data-switch-snmp-v3-username="{$snmpV3UsernameEscaped}" data-switch-snmp-v3-auth-protocol="{$snmpV3AuthProtocolEscaped}" data-switch-snmp-v3-priv-protocol="{$snmpV3PrivProtocolEscaped}" onclick="loadInventoryEntry(this)"><i data-lucide="pencil"></i></button>
                         <button class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 text-white flex items-center justify-center" type="button" title="Loeschen" aria-label="Loeschen" onclick="submitInventoryDelete({$indexValue})"><i data-lucide="trash-2"></i></button>
                     </td>
                 </tr>
@@ -4990,6 +5096,7 @@ HTML;
                 <div class="pb-6 scripts-section-switch">
                     <div class="flex items-center justify-between pb-2">
                         <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
+                        <button type="button" class="inline-flex items-center gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2" title="Alle Switches scannen" onclick="submitInventorySnmpScanAll()"><i data-lucide="radar" class="h-4 w-4"></i><span>Alle scannen</span></button>
                     </div>
                     <div class="border border-gray-200 rounded-2xl overflow-hidden">
                         <table class="w-full text-sm text-left">
@@ -5026,6 +5133,9 @@ HTML;
                             <option value="password">Passwort</option>
                             <option value="key">SSH Key</option>
                         </select>
+                    </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-1 gap-3">
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_item_group_id" title="Item Group fuer Stack-Switches (mehrere Devices = ein logischer Switch)">{$itamItemGroupOptionsHtml}</select>
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_ssh_username" placeholder="individueller SSH Username">
@@ -5304,6 +5414,8 @@ HTML;
                     document.getElementById('switch_mgmt_ip').value = button.dataset.switchMgmtIp || '';
                     document.getElementById('switch_profile').value = button.dataset.switchProfile || '';
                     document.getElementById('switch_device_id').value = button.dataset.switchDeviceId || '';
+                    var igEl = document.getElementById('switch_item_group_id');
+                    if (igEl) { igEl.value = button.dataset.switchItemGroupId || ''; }
                     document.getElementById('switch_credential_mode').value = button.dataset.switchCredentialMode || 'global';
                     document.getElementById('switch_auth_method').value = button.dataset.switchAuthMethod || 'password';
                     document.getElementById('switch_ssh_username').value = button.dataset.switchSshUsername || '';
@@ -5335,6 +5447,8 @@ HTML;
                     document.getElementById('switch_mgmt_ip').value = '';
                     document.getElementById('switch_profile').selectedIndex = 0;
                     document.getElementById('switch_device_id').value = '';
+                    var igEl2 = document.getElementById('switch_item_group_id');
+                    if (igEl2) { igEl2.value = ''; }
                     document.getElementById('switch_credential_mode').value = 'global';
                     document.getElementById('switch_auth_method').value = 'password';
                     document.getElementById('switch_ssh_username').value = '';
@@ -5381,6 +5495,8 @@ HTML;
                     const mgmtIp = document.getElementById('switch_mgmt_ip').value.trim();
                     const profile = document.getElementById('switch_profile').value.trim();
                     const deviceId = document.getElementById('switch_device_id').value.trim();
+                    const itemGroupIdEl = document.getElementById('switch_item_group_id');
+                    const itemGroupId = itemGroupIdEl ? itemGroupIdEl.value.trim() : '';
                     const credentialMode = document.getElementById('switch_credential_mode').value;
                     const authMethod = document.getElementById('switch_auth_method').value;
                     const switchUsername = document.getElementById('switch_ssh_username').value.trim();
@@ -5409,6 +5525,7 @@ HTML;
                         switch_mgmt_ip: mgmtIp,
                         switch_profile: profile,
                         switch_device_id: deviceId,
+                        switch_item_group_id: itemGroupId,
                         switch_credential_mode: credentialMode,
                         switch_auth_method: authMethod,
                         switch_ssh_username: switchUsername,
@@ -5477,6 +5594,32 @@ HTML;
                     }
                     postAutomationAction('automation_inventory_delete', {
                         inventory_index: String(index)
+                    });
+                }
+
+                function submitInventorySnmpScan(button) {
+                    const name = button.dataset.switchName || '';
+                    if (name === '') {
+                        alert('Switch-Name fuer SNMP-Scan konnte nicht gelesen werden.');
+                        return;
+                    }
+                    if (!confirm('SNMP-Scan fuer ' + name + ' jetzt ausfuehren?')) {
+                        return;
+                    }
+                    postAutomationAction('automation_snmp_scan', {
+                        snmp_switch_name: name,
+                        scripts_json: document.getElementById('scripts_json').value,
+                        switch_inventory_json: document.getElementById('switch_inventory_json').value
+                    });
+                }
+
+                function submitInventorySnmpScanAll() {
+                    if (!confirm('SNMP-Scan fuer ALLE Switches ausfuehren?')) {
+                        return;
+                    }
+                    postAutomationAction('automation_snmp_scan_all', {
+                        scripts_json: document.getElementById('scripts_json').value,
+                        switch_inventory_json: document.getElementById('switch_inventory_json').value
                     });
                 }
 

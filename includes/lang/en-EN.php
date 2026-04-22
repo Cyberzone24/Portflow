@@ -184,7 +184,6 @@ if (isset($_GET['nav'])) {
                 'device_port_device_metadata_caption',
                 'device_port_device_type',
                 'device_port_device_location_parent_location_metadata_caption',
-                'device_port_device_port_vlan_vlan_vlan',
                 'device_port_device_port_ip_ip',
                 'device_port_speed',
                 'device_port_expected_speed',
@@ -205,7 +204,6 @@ if (isset($_GET['nav'])) {
             'device_port_uuid' => 'Device Port UUID',
             'device_port_metadata' => 'Device Port Metadata',
             'device_port_device' => 'Device Port Device',
-            'device_port_device_port_vlan' => 'Device Port VLAN',
             'device_port_device_port_ip' => 'Device Port IP',
             'device_port_poe' => 'Device Port PoE',
             'device_port_mac_address' => 'Device Port MAC Address',
@@ -241,8 +239,38 @@ if (isset($_GET['nav'])) {
             'device_port_device_item_group' => 'Device Item Group',
             'device_port_device_template' => 'Device Template',
             'device_port_device_location_parent_location_metadata_caption' => 'Room',
-            'device_port_device_port_vlan_vlan_vlan' => 'VLAN',
             'device_port_device_port_ip_ip' => 'IP Address'
+        ]
+    ];
+    $nav['device_port_vlan_details'] = [
+        'default' => ['device_port_vlan_device_port_device_metadata_caption', 'device_port_vlan_device_port_metadata_caption', 'device_port_vlan_vlan_vlan', 'device_port_vlan_expected_vlan_vlan', 'device_port_vlan_tagged', 'device_port_vlan_expected_tagged'],
+        'details_layout' => [
+            'primary_title' => 'Port VLAN Core Data',
+            'primary_fields' => [
+                'device_port_vlan_device_port_device_metadata_caption',
+                'device_port_vlan_device_port_metadata_caption',
+                'device_port_vlan_vlan_vlan',
+                'device_port_vlan_expected_vlan_vlan',
+                'device_port_vlan_tagged',
+                'device_port_vlan_expected_tagged'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal']
+            ]
+        ],
+        'columns' => [
+            'device_port_vlan_uuid' => 'Port VLAN UUID',
+            'device_port_vlan_device_port' => 'Device Port',
+            'device_port_vlan_vlan' => 'VLAN (current)',
+            'device_port_vlan_expected_vlan' => 'VLAN (expected)',
+            'device_port_vlan_tagged' => 'Tagged (current)',
+            'device_port_vlan_expected_tagged' => 'Tagged (expected)',
+            'device_port_vlan_device_port_metadata_caption' => 'Port',
+            'device_port_vlan_device_port_device_metadata_caption' => 'Device',
+            'device_port_vlan_vlan_vlan' => 'VLAN ID (current)',
+            'device_port_vlan_vlan_metadata_caption' => 'VLAN Caption (current)',
+            'device_port_vlan_expected_vlan_vlan' => 'VLAN ID (expected)',
+            'device_port_vlan_expected_vlan_metadata_caption' => 'VLAN Caption (expected)'
         ]
     ];
     $nav['device_details'] = [
@@ -350,6 +378,7 @@ if (isset($_GET['nav'])) {
         $lang['itam'] = 'ITAM';
         $lang['automation'] = 'Automation';
         $lang['portview'] = 'Portview';
+        $lang['reports'] = 'Reports';
         $lang['login'] = 'Login';
         $lang['logout'] = 'Logout';
         $lang['register'] = 'Register';
@@ -367,6 +396,7 @@ if (isset($_GET['nav'])) {
         $lang['vlan'] = 'VLAN';
         $lang['devices'] = 'Devices';
         $lang['device ports'] = 'Device Ports';
+        $lang['port vlans'] = 'Port VLANs';
         $lang['connections'] = 'Connections';
         $lang['quantity'] = 'Quantity';
 

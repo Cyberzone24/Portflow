@@ -109,6 +109,7 @@
                 <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="layers"></i><span class="itam-nav-label truncate"><?php echo $lang['vlan']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
                 <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="server"></i><span class="itam-nav-label truncate"><?php echo $lang['devices']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
                 <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="ethernet-port"></i><span class="itam-nav-label truncate"><?php echo $lang['device ports']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+                <li onclick="loadTable('device_port_vlan_details')" data-table="device_port_vlan_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="tag"></i><span class="itam-nav-label truncate"><?php echo $lang['port vlans']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
                 <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
             </ul>
         </div>
@@ -129,6 +130,7 @@
                 <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="layers"></i><span class="itam-nav-label truncate"><?php echo $lang['vlan']; ?></span></span></li>
                 <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="server"></i><span class="itam-nav-label truncate"><?php echo $lang['devices']; ?></span></span></li>
                 <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="ethernet-port"></i><span class="itam-nav-label truncate"><?php echo $lang['device ports']; ?></span></span></li>
+                <li onclick="loadTable('device_port_vlan_details')" data-table="device_port_vlan_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="tag"></i><span class="itam-nav-label truncate"><?php echo $lang['port vlans']; ?></span></span></li>
                 <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span></li>
             </ul>
 
@@ -3211,9 +3213,6 @@ async function submitForms(table) {
         if (postConfig.useMetadataUUID && responseUuids.metadata) {
             postData.metadata = responseUuids.metadata;
         }
-        if (postConfig.useVlanUUID && responseUuids.device_port_vlan) {
-            postData.device_port_vlan = responseUuids.device_port_vlan;
-        }
         if (postConfig.useIpUUID && responseUuids.device_port_ip) {
             postData.device_port_ip = responseUuids.device_port_ip;
         }
@@ -3354,10 +3353,10 @@ async function submitForms(table) {
         let apiUrl = editMode
             ? `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/${targetUuid}`
             : `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/`;
-        const isOptionalRelationTable = postConfig.table === 'device_port_vlan' || postConfig.table === 'device_port_ip';
+        const isOptionalRelationTable = postConfig.table === 'device_port_ip';
         const hasPayloadValues = hasMeaningfulPostData(postData);
 
-        // In edit mode, related rows (e.g. device_port_vlan/ip) might not exist yet.
+        // In edit mode, related rows (e.g. device_port_ip) might not exist yet.
         // Fall back to create for that step instead of aborting the full save.
         if (editMode && !targetUuid) {
             if (isOptionalRelationTable && !hasPayloadValues) {
@@ -3410,7 +3409,6 @@ async function submitForms(table) {
 
             responseUuids[postConfig.table] = effectiveUuid;
             if (postConfig.table === 'metadata') responseUuids.metadata = effectiveUuid;
-            if (postConfig.table === 'device_port_vlan') responseUuids.device_port_vlan = effectiveUuid;
             if (postConfig.table === 'device_port_ip') responseUuids.device_port_ip = effectiveUuid;
 
             if (!editMode && postConfig.table === 'device' && autoPortConfig && autoPortConfig.groups && autoPortConfig.groups.length > 0) {
@@ -3551,8 +3549,8 @@ function displayTable(columnsConfig, userColumns, rows) {
     // Standard Farben für Status
     const STATUS_COLORS = {
         0: '#22c55e',  // Aktiv - Grün
-        2: '#eab308',  // Deaktiviert - Gelb
-        4: '#ef4444',  // Offline - Rot
+        2: '#ef4444',  // Deaktiviert - Rot
+        4: '#eab308',  // Offline - Gelb
         6: '#6b7280',  // Ungenutzt - Grau
         default: '#6b7280'  // Unbekannt - Grau
     };
@@ -3586,8 +3584,8 @@ function displayTable(columnsConfig, userColumns, rows) {
     function createStatusIcon(iconName, status, title = null) {
         const color = getStatusColor(status);
         const statusTitle = title || getStatusTitle(status);
-        return `<span class="h-10 w-10 rounded-full flex items-center justify-center">
-                    <i data-lucide="${iconName}" style="color:${color};vertical-align:middle" title="${statusTitle}"></i>
+        return `<span class="h-10 w-10 rounded-full flex items-center justify-center" title="${statusTitle}">
+                    <i data-lucide="${iconName}" style="color:${color};vertical-align:middle"></i>
                 </span>`;
     }
 
@@ -3843,7 +3841,7 @@ function displayTable(columnsConfig, userColumns, rows) {
                 let td;
                 if (colKey === 'device_port_metadata_caption') {
                     td = $('<td class="p-2">').html(
-                        `${row.device_port_device_metadata_caption || '--'} <br> <span class="text-xs text-gray-500">${row.device_port_metadata_caption || '--'}</span> <br> <span class="text-xs text-gray-500">${row.device_port_device_port_vlan_vlan_vlan || '--'}</span>`
+                        `${row.device_port_device_metadata_caption || '--'} <br> <span class="text-xs text-gray-500">${row.device_port_metadata_caption || '--'}</span>`
                     );
                 } else if (colKey === 'device_port_metadata_status') {
                     td = $('<td class="p-2">').html(createStatusIcon('ethernet-port', row.device_port_metadata_status));

@@ -242,7 +242,6 @@ if (isset($_GET['nav'])) {
                 'device_port_device_metadata_caption',
                 'device_port_device_type',
                 'device_port_device_location_metadata_caption',
-                'device_port_device_port_vlan_vlan_vlan',
                 'device_port_device_port_ip_ip',
                 'device_port_speed',
                 'device_port_expected_speed',
@@ -263,7 +262,6 @@ if (isset($_GET['nav'])) {
             'device_port_uuid' => 'Device Port UUID',
             'device_port_metadata' => 'Device Port Metadata',
             'device_port_device' => 'Device Port Device',
-            'device_port_device_port_vlan' => 'Device Port VLAN',
             'device_port_device_port_ip' => 'Device Port IP',
             'device_port_poe' => 'Device Port PoE',
             'device_port_mac_address' => 'Device Port MAC Address',
@@ -308,53 +306,6 @@ if (isset($_GET['nav'])) {
             'device_port_device_metadata_created' => 'Device Metadata Created',
             'device_port_device_metadata_changed' => 'Device Metadata Changed',
             'device_port_device_location_metadata_caption' => 'Raum',
-            'device_port_device_port_vlan_uuid' => 'Device Port VLAN UUID',
-            'device_port_device_port_vlan_vlan' => 'Device Port VLAN',
-            'device_port_device_port_vlan_expected_vlan' => 'Device Port Expected VLAN',
-            'device_port_device_port_vlan_tagged' => 'Device Port VLAN Tagged',
-            'device_port_device_port_vlan_expected_tagged' => 'Device Port Expected VLAN Tagged',
-            'device_port_device_port_vlan_vlan_uuid' => 'Device Port VLAN UUID',
-            'device_port_device_port_vlan_vlan_metadata' => 'Device Port VLAN Metadata',
-            'device_port_device_port_vlan_vlan_ip_range' => 'Device Port VLAN IP Range',
-            'device_port_device_port_vlan_vlan_vlan' => 'Device Port VLAN VLAN',
-            'device_port_device_port_vlan_vlan_metadata_uuid' => 'Device Port VLAN Metadata UUID',
-            'device_port_device_port_vlan_vlan_metadata_users' => 'Device Port VLAN Metadata User',
-            'device_port_device_port_vlan_vlan_metadata_status' => 'Device Port VLAN Metadata Status',
-            'device_port_device_port_vlan_vlan_metadata_caption' => 'Device Port VLAN Metadata Caption',
-            'device_port_device_port_vlan_vlan_metadata_description' => 'Device Port VLAN Metadata Description',
-            'device_port_device_port_vlan_vlan_metadata_specification' => 'Device Port VLAN Metadata Specification',
-            'device_port_device_port_vlan_vlan_metadata_tags' => 'Device Port VLAN Metadata Tags',
-            'device_port_device_port_vlan_vlan_metadata_created' => 'Device Port VLAN Metadata Created',
-            'device_port_device_port_vlan_vlan_metadata_changed' => 'Device Port VLAN Metadata Changed',
-            'device_port_device_port_vlan_vlan_ip_range_uuid' => 'Device Port VLAN IP Range UUID',
-            'device_port_device_port_vlan_vlan_ip_range_metadata' => 'Device Port VLAN IP Range Metadata',
-            'device_port_device_port_vlan_vlan_ip_range_ip_range' => 'Device Port VLAN IP Range',
-            'device_port_device_port_vlan_vlan_ip_range_gateway' => 'Device Port VLAN IP Range Gateway',
-            'device_port_device_port_vlan_vlan_ip_range_broadcast' => 'Device Port VLAN IP Range Broadcast',
-            'device_port_device_port_vlan_vlan_ip_range_dns_server' => 'Device Port VLAN IP Range DNS Server',
-            'device_port_device_port_vlan_vlan_ip_range_dns_zone' => 'Device Port VLAN IP Range DNS Zone',
-            'device_port_device_port_vlan_vlan_ip_range_dhcp_server' => 'Device Port VLAN IP Range DHCP Server',
-            'device_port_device_port_vlan_expected_vlan_uuid' => 'Device Port Expected VLAN UUID',
-            'device_port_device_port_vlan_expected_vlan_metadata' => 'Device Port Expected VLAN Metadata',
-            'device_port_device_port_vlan_expected_vlan_ip_range' => 'Device Port Expected VLAN IP Range',
-            'device_port_device_port_vlan_expected_vlan_vlan' => 'Device Port Expected VLAN VLAN',
-            'device_port_device_port_vlan_expected_vlan_metadata_uuid' => 'Device Port Expected VLAN Metadata UUID',
-            'device_port_device_port_vlan_expected_vlan_metadata_users' => 'Device Port Expected VLAN Metadata User',
-            'device_port_device_port_vlan_expected_vlan_metadata_status' => 'Device Port Expected VLAN Metadata Status',
-            'device_port_device_port_vlan_expected_vlan_metadata_caption' => 'Device Port Expected VLAN Metadata Caption',
-            'device_port_device_port_vlan_expected_vlan_metadata_description' => 'Device Port Expected VLAN Metadata Description',
-            'device_port_device_port_vlan_expected_vlan_metadata_specification' => 'Device Port Expected VLAN Metadata Specification',
-            'device_port_device_port_vlan_expected_vlan_metadata_tags' => 'Device Port Expected VLAN Metadata Tags',
-            'device_port_device_port_vlan_expected_vlan_metadata_created' => 'Device Port Expected VLAN Metadata Created',
-            'device_port_device_port_vlan_expected_vlan_metadata_changed' => 'Device Port Expected VLAN Metadata Changed',
-            'device_port_device_port_vlan_expected_vlan_ip_range_uuid' => 'Device Port Expected VLAN IP Range UUID',
-            'device_port_device_port_vlan_expected_vlan_ip_range_metadata' => 'Device Port Expected VLAN IP Range Metadata',
-            'device_port_device_port_vlan_expected_vlan_ip_range_ip_range' => 'Device Port Expected VLAN IP Range',
-            'device_port_device_port_vlan_expected_vlan_ip_range_gateway' => 'Device Port Expected VLAN IP Range Gateway',
-            'device_port_device_port_vlan_expected_vlan_ip_range_broadcast' => 'Device Port Expected VLAN IP Range Broadcast',
-            'device_port_device_port_vlan_expected_vlan_ip_range_dns_server' => 'Device Port Expected VLAN IP Range DNS Server',
-            'device_port_device_port_vlan_expected_vlan_ip_range_dns_zone' => 'Device Port Expected VLAN IP Range DNS Zone',
-            'device_port_device_port_vlan_expected_vlan_ip_range_dhcp_server' => 'Device Port Expected VLAN IP Range DHCP Server',
             'device_port_device_port_ip_uuid' => 'Device Port IP UUID',
             'device_port_device_port_ip_ip' => 'Device Port IP',
             'device_port_device_port_ip_expected_ip' => 'Device Port Expected IP',
@@ -362,6 +313,37 @@ if (isset($_GET['nav'])) {
             'device_port_device_port_ip_expected_hostname' => 'Device Port Expected Hostname',
             'device_port_device_port_ip_dhcp_address' => 'Device Port DHCP Address',
             'device_port_device_port_ip_expected_dhcp_address' => 'Device Port Expected DHCP Address'
+        ]
+    ];
+    $nav['device_port_vlan_details'] = [
+        'default' => ['device_port_vlan_device_port_device_metadata_caption', 'device_port_vlan_device_port_metadata_caption', 'device_port_vlan_vlan_vlan', 'device_port_vlan_expected_vlan_vlan', 'device_port_vlan_tagged', 'device_port_vlan_expected_tagged'],
+        'details_layout' => [
+            'primary_title' => 'Port-VLAN-Stammdaten',
+            'primary_fields' => [
+                'device_port_vlan_device_port_device_metadata_caption',
+                'device_port_vlan_device_port_metadata_caption',
+                'device_port_vlan_vlan_vlan',
+                'device_port_vlan_expected_vlan_vlan',
+                'device_port_vlan_tagged',
+                'device_port_vlan_expected_tagged'
+            ],
+            'panels' => [
+                ['type' => 'journal', 'title' => 'Journal']
+            ]
+        ],
+        'columns' => [
+            'device_port_vlan_uuid' => 'Port-VLAN UUID',
+            'device_port_vlan_device_port' => 'Device-Port',
+            'device_port_vlan_vlan' => 'VLAN (Ist)',
+            'device_port_vlan_expected_vlan' => 'VLAN (Soll)',
+            'device_port_vlan_tagged' => 'Tagged (Ist)',
+            'device_port_vlan_expected_tagged' => 'Tagged (Soll)',
+            'device_port_vlan_device_port_metadata_caption' => 'Port',
+            'device_port_vlan_device_port_device_metadata_caption' => 'Geraet',
+            'device_port_vlan_vlan_vlan' => 'VLAN-ID (Ist)',
+            'device_port_vlan_vlan_metadata_caption' => 'VLAN Bezeichnung (Ist)',
+            'device_port_vlan_expected_vlan_vlan' => 'VLAN-ID (Soll)',
+            'device_port_vlan_expected_vlan_metadata_caption' => 'VLAN Bezeichnung (Soll)'
         ]
     ];
     $nav['connection_details'] = [
@@ -558,6 +540,7 @@ if (isset($_GET['nav'])) {
         $lang['itam'] = 'ITAM';
         $lang['automation'] = 'Automatisierung';
         $lang['portview'] = 'Portview';
+        $lang['reports'] = 'Reports';
         $lang['login'] = 'Anmelden';
         $lang['logout'] = 'Abmelden';
         $lang['register'] = 'Registrieren';
@@ -576,6 +559,7 @@ if (isset($_GET['nav'])) {
         $lang['vlan'] = 'VLAN';
         $lang['devices'] = 'Geräte';
         $lang['device ports'] = 'Geräteports';
+        $lang['port vlans'] = 'Port-VLANs';
         $lang['connections'] = 'Verbindungen';
         $lang['quantity'] = 'Anzahl';
         $lang['datasets'] = 'Datensätze';

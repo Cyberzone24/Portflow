@@ -82,6 +82,52 @@
             "quit"
         ]
         },
+        "no_shutdown_port": {
+        "label": "No Shutdown Port",
+        "description": "Enables a switch port (undo shutdown).",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "undo shutdown",
+            "quit"
+        ]
+        },
+        "set_port_pvid": {
+        "label": "Set Port PVID",
+        "description": "Assigns the access (untagged) VLAN PVID to a switch port.",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" },
+            { "name": "vlan_id", "label": "VLAN ID", "type": "number", "required": true, "placeholder": "120" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "port link-type access",
+            "port default vlan {{vlan_id}}",
+            "quit"
+        ]
+        },
+        "set_trunk_allowed_vlans": {
+        "label": "Set Trunk Allowed VLANs",
+        "description": "Configures a trunk port and replaces the allowed VLAN list.",
+        "supported_profiles": ["huawei_core_commit", "huawei_access_no_commit"],
+        "variables": [
+            { "name": "interface", "label": "Interface", "type": "text", "required": true, "placeholder": "GigabitEthernet1/0/1" },
+            { "name": "allowed_vlans", "label": "Allowed VLAN List", "type": "text", "required": true, "placeholder": "10 20 30 to 40" },
+            { "name": "pvid", "label": "Native VLAN (PVID)", "type": "number", "required": false, "placeholder": "1" }
+        ],
+        "commands": [
+            "interface {{interface}}",
+            "port link-type trunk",
+            "undo port trunk allow-pass vlan all",
+            "port trunk allow-pass vlan {{allowed_vlans}}",
+            "port trunk pvid vlan {{pvid}}",
+            "quit"
+        ]
+        },
         "cleanup_port": {
         "label": "Cleanup Port",
         "description": "Cleans up a switch port.",

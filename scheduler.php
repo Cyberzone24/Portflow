@@ -79,6 +79,58 @@ $mail = new Mail();
 $notificationCenter = new NotificationCenter($db, $logger, $mail);
 $startTime = microtime(true);
 
+// Dispatch alternative scheduler tasks via first CLI argument.
+$schedulerTask = isset($argv[1]) ? trim((string)$argv[1]) : '';
+
+if ($schedulerTask === 'snmp-scan' || $schedulerTask === 'snmp_scan_all') {
+    include_once __DIR__ . '/includes/core/snmp_scanner.php';
+    $logger->log('Scheduler[snmp-scan]: Starting SNMP scan across all inventory switches', 1);
+
+    $storedSettings = $automationStore->getSettings();
+    $invRaw = trim((string)($storedSettings['switch_inventory_json'] ?? ''));
+    $invDecoded = $invRaw !== '' ? json_decode($invRaw, true) : null;
+    $switchNames = [];
+    if (is_array($invDecoded) && isset($invDecoded['switches']) && is_array($invDecoded['switches'])) {
+        foreach ($invDecoded['switches'] as $sw) {
+            if (is_array($sw)) {
+                $name = trim((string)($sw['name'] ?? ''));
+                if ($name !== '') {
+                    $switchNames[] = $name;
+                }
+            }
+        }
+    }
+    $switchNames = array_values(array_unique($switchNames));
+
+    if (empty($switchNames)) {
+        $logger->log('Scheduler[snmp-scan]: No switches in inventory', 2);
+        exit(0);
+    }
+
+    $scanner = new \Portflow\Core\SnmpScanner($db, $automationStore, $logger);
+    $okCount = 0;
+    $failCount = 0;
+    foreach ($switchNames as $name) {
+        try {
+            $r = $scanner->scanSwitch($name, 'scheduler', null);
+            if (!empty($r['ok'])) {
+                $okCount++;
+                $logger->log(sprintf('Scheduler[snmp-scan] OK %s ifs=%d findings=%d', $name, (int)($r['interfaces'] ?? 0), (int)($r['findings'] ?? 0)), 1);
+            } else {
+                $failCount++;
+                $logger->log(sprintf('Scheduler[snmp-scan] FAIL %s -- %s', $name, (string)($r['error'] ?? 'unknown')), 2);
+            }
+        } catch (\Throwable $e) {
+            $failCount++;
+            $logger->log(sprintf('Scheduler[snmp-scan] EXC %s -- %s', $name, $e->getMessage()), 3);
+        }
+    }
+
+    $logger->log(sprintf('Scheduler[snmp-scan] done: total=%d ok=%d fail=%d duration=%.2fs',
+        count($switchNames), $okCount, $failCount, microtime(true) - $startTime), 1);
+    exit($failCount === 0 ? 0 : 1);
+}
+
 $logger->log('Scheduler: Starting automated queue execution', 1);
 
 try {
