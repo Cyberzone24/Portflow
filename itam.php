@@ -1658,12 +1658,14 @@ function setupDevice3DMasks(container) {
     const writeMaskToJsonFields = () => {
         applyRuToDerivedFields();
 
-        sizeField.value = JSON.stringify({
-            x: getNumericOrDefault(sizeX.input.value, 445),
-            y: getNumericOrDefault(sizeY.input.value, 44.45),
-            z: getNumericOrDefault(sizeZ.input.value, 300),
-            weightKg: getNumericOrDefault(weightKg.input.value, 5)
-        });
+        // Preserve any extra properties (e.g. portLayout written by the Port Layout Builder)
+        // by merging instead of replacing the size JSON.
+        const existingSize = parseJsonObjectOrDefault(sizeField.value || '{}', {});
+        existingSize.x = getNumericOrDefault(sizeX.input.value, 445);
+        existingSize.y = getNumericOrDefault(sizeY.input.value, 44.45);
+        existingSize.z = getNumericOrDefault(sizeZ.input.value, 300);
+        existingSize.weightKg = getNumericOrDefault(weightKg.input.value, 5);
+        sizeField.value = JSON.stringify(existingSize);
 
         positionField.value = JSON.stringify({
             x: getNumericOrDefault(posX.input.value, 0),
