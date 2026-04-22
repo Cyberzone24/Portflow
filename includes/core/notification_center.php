@@ -56,7 +56,9 @@ class NotificationCenter {
                     'uuid' => (string)$user['uuid'],
                     'username' => (string)$user['username'],
                     'email' => (string)$user['email'],
-                    'channel' => (string)$user['channel']
+                    'channel' => (string)$user['channel'],
+                    'slack_webhook_url' => (string)($user['slack_webhook_url'] ?? ''),
+                    'telegram_chat_id' => (string)($user['telegram_chat_id'] ?? '')
                 ]
             ];
             $enqueued++;
@@ -68,6 +70,70 @@ class NotificationCenter {
 
         $this->logger->log('notifications enqueued: event=' . $eventType . ' level=' . $level . ' recipients=' . $enqueued, 1);
         return $enqueued;
+    }
+
+    public function enqueueForUsers(array $userUuids, string $eventType, string $level, string $title, string $message, array $meta = []): int {
+        $normalized = [];
+        foreach ($userUuids as $uuid) {
+            $candidate = trim((string)$uuid);
+            if ($candidate === '') {
+                continue;
+            }
+            $normalized[$candidate] = true;
+        }
+
+        if (empty($normalized)) {
+            return 0;
+        }
+
+        $queue = $this->readQueue();
+        $users = $this->loadUsersForLevel($level, array_keys($normalized));
+        $enqueued = 0;
+
+        foreach ($users as $user) {
+            $queue[] = [
+                'id' => $this->uuidV4(),
+                'created_at' => gmdate('c'),
+                'next_attempt_at' => gmdate('c'),
+                'attempts' => 0,
+                'status' => 'pending',
+                'event_type' => $eventType,
+                'level' => $level,
+                'title' => $title,
+                'message' => $message,
+                'meta' => $meta,
+                'recipient' => [
+                    'uuid' => (string)$user['uuid'],
+                    'username' => (string)$user['username'],
+                    'email' => (string)$user['email'],
+                    'channel' => (string)$user['channel'],
+                    'slack_webhook_url' => (string)($user['slack_webhook_url'] ?? ''),
+                    'telegram_chat_id' => (string)($user['telegram_chat_id'] ?? '')
+                ]
+            ];
+            $enqueued++;
+        }
+
+        if ($enqueued > 0) {
+            $this->writeQueue($queue);
+        }
+
+        $this->logger->log('notifications enqueued (targeted): event=' . $eventType . ' level=' . $level . ' recipients=' . $enqueued, 1);
+        return $enqueued;
+    }
+
+    public function enqueueEvent(string $eventType, string $level, string $title, string $message, array $meta = []): int {
+        $recipientUuids = $this->resolveRecipientUuidsForEvent($eventType, $meta);
+        if (!empty($recipientUuids)) {
+            return $this->enqueueForUsers($recipientUuids, $eventType, $level, $title, $message, $meta);
+        }
+
+        if ($this->shouldBroadcastEvent($eventType, $meta)) {
+            return $this->enqueueGlobal($eventType, $level, $title, $message, $meta);
+        }
+
+        $this->logger->log('notification event skipped: no scoped recipients resolved for event=' . $eventType, 1);
+        return 0;
     }
 
     public function processQueue(int $maxEntries = 100): array {
@@ -209,12 +275,12 @@ class NotificationCenter {
         }
 
         $summary = $this->buildDailySummary();
-        $this->enqueueGlobal(
+        $this->enqueueEvent(
             'daily_summary',
             'progress',
             'Tageszusammenfassung',
             $summary['message'],
-            $summary['meta']
+            array_merge($summary['meta'], ['recipient_role' => 'admin'])
         );
 
         $state['last_daily_date'] = $today;
@@ -237,6 +303,10 @@ class NotificationCenter {
 
         $latestSentAt = null;
         $recentSent = [];
+        $recentFailed = [];
+        $byChannel = [];
+        $lastSentByChannel = [];
+        $errorsByChannel = [];
 
         foreach ($queue as $entry) {
             if (!is_array($entry)) {
@@ -250,7 +320,42 @@ class NotificationCenter {
             }
             $counts[$status]++;
 
+            $recipient = is_array($entry['recipient'] ?? null) ? $entry['recipient'] : [];
+            $channel = strtolower(trim((string)($recipient['channel'] ?? 'mail')));
+            if ($channel === '') {
+                $channel = 'mail';
+            }
+            if (!isset($byChannel[$channel])) {
+                $byChannel[$channel] = ['total' => 0, 'pending' => 0, 'sent' => 0, 'failed' => 0];
+            }
+            $byChannel[$channel]['total']++;
+            if (isset($byChannel[$channel][$status])) {
+                $byChannel[$channel][$status]++;
+            }
+
             if ($status !== 'sent') {
+                if ($status === 'failed') {
+                    $errorText = (string)($entry['error'] ?? 'unknown error');
+                    if (!isset($errorsByChannel[$channel])) {
+                        $errorsByChannel[$channel] = [];
+                    }
+                    if (!isset($errorsByChannel[$channel][$errorText])) {
+                        $errorsByChannel[$channel][$errorText] = 0;
+                    }
+                    $errorsByChannel[$channel][$errorText]++;
+
+                    $recentFailed[] = [
+                        'id' => (string)($entry['id'] ?? ''),
+                        'updated_at' => (string)($entry['sent_at'] ?? $entry['next_attempt_at'] ?? $entry['created_at'] ?? ''),
+                        'event_type' => (string)($entry['event_type'] ?? ''),
+                        'title' => (string)($entry['title'] ?? ''),
+                        'recipient_username' => (string)($recipient['username'] ?? ''),
+                        'recipient_email' => (string)($recipient['email'] ?? ''),
+                        'channel' => $channel,
+                        'error' => $errorText,
+                        'attempts' => (int)($entry['attempts'] ?? 0)
+                    ];
+                }
                 continue;
             }
 
@@ -268,13 +373,23 @@ class NotificationCenter {
                 $latestSentAt = $sentAt;
             }
 
-            $recipient = is_array($entry['recipient'] ?? null) ? $entry['recipient'] : [];
+            if (!isset($lastSentByChannel[$channel]) || strcmp((string)($lastSentByChannel[$channel]['sent_at'] ?? ''), $sentAtRaw) < 0) {
+                $lastSentByChannel[$channel] = [
+                    'sent_at' => $sentAtRaw,
+                    'event_type' => (string)($entry['event_type'] ?? ''),
+                    'title' => (string)($entry['title'] ?? ''),
+                    'recipient_username' => (string)($recipient['username'] ?? ''),
+                    'recipient_email' => (string)($recipient['email'] ?? '')
+                ];
+            }
+
             $recentSent[] = [
                 'sent_at' => $sentAtRaw,
                 'title' => (string)($entry['title'] ?? ''),
                 'event_type' => (string)($entry['event_type'] ?? ''),
                 'recipient_username' => (string)($recipient['username'] ?? ''),
                 'recipient_email' => (string)($recipient['email'] ?? ''),
+                'channel' => $channel,
                 'attempts' => (int)($entry['attempts'] ?? 0)
             ];
         }
@@ -282,18 +397,102 @@ class NotificationCenter {
         usort($recentSent, static function (array $a, array $b): int {
             return strcmp((string)($b['sent_at'] ?? ''), (string)($a['sent_at'] ?? ''));
         });
+        usort($recentFailed, static function (array $a, array $b): int {
+            return strcmp((string)($b['updated_at'] ?? ''), (string)($a['updated_at'] ?? ''));
+        });
 
         $recentLimit = max(1, $recentLimit);
         $recentSent = array_slice($recentSent, 0, $recentLimit);
+        $recentFailed = array_slice($recentFailed, 0, $recentLimit);
 
         return [
             'counts' => $counts,
+            'by_channel' => $byChannel,
+            'last_sent_by_channel' => $lastSentByChannel,
+            'errors_by_channel' => $errorsByChannel,
             'recent_sent' => $recentSent,
+            'recent_failed' => $recentFailed,
             'last_sent_at' => $latestSentAt?->format('c'),
             'last_daily_date' => (string)($state['last_daily_date'] ?? ''),
             'last_daily_at' => (string)($state['last_daily_at'] ?? ''),
             'configured_daily_time' => defined('NOTIFICATION_DAILY_TIME') ? (string)NOTIFICATION_DAILY_TIME : '08:00',
             'configured_timezone' => defined('NOTIFICATION_TIMEZONE') ? (string)NOTIFICATION_TIMEZONE : 'UTC'
+        ];
+    }
+
+    public function retryQueueEntry(string $entryId): array {
+        $targetId = trim($entryId);
+        if ($targetId === '') {
+            return ['ok' => false, 'message' => 'queue entry id missing'];
+        }
+
+        $queue = $this->readQueue();
+        foreach ($queue as $idx => $entry) {
+            if (!is_array($entry) || (string)($entry['id'] ?? '') !== $targetId) {
+                continue;
+            }
+
+            if ((string)($entry['status'] ?? '') !== 'failed') {
+                return ['ok' => false, 'message' => 'queue entry is not failed'];
+            }
+
+            $queue[$idx]['status'] = 'pending';
+            $queue[$idx]['attempts'] = 0;
+            $queue[$idx]['next_attempt_at'] = gmdate('c');
+            unset($queue[$idx]['error'], $queue[$idx]['sent_at']);
+            $this->writeQueue($queue);
+
+            return ['ok' => true, 'message' => 'queue entry retried', 'id' => $targetId];
+        }
+
+        return ['ok' => false, 'message' => 'queue entry not found'];
+    }
+
+    public function cleanupQueue(int $retentionDays = 30): array {
+        $retentionDays = max(1, $retentionDays);
+        $queue = $this->readQueue();
+        if (empty($queue)) {
+            return ['removed' => 0, 'remaining' => 0, 'retention_days' => $retentionDays];
+        }
+
+        $cutoffTs = time() - ($retentionDays * 86400);
+        $kept = [];
+        $removed = 0;
+
+        foreach ($queue as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $status = strtolower(trim((string)($entry['status'] ?? 'pending')));
+            if ($status !== 'sent' && $status !== 'failed') {
+                $kept[] = $entry;
+                continue;
+            }
+
+            $referenceRaw = (string)($entry['sent_at'] ?? $entry['next_attempt_at'] ?? $entry['created_at'] ?? '');
+            $referenceDate = $this->safeDate($referenceRaw);
+            if ($referenceDate === null) {
+                $kept[] = $entry;
+                continue;
+            }
+
+            if ($referenceDate->getTimestamp() < $cutoffTs) {
+                $removed++;
+                continue;
+            }
+
+            $kept[] = $entry;
+        }
+
+        if ($removed > 0) {
+            $this->writeQueue($kept);
+        }
+
+        return [
+            'removed' => $removed,
+            'remaining' => count($kept),
+            'retention_days' => $retentionDays
         ];
     }
 
@@ -338,14 +537,31 @@ class NotificationCenter {
         ];
     }
 
-    private function loadUsersForLevel(string $eventLevel): array {
+    private function loadUsersForLevel(string $eventLevel, ?array $onlyUuids = null): array {
         $rows = $this->db->db_query(
             "SELECT uuid, username, email, settings, activation_code FROM users"
         ) ?: [];
 
+        $filter = null;
+        if (is_array($onlyUuids) && !empty($onlyUuids)) {
+            $filter = [];
+            foreach ($onlyUuids as $uuid) {
+                $candidate = trim((string)$uuid);
+                if ($candidate !== '') {
+                    $filter[$candidate] = true;
+                }
+            }
+            if (empty($filter)) {
+                return [];
+            }
+        }
+
         $result = [];
         foreach ($rows as $row) {
             if (!is_array($row)) {
+                continue;
+            }
+            if (is_array($filter) && !isset($filter[(string)($row['uuid'] ?? '')])) {
                 continue;
             }
             if ((string)($row['activation_code'] ?? '') !== 'activated') {
@@ -360,6 +576,7 @@ class NotificationCenter {
             $notifications = is_array($settings['notifications'] ?? null) ? $settings['notifications'] : [];
             $userLevel = strtolower(trim((string)($notifications['level'] ?? 'minimal')));
             $userChannel = strtolower(trim((string)($notifications['channel'] ?? 'mail')));
+            $userSlackWebhook = trim((string)($notifications['slack_webhook_url'] ?? ''));
             $userTelegramChatId = trim((string)($notifications['telegram_chat_id'] ?? ''));
 
             if (!$this->isLevelAllowed($userLevel, $eventLevel)) {
@@ -370,7 +587,8 @@ class NotificationCenter {
                 'uuid' => (string)$row['uuid'],
                 'username' => (string)$row['username'],
                 'email' => (string)$row['email'],
-                'channel' => $this->normalizeChannelForDelivery($userChannel, $userTelegramChatId),
+                'channel' => $this->normalizeChannelForDelivery($userChannel, $userTelegramChatId, $userSlackWebhook),
+                'slack_webhook_url' => $userSlackWebhook,
                 'telegram_chat_id' => $userTelegramChatId
             ];
         }
@@ -378,12 +596,145 @@ class NotificationCenter {
         return $result;
     }
 
-    private function normalizeChannelForDelivery(string $requestedChannel, string $userTelegramChatId = ''): string {
+    private function resolveRecipientUuidsForEvent(string $eventType, array $meta): array {
+        $resolved = $this->collectRecipientUuidsFromMeta($meta);
+
+        switch ($eventType) {
+            case 'daily_summary':
+                if (empty($resolved)) {
+                    $resolved = $this->resolveUserUuidsByRoleCaption((string)($meta['recipient_role'] ?? 'admin'));
+                }
+                break;
+            case 'admin_test_event':
+            case 'login_success':
+            case 'login_failed':
+            case 'documentation_deviation':
+                // Explicit or inferred recipient scoping only.
+                break;
+            default:
+                if (empty($resolved) && isset($meta['recipient_role'])) {
+                    $resolved = $this->resolveUserUuidsByRoleCaption((string)$meta['recipient_role']);
+                }
+                break;
+        }
+
+        return array_values(array_keys($resolved));
+    }
+
+    private function collectRecipientUuidsFromMeta(array $meta): array {
+        $resolved = [];
+
+        $singularKeys = [
+            'user_uuid',
+            'recipient_user_uuid',
+            'affected_user_uuid',
+            'owner_user_uuid',
+            'actor_user_uuid',
+            'triggered_by_uuid'
+        ];
+        foreach ($singularKeys as $key) {
+            $candidate = trim((string)($meta[$key] ?? ''));
+            if ($candidate !== '') {
+                $resolved[$candidate] = true;
+            }
+        }
+
+        $arrayKeys = [
+            'user_uuids',
+            'recipient_user_uuids',
+            'affected_user_uuids',
+            'owner_user_uuids'
+        ];
+        foreach ($arrayKeys as $key) {
+            $values = $meta[$key] ?? null;
+            if (!is_array($values)) {
+                continue;
+            }
+            foreach ($values as $value) {
+                $candidate = trim((string)$value);
+                if ($candidate !== '') {
+                    $resolved[$candidate] = true;
+                }
+            }
+        }
+
+        $usernameKeys = ['triggered_by_username', 'recipient_username'];
+        foreach ($usernameKeys as $key) {
+            $username = trim((string)($meta[$key] ?? ''));
+            if ($username === '') {
+                continue;
+            }
+            $uuid = $this->resolveUserUuidByUsername($username);
+            if ($uuid !== null) {
+                $resolved[$uuid] = true;
+            }
+        }
+
+        return $resolved;
+    }
+
+    private function shouldBroadcastEvent(string $eventType, array $meta): bool {
+        if (!empty($meta['force_global'])) {
+            return true;
+        }
+
+        return !in_array($eventType, ['daily_summary', 'admin_test_event', 'login_success', 'login_failed', 'documentation_deviation'], true);
+    }
+
+    private function resolveUserUuidsByRoleCaption(string $roleCaption): array {
+        $caption = trim($roleCaption);
+        if ($caption === '') {
+            return [];
+        }
+
+        try {
+            $rows = $this->db->db_query(
+                "SELECT users.uuid
+                 FROM users
+                 INNER JOIN role ON users.role = role.uuid
+                 WHERE users.activation_code = 'activated' AND LOWER(role.caption) = LOWER(:caption)",
+                ['caption' => $caption]
+            ) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($rows as $row) {
+            $uuid = trim((string)($row['uuid'] ?? ''));
+            if ($uuid !== '') {
+                $result[$uuid] = true;
+            }
+        }
+
+        return $result;
+    }
+
+    private function resolveUserUuidByUsername(string $username): ?string {
+        $candidate = trim($username);
+        if ($candidate === '') {
+            return null;
+        }
+
+        try {
+            $rows = $this->db->db_query(
+                "SELECT uuid FROM users WHERE activation_code = 'activated' AND username = :username LIMIT 1",
+                ['username' => $candidate]
+            ) ?: [];
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $uuid = trim((string)($rows[0]['uuid'] ?? ''));
+        return $uuid !== '' ? $uuid : null;
+    }
+
+    private function normalizeChannelForDelivery(string $requestedChannel, string $userTelegramChatId = '', string $userSlackWebhook = ''): string {
         $channel = strtolower(trim($requestedChannel));
         if ($channel === 'slack') {
             $enabled = defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED === true;
             $webhook = defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? trim((string)NOTIFICATION_SLACK_WEBHOOK_URL) : '';
-            if ($enabled && $webhook !== '') {
+            if ($enabled && ($userSlackWebhook !== '' || $webhook !== '')) {
                 return 'slack';
             }
             return 'mail';

@@ -63,13 +63,38 @@ class Auth {
         $this->notificationCenter = new NotificationCenter($this->db_adapter, $this->logger, $this->mail);
     }
 
-    private function notifyGlobal(string $eventType, string $level, string $title, string $message, array $meta = []): void {
+    private function notifyUsers(array $userUuids, string $eventType, string $level, string $title, string $message, array $meta = []): void {
         try {
             if ($this->notificationCenter instanceof NotificationCenter) {
-                $this->notificationCenter->enqueueGlobal($eventType, $level, $title, $message, $meta);
+                $this->notificationCenter->enqueueForUsers($userUuids, $eventType, $level, $title, $message, $meta);
             }
         } catch (\Throwable $e) {
-            $this->logger->log('notification enqueue failed: ' . $e->getMessage(), 0);
+            $this->logger->log('targeted notification enqueue failed: ' . $e->getMessage(), 0);
+        }
+    }
+
+    private function resolveActivatedUserUuidByUsername(string $username): ?string {
+        $candidate = trim($username);
+        if ($candidate === '') {
+            return null;
+        }
+
+        try {
+            $rows = $this->db_adapter->db_query(
+                "SELECT uuid FROM users WHERE username = :username AND activation_code = :activation_code LIMIT 1",
+                [
+                    'username' => $candidate,
+                    'activation_code' => 'activated'
+                ]
+            );
+            if (!is_array($rows) || empty($rows[0]['uuid'])) {
+                return null;
+            }
+
+            return (string)$rows[0]['uuid'];
+        } catch (\Throwable $e) {
+            $this->logger->log('resolve activated user uuid failed: ' . $e->getMessage(), 0);
+            return null;
         }
     }
 
@@ -309,7 +334,8 @@ class Auth {
 
                         if (!empty($result)) {
                             $this->logger->log("user '$this->username' logged in. database updated", 1);
-                            $this->notifyGlobal(
+                            $this->notifyUsers(
+                                [$this->uuid],
                                 'login_success',
                                 'all',
                                 'Erfolgreicher Login',
@@ -337,7 +363,8 @@ class Auth {
 
                         if (!empty($result)) {
                             $this->logger->log('incorrect password', 1);
-                            $this->notifyGlobal(
+                            $this->notifyUsers(
+                                [$this->uuid],
                                 'login_failed',
                                 'minimal',
                                 'Fehlgeschlagener Login',
@@ -362,7 +389,8 @@ class Auth {
 
                     if (!empty($result)) {
                         $this->logger->log('login attempts exceeded', 2);
-                        $this->notifyGlobal(
+                        $this->notifyUsers(
+                            [$this->uuid],
                             'login_failed',
                             'minimal',
                             'Fehlgeschlagener Login',
@@ -563,7 +591,8 @@ class Auth {
                         } else {
                             header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
                         }
-                        $this->notifyGlobal(
+                        $this->notifyUsers(
+                            [$this->uuid],
                             'login_success',
                             'all',
                             'Erfolgreicher Login',
@@ -576,13 +605,30 @@ class Auth {
                     } else {
                         // If the bind fails, the user's credentials are invalid
                         $this->logger->log('password verification failed', echoToWeb: true);
-                        $this->notifyGlobal(
-                            'login_failed',
-                            'minimal',
-                            'Fehlgeschlagener Login',
-                            "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
-                            ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
-                        );
+                        if (!empty($this->uuid)) {
+                            $this->notifyUsers(
+                                [$this->uuid],
+                                'login_failed',
+                                'minimal',
+                                'Fehlgeschlagener Login',
+                                "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
+                                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+                            );
+                        } else {
+                            $resolvedUuid = $this->resolveActivatedUserUuidByUsername((string)$this->username);
+                            if ($resolvedUuid !== null) {
+                                $this->notifyUsers(
+                                    [$resolvedUuid],
+                                    'login_failed',
+                                    'minimal',
+                                    'Fehlgeschlagener Login',
+                                    "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
+                                    ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+                                );
+                            } else {
+                                $this->logger->log("skipped login_failed notification: no activated recipient found for '{$this->username}'", 1);
+                            }
+                        }
                         throw new \Exception('password verification failed');
                     }
 

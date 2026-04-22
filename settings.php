@@ -174,6 +174,11 @@
         return in_array($rawTab, ['switch', 'templates', 'history'], true) ? $rawTab : 'switch';
     }
 
+    function getConfigTabFromRequest(): string {
+        $rawTab = trim((string)($_GET['tab'] ?? 'system'));
+        return in_array($rawTab, ['system', 'notifications'], true) ? $rawTab : 'system';
+    }
+
     function getDefaultUserSettings(): array {
         return [
             'language' => 'de-DE',
@@ -185,6 +190,11 @@
             'notifications' => [
                 'level' => 'minimal',
                 'channel' => 'mail',
+                'slack_webhook_url' => '',
+                'telegram_link_token' => '',
+                'telegram_link_started_at' => '',
+                'telegram_link_confirmed_at' => '',
+                'telegram_link_username' => '',
                 'telegram_chat_id' => ''
             ]
         ];
@@ -279,6 +289,11 @@
             ? (string)$settings['notifications']['channel']
             : $defaults['notifications']['channel'];
 
+        $settings['notifications']['slack_webhook_url'] = configNormalizeEnvValue((string)($settings['notifications']['slack_webhook_url'] ?? ''));
+        $settings['notifications']['telegram_link_token'] = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($settings['notifications']['telegram_link_token'] ?? '')));
+        $settings['notifications']['telegram_link_started_at'] = configNormalizeEnvValue((string)($settings['notifications']['telegram_link_started_at'] ?? ''));
+        $settings['notifications']['telegram_link_confirmed_at'] = configNormalizeEnvValue((string)($settings['notifications']['telegram_link_confirmed_at'] ?? ''));
+        $settings['notifications']['telegram_link_username'] = configNormalizeEnvValue((string)($settings['notifications']['telegram_link_username'] ?? ''));
         $settings['notifications']['telegram_chat_id'] = configNormalizeEnvValue((string)($settings['notifications']['telegram_chat_id'] ?? ''));
 
         return $settings;
@@ -295,6 +310,110 @@
             "UPDATE users SET settings = :settings, changed = NOW() WHERE uuid = :uuid",
             ['settings' => (string)$encoded, 'uuid' => $uuid]
         );
+    }
+
+    function setSettingsFeedback(string $section, bool $ok, string $message): void {
+        if (!isset($_SESSION['settings_feedback']) || !is_array($_SESSION['settings_feedback'])) {
+            $_SESSION['settings_feedback'] = [];
+        }
+
+        $_SESSION['settings_feedback'][$section] = [
+            'ok' => $ok,
+            'message' => $message
+        ];
+    }
+
+    function getAndClearSettingsFeedback(): array {
+        $feedback = $_SESSION['settings_feedback'] ?? [];
+        unset($_SESSION['settings_feedback']);
+        return is_array($feedback) ? $feedback : [];
+    }
+
+    function generateNotificationLinkToken(): string {
+        return strtoupper(bin2hex(random_bytes(4)));
+    }
+
+    function findTelegramChatByStartToken(string $token): array {
+        $normalizedToken = preg_replace('/[^A-Z0-9]/', '', strtoupper($token));
+        if ($normalizedToken === '') {
+            return ['ok' => false, 'matched' => false, 'error' => 'ungueltiger Telegram-Link-Token'];
+        }
+
+        if (!defined('NOTIFICATION_TELEGRAM_ENABLED') || NOTIFICATION_TELEGRAM_ENABLED !== true) {
+            return ['ok' => false, 'matched' => false, 'error' => 'Telegram ist nicht aktiviert'];
+        }
+
+        $botToken = defined('NOTIFICATION_TELEGRAM_BOT_TOKEN') ? trim((string)NOTIFICATION_TELEGRAM_BOT_TOKEN) : '';
+        if ($botToken === '') {
+            return ['ok' => false, 'matched' => false, 'error' => 'Telegram Bot-Token fehlt'];
+        }
+
+        $url = 'https://api.telegram.org/bot' . rawurlencode($botToken) . '/getUpdates?limit=100&timeout=1';
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 8,
+                'ignore_errors' => true
+            ]
+        ]);
+
+        $response = @file_get_contents($url, false, $context);
+        if ($response === false) {
+            return ['ok' => false, 'matched' => false, 'error' => 'Telegram getUpdates fehlgeschlagen'];
+        }
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded) || !isset($decoded['ok']) || $decoded['ok'] !== true || !is_array($decoded['result'] ?? null)) {
+            $description = is_array($decoded) ? (string)($decoded['description'] ?? 'ungueltige Telegram-Antwort') : 'ungueltige Telegram-Antwort';
+            return ['ok' => false, 'matched' => false, 'error' => $description];
+        }
+
+        $updates = array_reverse($decoded['result']);
+        foreach ($updates as $update) {
+            if (!is_array($update)) {
+                continue;
+            }
+
+            $message = is_array($update['message'] ?? null)
+                ? $update['message']
+                : (is_array($update['edited_message'] ?? null) ? $update['edited_message'] : null);
+            if (!is_array($message)) {
+                continue;
+            }
+
+            $text = trim((string)($message['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+
+            $parts = preg_split('/\s+/', $text) ?: [];
+            $command = strtolower((string)($parts[0] ?? ''));
+            if (!preg_match('/^\/start(?:@[a-z0-9_]+)?$/i', $command)) {
+                continue;
+            }
+
+            $candidateToken = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($parts[1] ?? '')));
+            if ($candidateToken !== $normalizedToken) {
+                continue;
+            }
+
+            $chat = is_array($message['chat'] ?? null) ? $message['chat'] : [];
+            $chatId = trim((string)($chat['id'] ?? ''));
+            if ($chatId === '') {
+                continue;
+            }
+
+            $from = is_array($message['from'] ?? null) ? $message['from'] : [];
+            return [
+                'ok' => true,
+                'matched' => true,
+                'chat_id' => $chatId,
+                'telegram_username' => trim((string)($from['username'] ?? '')),
+                'chat_type' => trim((string)($chat['type'] ?? ''))
+            ];
+        }
+
+        return ['ok' => true, 'matched' => false, 'error' => 'Noch kein passendes /start mit Token gefunden'];
     }
 
     function scriptsUrlWithTab(string $tab): string {
@@ -960,6 +1079,7 @@
 
                 $level = strtolower(trim((string)($_POST['notification_level'] ?? 'minimal')));
                 $channel = strtolower(trim((string)($_POST['notification_channel'] ?? 'mail')));
+                $slackWebhook = configNormalizeEnvValue((string)($_POST['notification_slack_webhook_url'] ?? ''));
                 $telegramChatId = configNormalizeEnvValue((string)($_POST['notification_telegram_chat_id'] ?? ''));
 
                 $allowedLevels = ['off', 'minimal', 'progress', 'all'];
@@ -972,10 +1092,83 @@
                 $settings['notifications']['channel'] = in_array($channel, $allowedChannels, true)
                     ? $channel
                     : 'mail';
+                $settings['notifications']['slack_webhook_url'] = $slackWebhook;
                 $settings['notifications']['telegram_chat_id'] = $telegramChatId;
 
                 saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
+                setSettingsFeedback('notifications', true, 'Benachrichtigungseinstellungen gespeichert.');
                 $logger->log('notification preferences updated', 1, echoToWeb: true);
+                header('Location: ?site=notifications');
+                break;
+            case 'notification_telegram_link_start':
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for telegram onboarding start', 2, echoToWeb: true);
+                    header('Location: ?site=notifications');
+                    die();
+                }
+
+                $settings = getSessionUserSettings();
+                $token = generateNotificationLinkToken();
+                $settings['notifications']['telegram_link_token'] = $token;
+                $settings['notifications']['telegram_link_started_at'] = gmdate('c');
+                $settings['notifications']['telegram_link_confirmed_at'] = '';
+                $settings['notifications']['telegram_link_username'] = '';
+                saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
+                setSettingsFeedback('notifications', true, 'Telegram-Link gestartet. Sende dem Bot jetzt /start ' . $token . ' und klicke danach auf "Telegram-Verknuepfung pruefen".');
+                header('Location: ?site=notifications');
+                break;
+            case 'notification_telegram_link_refresh':
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for telegram onboarding refresh', 2, echoToWeb: true);
+                    header('Location: ?site=notifications');
+                    die();
+                }
+
+                $settings = getSessionUserSettings();
+                $token = (string)($settings['notifications']['telegram_link_token'] ?? '');
+                if ($token === '') {
+                    setSettingsFeedback('notifications', false, 'Es ist kein aktiver Telegram-Link vorhanden.');
+                    header('Location: ?site=notifications');
+                    break;
+                }
+
+                $match = findTelegramChatByStartToken($token);
+                if (empty($match['ok'])) {
+                    setSettingsFeedback('notifications', false, 'Telegram-Verknuepfung fehlgeschlagen: ' . (string)($match['error'] ?? 'unbekannter Fehler'));
+                    header('Location: ?site=notifications');
+                    break;
+                }
+
+                if (empty($match['matched'])) {
+                    setSettingsFeedback('notifications', false, (string)($match['error'] ?? 'Noch kein passender Telegram-Start gefunden.'));
+                    header('Location: ?site=notifications');
+                    break;
+                }
+
+                $settings['notifications']['telegram_chat_id'] = (string)($match['chat_id'] ?? '');
+                $settings['notifications']['telegram_link_confirmed_at'] = gmdate('c');
+                $settings['notifications']['telegram_link_username'] = (string)($match['telegram_username'] ?? '');
+                $settings['notifications']['telegram_link_token'] = '';
+                $settings['notifications']['telegram_link_started_at'] = '';
+                saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
+                setSettingsFeedback('notifications', true, 'Telegram erfolgreich verknuepft. Chat-ID wurde automatisch uebernommen.');
+                header('Location: ?site=notifications');
+                break;
+            case 'notification_telegram_disconnect':
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for telegram disconnect', 2, echoToWeb: true);
+                    header('Location: ?site=notifications');
+                    die();
+                }
+
+                $settings = getSessionUserSettings();
+                $settings['notifications']['telegram_chat_id'] = '';
+                $settings['notifications']['telegram_link_token'] = '';
+                $settings['notifications']['telegram_link_started_at'] = '';
+                $settings['notifications']['telegram_link_confirmed_at'] = '';
+                $settings['notifications']['telegram_link_username'] = '';
+                saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
+                setSettingsFeedback('notifications', true, 'Telegram-Verknuepfung entfernt.');
                 header('Location: ?site=notifications');
                 break;
             case 'config_db_test':
@@ -987,7 +1180,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for db configuration test', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=system');
                     die();
                 }
 
@@ -996,7 +1189,7 @@
                 $dbTestResult = configTestDatabase($dbFormData);
                 configSetFeedback('db', (bool)$dbTestResult['ok'], (string)$dbTestResult['message'], $dbFormData);
                 $logger->log('database configuration test executed', $dbTestResult['ok'] ? 1 : 2, echoToWeb: true);
-                header('Location: ?site=configuration#cfg-db');
+                header('Location: ?site=configuration&tab=system#cfg-db');
                 break;
             case 'config_db_save':
                 if ($role !== 'admin') {
@@ -1007,7 +1200,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for db configuration save', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=system');
                     die();
                 }
 
@@ -1016,7 +1209,7 @@
                 $dbValidationResult = configTestDatabase($dbFormData);
                 if (!$dbValidationResult['ok']) {
                     configSetFeedback('db', false, (string)$dbValidationResult['message'], $dbFormData);
-                    header('Location: ?site=configuration#cfg-db');
+                    header('Location: ?site=configuration&tab=system#cfg-db');
                     break;
                 }
 
@@ -1040,7 +1233,7 @@
                         'db_user' => $dbFormData['db_user']
                     ]);
                 }
-                header('Location: ?site=configuration#cfg-db');
+                header('Location: ?site=configuration&tab=system#cfg-db');
                 break;
             case 'config_ldap_test':
                 if ($role !== 'admin') {
@@ -1051,7 +1244,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for ldap configuration test', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=system');
                     die();
                 }
 
@@ -1060,7 +1253,7 @@
                 $ldapTestResult = configTestLdap($ldapFormData);
                 configSetFeedback('ldap', (bool)$ldapTestResult['ok'], (string)$ldapTestResult['message'], $ldapFormData);
                 $logger->log('ldap configuration test executed', $ldapTestResult['ok'] ? 1 : 2, echoToWeb: true);
-                header('Location: ?site=configuration#cfg-ldap');
+                header('Location: ?site=configuration&tab=system#cfg-ldap');
                 break;
             case 'config_ldap_save':
                 if ($role !== 'admin') {
@@ -1071,7 +1264,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for ldap configuration save', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=system');
                     die();
                 }
 
@@ -1082,7 +1275,7 @@
                     $ldapValidationResult = configTestLdap($ldapFormData);
                     if (!$ldapValidationResult['ok']) {
                         configSetFeedback('ldap', false, (string)$ldapValidationResult['message'], $ldapFormData);
-                        header('Location: ?site=configuration#cfg-ldap');
+                        header('Location: ?site=configuration&tab=system#cfg-ldap');
                         break;
                     }
                 }
@@ -1113,7 +1306,7 @@
                         'ldap_trust' => configToBool($ldapFormData['ldap_trust'] ?? false)
                     ]);
                 }
-                header('Location: ?site=configuration#cfg-ldap');
+                header('Location: ?site=configuration&tab=system#cfg-ldap');
                 break;
             case 'config_mail_test':
                 if ($role !== 'admin') {
@@ -1124,7 +1317,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for mail configuration test', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=system');
                     die();
                 }
 
@@ -1133,7 +1326,7 @@
                 $mailTestResult = configTestMail($mailFormData);
                 configSetFeedback('mail', (bool)$mailTestResult['ok'], (string)$mailTestResult['message'], $mailFormData);
                 $logger->log('mail configuration test executed', $mailTestResult['ok'] ? 1 : 2, echoToWeb: true);
-                header('Location: ?site=configuration#cfg-mail');
+                header('Location: ?site=configuration&tab=system#cfg-mail');
                 break;
             case 'config_mail_save':
                 if ($role !== 'admin') {
@@ -1144,7 +1337,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for mail configuration save', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=system');
                     die();
                 }
 
@@ -1153,7 +1346,7 @@
                 $mailValidationResult = configTestMail($mailFormData);
                 if (!$mailValidationResult['ok']) {
                     configSetFeedback('mail', false, (string)$mailValidationResult['message'], $mailFormData);
-                    header('Location: ?site=configuration#cfg-mail');
+                    header('Location: ?site=configuration&tab=system#cfg-mail');
                     break;
                 }
 
@@ -1177,7 +1370,7 @@
                         'mail_smtpsecure' => $mailFormData['mail_smtpsecure']
                     ]);
                 }
-                header('Location: ?site=configuration#cfg-mail');
+                header('Location: ?site=configuration&tab=system#cfg-mail');
                 break;
             case 'config_notification_save':
                 if ($role !== 'admin') {
@@ -1188,12 +1381,13 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for notification configuration save', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=notifications');
                     die();
                 }
 
                 $notifDailyTime = trim((string)($_POST['notification_daily_time'] ?? '08:00'));
                 $notifTimezone  = trim((string)($_POST['notification_timezone'] ?? 'Europe/Berlin'));
+                $notifRetentionDays = (int)($_POST['notification_queue_retention_days'] ?? 30);
                 $notifSlackEnabled = isset($_POST['notification_slack_enabled']) && configToBool($_POST['notification_slack_enabled']);
                 $notifSlackWebhook = configNormalizeEnvValue((string)($_POST['notification_slack_webhook_url'] ?? ''));
                 $notifTelegramEnabled = isset($_POST['notification_telegram_enabled']) && configToBool($_POST['notification_telegram_enabled']);
@@ -1208,10 +1402,14 @@
                 if (!in_array($notifTimezone, \DateTimeZone::listIdentifiers(), true)) {
                     $notifTimezone = 'Europe/Berlin';
                 }
+                if ($notifRetentionDays < 1 || $notifRetentionDays > 365) {
+                    $notifRetentionDays = 30;
+                }
 
                 $notifWriteResult = configWriteEnvValues([
                     'NOTIFICATION_DAILY_TIME' => $notifDailyTime,
                     'NOTIFICATION_TIMEZONE'   => $notifTimezone,
+                    'NOTIFICATION_QUEUE_RETENTION_DAYS' => (string)$notifRetentionDays,
                     'NOTIFICATION_SLACK_ENABLED' => configEnvBool($notifSlackEnabled),
                     'NOTIFICATION_SLACK_WEBHOOK_URL' => $notifSlackWebhook,
                     'NOTIFICATION_TELEGRAM_ENABLED' => configEnvBool($notifTelegramEnabled),
@@ -1222,6 +1420,7 @@
                 configSetFeedback('notification', (bool)$notifWriteResult['ok'], (string)$notifWriteResult['message'], [
                     'notification_daily_time' => $notifDailyTime,
                     'notification_timezone'   => $notifTimezone,
+                    'notification_queue_retention_days' => (string)$notifRetentionDays,
                     'notification_slack_enabled' => $notifSlackEnabled ? '1' : '0',
                     'notification_slack_webhook_url' => $notifSlackWebhook,
                     'notification_telegram_enabled' => $notifTelegramEnabled ? '1' : '0',
@@ -1233,11 +1432,73 @@
                     logAutomationChange($db_adapter, 'UPDATE', 'configuration_notification_save', [
                         'notification_daily_time' => $notifDailyTime,
                         'notification_timezone'   => $notifTimezone,
+                        'notification_queue_retention_days' => $notifRetentionDays,
                         'notification_slack_enabled' => $notifSlackEnabled,
                         'notification_telegram_enabled' => $notifTelegramEnabled
                     ]);
                 }
-                header('Location: ?site=configuration#cfg-notification');
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
+                break;
+            case 'config_notification_cleanup_queue':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification queue cleanup', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=notifications');
+                    die();
+                }
+
+                $retentionDays = (int)($_POST['notification_queue_retention_days'] ?? (defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
+                if ($retentionDays < 1 || $retentionDays > 365) {
+                    $retentionDays = 30;
+                }
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $cleanup = $notificationCenter->cleanupQueue($retentionDays);
+                    $message = 'Queue bereinigt: removed=' . (int)($cleanup['removed'] ?? 0)
+                        . ', remaining=' . (int)($cleanup['remaining'] ?? 0)
+                        . ', retention_days=' . (int)($cleanup['retention_days'] ?? $retentionDays);
+                    configSetFeedback('notification', true, $message);
+                    $logger->log('notification queue cleanup executed: ' . $message, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'DELETE', 'configuration_notification_cleanup_queue', $cleanup);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Queue-Cleanup fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('notification queue cleanup failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
+                break;
+            case 'config_notification_retry_entry':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification retry', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=notifications');
+                    die();
+                }
+
+                $queueEntryId = trim((string)($_POST['notification_queue_entry_id'] ?? ''));
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $retry = $notificationCenter->retryQueueEntry($queueEntryId);
+                    configSetFeedback('notification', !empty($retry['ok']), (string)($retry['message'] ?? 'Retry ausgefuehrt.'));
+                    $logger->log('notification queue retry executed: ' . (string)($retry['message'] ?? 'n/a'), !empty($retry['ok']) ? 1 : 2, echoToWeb: true);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Queue-Retry fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('notification queue retry failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
             case 'config_notification_enqueue_test':
                 if ($role !== 'admin') {
@@ -1248,7 +1509,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for notification enqueue test', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=notifications');
                     die();
                 }
 
@@ -1257,9 +1518,10 @@
                     $meta = [
                         'source' => 'settings_admin',
                         'triggered_by' => (string)($_SESSION['username'] ?? ''),
+                        'triggered_by_uuid' => (string)($_SESSION['uuid'] ?? ''),
                         'triggered_at' => gmdate('c')
                     ];
-                    $enqueued = $notificationCenter->enqueueGlobal(
+                    $enqueued = $notificationCenter->enqueueEvent(
                         'admin_test_event',
                         'minimal',
                         'Admin Test-Benachrichtigung',
@@ -1290,7 +1552,7 @@
                     $logger->log('notification test event enqueue failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
-                header('Location: ?site=configuration#cfg-notification');
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
             case 'config_notification_process_queue':
                 if ($role !== 'admin') {
@@ -1301,7 +1563,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for notification queue processing', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=notifications');
                     die();
                 }
 
@@ -1341,7 +1603,7 @@
                     $logger->log('notification queue processing failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
-                header('Location: ?site=configuration#cfg-notification');
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
             case 'config_notification_test_slack':
                 if ($role !== 'admin') {
@@ -1352,7 +1614,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for slack notification test', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=notifications');
                     die();
                 }
 
@@ -1404,7 +1666,7 @@
                     $logger->log('slack notification test failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
-                header('Location: ?site=configuration#cfg-notification');
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
             case 'config_notification_test_telegram':
                 if ($role !== 'admin') {
@@ -1415,7 +1677,7 @@
 
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for telegram notification test', 2, echoToWeb: true);
-                    header('Location: ?site=configuration');
+                    header('Location: ?site=configuration&tab=notifications');
                     die();
                 }
 
@@ -1467,7 +1729,7 @@
                     $logger->log('telegram notification test failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
 
-                header('Location: ?site=configuration#cfg-notification');
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
             case 'delete_account':
                 $uuid = $_POST['uuid'] ?? null;
@@ -2192,6 +2454,7 @@
         // get site
         $site = $_GET['site'] ?? NULL;
         $activeScriptsTab = getScriptsTabFromRequest();
+        $activeConfigTab = getConfigTabFromRequest();
     }
     $settingsNavBaseClasses = 'settings-nav-item block rounded-full border px-3 py-2.5 font-semibold whitespace-nowrap transition';
     $settingsNavActiveClasses = 'settings-nav-item-active';
@@ -2372,6 +2635,12 @@
             <?php echo ($role !== 'ldap') ? '<a class="flex-none lg:flex-auto" href="?site=account"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'account' ? $settingsNavActiveClasses : '') . '">' . $lang['account'] . '</li></a>' : ''; ?>
             <a class="flex-none lg:flex-auto" href="?site=notifications"><li class="<?php echo $settingsNavBaseClasses . ' ' . (($site == 'notifications') ? $settingsNavActiveClasses : '');?>"><?php echo $lang['notifications']; ?></li></a>
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=configuration"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'configuration' ? $settingsNavActiveClasses : '') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
+            <?php if ($role == 'admin' && $site == 'configuration') : ?>
+                <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
+                    <a href="?site=configuration&tab=system"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'system') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="system">System</li></a>
+                    <a href="?site=configuration&tab=notifications"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'notifications') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="notifications">Benachrichtigungen</li></a>
+                </div>
+            <?php endif; ?>
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=scripts"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'scripts' ? $settingsNavActiveClasses : '') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
             <?php if ($role == 'admin' && $site == 'scripts') : ?>
                 <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
@@ -2479,10 +2748,15 @@ switch ($site) {
         $levelAll = $notificationLevel === 'all' ? 'selected' : '';
 
         $slackStatus = 'deaktiviert';
+        $notificationSlackWebhook = configNormalizeEnvValue((string)($notificationSettings['slack_webhook_url'] ?? ''));
         if (!empty($channelReadiness['slack_enabled'])) {
-            $slackStatus = !empty($channelReadiness['slack'])
-                ? 'bereit'
-                : 'aktiv, aber unvollstaendig konfiguriert';
+            if ($notificationSlackWebhook !== '') {
+                $slackStatus = 'bereit (persoenlicher Webhook gesetzt)';
+            } else {
+                $slackStatus = !empty($channelReadiness['slack'])
+                    ? 'bereit (globaler Webhook aktiv)'
+                    : 'aktiv, aber unvollstaendig konfiguriert';
+            }
         }
 
         $telegramStatus = 'deaktiviert';
@@ -2500,7 +2774,24 @@ switch ($site) {
 
         $slackStatusSafe = escapeSettingValue($slackStatus);
         $telegramStatusSafe = escapeSettingValue($telegramStatus);
+        $notificationSlackWebhookSafe = escapeSettingValue($notificationSlackWebhook);
         $notificationTelegramChatIdSafe = escapeSettingValue($notificationTelegramChatId);
+        $notificationFeedback = getAndClearSettingsFeedback();
+        $notificationFeedbackHtml = '';
+        if (isset($notificationFeedback['notifications']) && is_array($notificationFeedback['notifications'])) {
+            $feedbackEntry = $notificationFeedback['notifications'];
+            $feedbackMessage = escapeSettingValue((string)($feedbackEntry['message'] ?? ''));
+            $feedbackClasses = !empty($feedbackEntry['ok'])
+                ? 'mb-4 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 whitespace-pre-wrap'
+                : 'mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 whitespace-pre-wrap';
+            $notificationFeedbackHtml = '<div class="' . $feedbackClasses . '">' . $feedbackMessage . '</div>';
+        }
+        $telegramLinkToken = escapeSettingValue((string)($notificationSettings['telegram_link_token'] ?? ''));
+        $telegramLinkStartedAt = escapeSettingValue((string)($notificationSettings['telegram_link_started_at'] ?? ''));
+        $telegramLinkConfirmedAt = escapeSettingValue((string)($notificationSettings['telegram_link_confirmed_at'] ?? ''));
+        $telegramLinkUsername = escapeSettingValue((string)($notificationSettings['telegram_link_username'] ?? ''));
+        $telegramLinkCommand = $telegramLinkToken !== '' ? '/start ' . $telegramLinkToken : '/start <token>';
+        $telegramLinkCommandSafe = escapeSettingValue($telegramLinkCommand);
         $channelOptionsHtml = '';
         foreach ($availableChannels as $channelOption) {
             $selected = $notificationChannel === $channelOption ? 'selected' : '';
@@ -2520,6 +2811,7 @@ switch ($site) {
             <div class="settings-surface max-w-3xl">
                 <div class="text-xl font-bold pb-2">Benachrichtigungen</div>
                 <p class="text-sm text-gray-600 pb-6">Globales Benachrichtigungssystem mit Levels und kanalbasiertem Versand (aktuell: Mail).</p>
+                {$notificationFeedbackHtml}
 
                 <form action="?set=notification_preferences" method="post" class="space-y-5">
                     <input type="hidden" name="csrf" value="$csrf">
@@ -2542,6 +2834,12 @@ switch ($site) {
                     </div>
 
                     <div>
+                        <label class="block mb-2 text-sm font-semibold" for="notification_slack_webhook_url">Slack Webhook (optional, pro Nutzer/Team)</label>
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_slack_webhook_url" type="text" name="notification_slack_webhook_url" value="{$notificationSlackWebhookSafe}" placeholder="https://hooks.slack.com/services/...">
+                        <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Slack-Benachrichtigungen ueber deinen persoenlichen oder Team-Webhook gesendet.</div>
+                    </div>
+
+                    <div>
                         <label class="block mb-2 text-sm font-semibold" for="notification_telegram_chat_id">Telegram Chat-ID (optional, pro Nutzer)</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_telegram_chat_id" type="text" name="notification_telegram_chat_id" value="{$notificationTelegramChatIdSafe}" placeholder="z.B. 123456789 oder -100...">
                         <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Telegram-Benachrichtigungen an deine persoenliche Chat-ID gesendet.</div>
@@ -2556,6 +2854,29 @@ switch ($site) {
                         <div>Mail: bereit</div>
                         <div>Slack: $slackStatusSafe</div>
                         <div>Telegram: $telegramStatusSafe</div>
+                    </div>
+
+                    <div class="rounded-xl border border-slate-200 px-4 py-4 text-sm text-gray-700 space-y-3">
+                        <div class="font-semibold text-gray-900">Telegram-Onboarding</div>
+                        <div>Gefuehrter Flow: Link-Code erzeugen, dem Bot <span class="font-mono">{$telegramLinkCommandSafe}</span> schicken, dann Verknuepfung pruefen.</div>
+                        <div>Aktiver Link-Code: <span class="font-mono">{$telegramLinkToken}</span></div>
+                        <div>Link gestartet: <span class="font-mono">{$telegramLinkStartedAt}</span></div>
+                        <div>Letzte erfolgreiche Verknuepfung: <span class="font-mono">{$telegramLinkConfirmedAt}</span></div>
+                        <div>Telegram Username: <span class="font-mono">{$telegramLinkUsername}</span></div>
+                        <div class="flex flex-wrap gap-2">
+                            <form action="?set=notification_telegram_link_start" method="post" class="m-0">
+                                <input type="hidden" name="csrf" value="$csrf">
+                                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Link-Code erzeugen</button>
+                            </form>
+                            <form action="?set=notification_telegram_link_refresh" method="post" class="m-0">
+                                <input type="hidden" name="csrf" value="$csrf">
+                                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram-Verknuepfung pruefen</button>
+                            </form>
+                            <form action="?set=notification_telegram_disconnect" method="post" class="m-0">
+                                <input type="hidden" name="csrf" value="$csrf">
+                                <button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram trennen</button>
+                            </form>
+                        </div>
                     </div>
 
                     <div class="pb-2 flex justify-between items-center">
@@ -2613,6 +2934,7 @@ switch ($site) {
         $notificationCfgDefaults = [
             'notification_daily_time' => (string)NOTIFICATION_DAILY_TIME,
             'notification_timezone'   => (string)NOTIFICATION_TIMEZONE,
+            'notification_queue_retention_days' => (string)NOTIFICATION_QUEUE_RETENTION_DAYS,
             'notification_slack_enabled' => NOTIFICATION_SLACK_ENABLED ? '1' : '0',
             'notification_slack_webhook_url' => (string)NOTIFICATION_SLACK_WEBHOOK_URL,
             'notification_telegram_enabled' => NOTIFICATION_TELEGRAM_ENABLED ? '1' : '0',
@@ -2623,7 +2945,11 @@ switch ($site) {
 
         $notificationOverview = [
             'counts' => ['total' => 0, 'pending' => 0, 'sent' => 0, 'failed' => 0],
+            'by_channel' => [],
+            'last_sent_by_channel' => [],
+            'errors_by_channel' => [],
             'recent_sent' => [],
+            'recent_failed' => [],
             'last_sent_at' => '',
             'last_daily_date' => '',
             'last_daily_at' => '',
@@ -2654,6 +2980,7 @@ switch ($site) {
 
         echo '<div class="h-fit w-full p-2 space-y-6">';
 
+        echo '<div class="cfg-section-system' . ($activeConfigTab !== 'system' ? ' hidden' : '') . '">';
         echo '<section id="cfg-db" class="settings-surface">';
         echo '<div class="text-xl font-bold pb-1">Datenbank</div>';
         echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes DB Passwort beibehalten.</p>';
@@ -2720,8 +3047,10 @@ switch ($site) {
         echo '</div>';
         echo '</form>';
         echo '</section>';
+        echo '</div>'; // end cfg-section-system
 
         // Notification configuration section
+        echo '<div class="cfg-section-notifications' . ($activeConfigTab !== 'notifications' ? ' hidden' : '') . '">';
         $allTimezones = \DateTimeZone::listIdentifiers();
         $currentTz = (string)$notificationCfgValues['notification_timezone'];
         $currentTime = (string)$notificationCfgValues['notification_daily_time'];
@@ -2730,6 +3059,10 @@ switch ($site) {
         $currentTelegramEnabled = configToBool($notificationCfgValues['notification_telegram_enabled'] ?? false);
         $currentTelegramBotToken = (string)($notificationCfgValues['notification_telegram_bot_token'] ?? '');
         $currentTelegramChatId = (string)($notificationCfgValues['notification_telegram_chat_id'] ?? '');
+        $currentRetentionDays = (int)($notificationCfgValues['notification_queue_retention_days'] ?? 30);
+        if ($currentRetentionDays < 1 || $currentRetentionDays > 365) {
+            $currentRetentionDays = 30;
+        }
 
         echo '<section id="cfg-notification" class="settings-surface">';
         echo '<div class="text-xl font-bold pb-1">Benachrichtigungen</div>';
@@ -2745,6 +3078,8 @@ switch ($site) {
             echo '<option value="' . escapeSettingValue($tz) . '"' . $sel . '>' . escapeSettingValue($tz) . '</option>';
         }
         echo '</select></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_retention">Queue-Retention (Tage)</label><input id="cfg_notification_retention" name="notification_queue_retention_days" type="number" min="1" max="365" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$currentRetentionDays) . '"></div>';
+        echo '<div class="text-sm text-gray-500 self-end">Sent/Failed Eintraege aelter als die Retention werden beim Scheduler-Lauf bereinigt.</div>';
         echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_slack_enabled" value="1"' . ($currentSlackEnabled ? ' checked' : '') . '> Slack aktivieren</label></div>';
         echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_notification_slack_webhook_url">Slack Webhook URL</label><input id="cfg_notification_slack_webhook_url" name="notification_slack_webhook_url" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentSlackWebhook) . '" placeholder="https://hooks.slack.com/services/..." ></div>';
         echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_telegram_enabled" value="1"' . ($currentTelegramEnabled ? ' checked' : '') . '> Telegram aktivieren</label></div>';
@@ -2783,16 +3118,62 @@ switch ($site) {
         echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Daily-Datum</div><div class="font-medium">' . $lastDailyDate . '</div></div>';
         echo '</div>';
 
+        $byChannel = is_array($notificationOverview['by_channel'] ?? null) ? $notificationOverview['by_channel'] : [];
+        if (!empty($byChannel)) {
+            echo '<div class="mt-4">';
+            echo '<div class="text-sm font-semibold pb-2">Versand nach Kanal</div>';
+            echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Kanal</th><th class="p-2">Total</th><th class="p-2">Pending</th><th class="p-2">Sent</th><th class="p-2">Failed</th></tr></thead><tbody>';
+            foreach ($byChannel as $channelName => $row) {
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . escapeSettingValue((string)$channelName) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['total'] ?? 0)) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['pending'] ?? 0)) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['sent'] ?? 0)) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['failed'] ?? 0)) . '</td></tr>';
+            }
+            echo '</tbody></table></div>';
+            echo '</div>';
+        }
+
+        $lastSentByChannel = is_array($notificationOverview['last_sent_by_channel'] ?? null) ? $notificationOverview['last_sent_by_channel'] : [];
+        if (!empty($lastSentByChannel)) {
+            echo '<div class="mt-4">';
+            echo '<div class="text-sm font-semibold pb-2">Letzter erfolgreicher Send je Kanal</div>';
+            echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Kanal</th><th class="p-2">Zeit</th><th class="p-2">Event</th><th class="p-2">Empfaenger</th></tr></thead><tbody>';
+            foreach ($lastSentByChannel as $channelName => $row) {
+                $recipient = trim((string)($row['recipient_username'] ?? '') . ' <' . (string)($row['recipient_email'] ?? '') . '>');
+                if ($recipient === '<>' || $recipient === '') {
+                    $recipient = '-';
+                }
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . escapeSettingValue((string)$channelName) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['sent_at'] ?? '-')) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['event_type'] ?? '-')) . '</td><td class="p-2 border-b">' . escapeSettingValue($recipient) . '</td></tr>';
+            }
+            echo '</tbody></table></div>';
+            echo '</div>';
+        }
+
+        $errorsByChannel = is_array($notificationOverview['errors_by_channel'] ?? null) ? $notificationOverview['errors_by_channel'] : [];
+        if (!empty($errorsByChannel)) {
+            echo '<div class="mt-4">';
+            echo '<div class="text-sm font-semibold pb-2">Fehlerursachen pro Kanal</div>';
+            echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Kanal</th><th class="p-2">Fehler</th><th class="p-2">Anzahl</th></tr></thead><tbody>';
+            foreach ($errorsByChannel as $channelName => $errors) {
+                foreach ((array)$errors as $errorMessage => $errorCount) {
+                    echo '<tr class="settings-data-row"><td class="p-2 border-b">' . escapeSettingValue((string)$channelName) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)$errorMessage) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)$errorCount) . '</td></tr>';
+                }
+            }
+            echo '</tbody></table></div>';
+            echo '</div>';
+        }
+
         echo '<div class="mt-4">';
         echo '<div class="text-sm font-semibold pb-2">Letzte Sends</div>';
         $recentSent = is_array($notificationOverview['recent_sent'] ?? null) ? $notificationOverview['recent_sent'] : [];
         if (!empty($recentSent)) {
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
-            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit (UTC)</th><th class="p-2">Event</th><th class="p-2">Titel</th><th class="p-2">Empfaenger</th><th class="p-2">Versuche</th></tr></thead><tbody>';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit (UTC)</th><th class="p-2">Event</th><th class="p-2">Titel</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Versuche</th></tr></thead><tbody>';
             foreach ($recentSent as $entry) {
                 $sentAt = escapeSettingValue((string)($entry['sent_at'] ?? '-'));
                 $eventType = escapeSettingValue((string)($entry['event_type'] ?? '-'));
                 $title = escapeSettingValue((string)($entry['title'] ?? '-'));
+                $channel = escapeSettingValue((string)($entry['channel'] ?? 'mail'));
                 $recipientUser = escapeSettingValue((string)($entry['recipient_username'] ?? ''));
                 $recipientEmail = escapeSettingValue((string)($entry['recipient_email'] ?? ''));
                 $recipient = trim($recipientUser . ' <' . $recipientEmail . '>');
@@ -2800,11 +3181,42 @@ switch ($site) {
                     $recipient = '-';
                 }
                 $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
-                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $sentAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $title . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $attempts . '</td></tr>';
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $sentAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $title . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $attempts . '</td></tr>';
             }
             echo '</tbody></table></div>';
         } else {
             echo '<div class="text-sm text-gray-500">Noch keine versendeten Benachrichtigungen vorhanden.</div>';
+        }
+        echo '</div>';
+
+        echo '<div class="mt-4">';
+        echo '<div class="text-sm font-semibold pb-2">Letzte Fehler</div>';
+        $recentFailed = is_array($notificationOverview['recent_failed'] ?? null) ? $notificationOverview['recent_failed'] : [];
+        if (!empty($recentFailed)) {
+            echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Fehler</th><th class="p-2">Versuche</th><th class="p-2">Aktion</th></tr></thead><tbody>';
+            foreach ($recentFailed as $entry) {
+                $entryId = escapeSettingValue((string)($entry['id'] ?? ''));
+                $updatedAt = escapeSettingValue((string)($entry['updated_at'] ?? '-'));
+                $eventType = escapeSettingValue((string)($entry['event_type'] ?? '-'));
+                $channel = escapeSettingValue((string)($entry['channel'] ?? 'mail'));
+                $recipientUser = escapeSettingValue((string)($entry['recipient_username'] ?? ''));
+                $recipientEmail = escapeSettingValue((string)($entry['recipient_email'] ?? ''));
+                $recipient = trim($recipientUser . ' <' . $recipientEmail . '>');
+                if ($recipient === '<>' || $recipient === '') {
+                    $recipient = '-';
+                }
+                $error = escapeSettingValue((string)($entry['error'] ?? '-'));
+                $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
+                $retryAction = '-';
+                if ($entryId !== '') {
+                    $retryAction = '<form action="?set=config_notification_retry_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Retry</button></form>';
+                }
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $updatedAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td><td class="p-2 border-b">' . $retryAction . '</td></tr>';
+            }
+            echo '</tbody></table></div>';
+        } else {
+            echo '<div class="text-sm text-gray-500">Keine fehlgeschlagenen Benachrichtigungen vorhanden.</div>';
         }
         echo '</div>';
 
@@ -2820,6 +3232,11 @@ switch ($site) {
         echo '<input name="notification_process_limit" type="number" min="1" max="500" value="100" class="w-24 py-2 px-3" title="Maximal zu verarbeitende Queue-Eintraege">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Queue jetzt verarbeiten</button>';
         echo '</form>';
+        echo '<form action="?set=config_notification_cleanup_queue" method="post" class="m-0 flex items-center gap-2">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<input name="notification_queue_retention_days" type="number" min="1" max="365" value="' . escapeSettingValue((string)$currentRetentionDays) . '" class="w-24 py-2 px-3" title="Retention in Tagen">';
+        echo '<button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white">Queue bereinigen</button>';
+        echo '</form>';
         echo '<form action="?set=config_notification_test_slack" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">Slack Test</button>';
@@ -2834,6 +3251,7 @@ switch ($site) {
         echo '</div>';
 
         echo '</section>';
+        echo '</div>'; // end cfg-section-notifications
 
         echo '</div>';
         break;
@@ -3150,7 +3568,7 @@ HTML;
                 "SELECT c.operation, c.changed_table, c.changed_data, TO_CHAR(c.changed, 'DD.MM.YYYY HH24:MI:SS') AS changed_at, u.username
                  FROM changelog c
                  LEFT JOIN users u ON u.uuid = c.users
-                 WHERE c.changed_table IN ('automation_settings', 'script_execution')
+                 WHERE c.changed_table = 'script_execution'
                  ORDER BY c.changed DESC
                  LIMIT 30"
             ) ?: [];

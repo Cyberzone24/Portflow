@@ -620,4 +620,7 @@ AUTOMATION_SECRET={$config['AUTOMATION_SECRET']}
 
     file_put_contents(__DIR__ . '/.env', $envContent);
 }
+
+# Prüfung für SNMP und OpenSSL (benötigt für SNMPv3) hinzufügen
+# Zeitzone prüfen und ggf. setzen (wichtig für Cronjobs, TFA und Logs)
 ?>

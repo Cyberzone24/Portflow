@@ -204,16 +204,23 @@ class PendingChangesQueue {
 
         if (empty($changes)) {
             return [
+                'ok' => true,
                 'total' => 0,
                 'completed' => 0,
                 'failed' => 0,
-                'details' => []
+                'details' => [],
+                'output' => '',
+                'command_count' => 0,
+                'profile_ids' => [],
+                'template_ids' => []
             ];
         }
 
         // Combine all commands from all pending changes into a single batch
         $allCommands = [];
         $changeUuids = [];
+        $profileIds = [];
+        $templateIds = [];
 
         foreach ($changes as $change) {
             $commandList = array_filter(
@@ -222,6 +229,14 @@ class PendingChangesQueue {
             );
             $allCommands = array_merge($allCommands, $commandList);
             $changeUuids[] = $change['uuid'];
+            $profileId = trim((string)($change['profile_id'] ?? ''));
+            if ($profileId !== '') {
+                $profileIds[$profileId] = true;
+            }
+            $templateId = trim((string)($change['template_id'] ?? ''));
+            if ($templateId !== '') {
+                $templateIds[$templateId] = true;
+            }
         }
 
         // Mark all as executing
@@ -238,10 +253,15 @@ class PendingChangesQueue {
         );
 
         $summary = [
+            'ok' => (bool)($executionResult['ok'] ?? false),
             'total' => count($changes),
             'completed' => $executionResult['ok'] ? count($changes) : 0,
             'failed' => $executionResult['ok'] ? 0 : count($changes),
-            'details' => []
+            'details' => [],
+            'output' => (string)($executionResult['output'] ?? ''),
+            'command_count' => count($allCommands),
+            'profile_ids' => array_values(array_keys($profileIds)),
+            'template_ids' => array_values(array_keys($templateIds))
         ];
 
         // Update status for each change

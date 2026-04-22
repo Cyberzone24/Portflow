@@ -75,6 +75,7 @@ try {
     $totalSucceeded = 0;
     $totalFailed = 0;
     $results = [];
+    $userFailureStats = [];
 
     // Get all users with pending changes
     $sql = "SELECT DISTINCT users, switch_name FROM pending_changes WHERE status = 'pending' ORDER BY switch_name";
@@ -97,6 +98,11 @@ try {
             $logger->log("Scheduler: Switch '$switchName' not found in inventory", 2);
             $results[] = "FAILED: $switchName - Switch not in inventory";
             $totalFailed++;
+            if (!isset($userFailureStats[$userUuid])) {
+                $userFailureStats[$userUuid] = ['failed_changes' => 0, 'switches' => []];
+            }
+            $userFailureStats[$userUuid]['failed_changes']++;
+            $userFailureStats[$userUuid]['switches'][$switchName] = true;
             continue;
         }
 
@@ -125,11 +131,39 @@ try {
                 $totalFailed += $executionResult['failed'];
                 $results[] = "PARTIAL: $switchName ({$executionResult['completed']} ok, {$executionResult['failed']} failed)";
                 $logger->log("Scheduler: $switchName - {$executionResult['completed']} ok, {$executionResult['failed']} failed", 2);
+                if ($executionResult['failed'] > 0) {
+                    if (!isset($userFailureStats[$userUuid])) {
+                        $userFailureStats[$userUuid] = ['failed_changes' => 0, 'switches' => []];
+                    }
+                    $userFailureStats[$userUuid]['failed_changes'] += (int)$executionResult['failed'];
+                    $userFailureStats[$userUuid]['switches'][$switchName] = true;
+                }
             }
+
+            logSchedulerExecutionEvent(
+                $db,
+                (string)$userUuid,
+                (string)$switchName,
+                is_array($executionResult['profile_ids'] ?? null) ? $executionResult['profile_ids'] : [],
+                is_array($executionResult['template_ids'] ?? null) ? $executionResult['template_ids'] : [],
+                (int)($executionResult['command_count'] ?? 0),
+                (bool)($executionResult['ok'] ?? false),
+                [
+                    'failed_changes' => (int)($executionResult['failed'] ?? 0),
+                    'completed_changes' => (int)($executionResult['completed'] ?? 0),
+                    'total_changes' => (int)($executionResult['total'] ?? 0),
+                    'output' => (string)($executionResult['output'] ?? '')
+                ]
+            );
         } catch (Exception $e) {
             $totalFailed++;
             $results[] = "ERROR: $switchName - " . $e->getMessage();
             $logger->log("Scheduler: Exception for $switchName: " . $e->getMessage(), 3);
+            if (!isset($userFailureStats[$userUuid])) {
+                $userFailureStats[$userUuid] = ['failed_changes' => 0, 'switches' => []];
+            }
+            $userFailureStats[$userUuid]['failed_changes']++;
+            $userFailureStats[$userUuid]['switches'][$switchName] = true;
         }
     }
 
@@ -137,16 +171,24 @@ try {
     $summary = implode("\n", $results);
     $logMessage = "Scheduler: Completed - Processed: $totalProcessed, Succeeded: $totalSucceeded, Failed: $totalFailed, Duration: " . number_format($durationSec, 2) . "s\n$summary";
 
-    // Emit divergence signal if there are failed changes.
-    if ($totalFailed > 0) {
-        $notificationCenter->enqueueGlobal(
+    // Emit divergence signal only to users with affected failed changes.
+    foreach ($userFailureStats as $affectedUserUuid => $stats) {
+        $failedForUser = (int)($stats['failed_changes'] ?? 0);
+        if ($failedForUser <= 0) {
+            continue;
+        }
+
+        $switchesForUser = array_keys(is_array($stats['switches'] ?? null) ? $stats['switches'] : []);
+        $notificationCenter->enqueueForUsers(
+            [$affectedUserUuid],
             'documentation_deviation',
             'progress',
             'Abweichung zwischen Doku und Realitaet',
-            'Beim automatisierten Abgleich wurden fehlgeschlagene Changes erkannt. Bitte pruefen Sie die betroffenen Eintraege.',
+            'Beim automatisierten Abgleich wurden fehlgeschlagene Changes fuer Ihre Ressourcen erkannt. Bitte pruefen Sie die betroffenen Eintraege.',
             [
-                'failed_changes' => $totalFailed,
+                'failed_changes' => $failedForUser,
                 'processed_changes' => $totalProcessed,
+                'affected_switches' => $switchesForUser,
                 'summary' => $summary
             ]
         );
@@ -155,11 +197,13 @@ try {
     // Trigger daily summary creation based on env time/timezone and always process queue.
     $notificationCenter->enqueueDailySummaryIfDue();
     $deliveryResult = $notificationCenter->processQueue(150);
+    $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
     $logger->log(
         'Scheduler: notifications processed - processed=' . (int)$deliveryResult['processed']
         . ' sent=' . (int)$deliveryResult['sent']
         . ' failed=' . (int)$deliveryResult['failed']
-        . ' remaining=' . (int)$deliveryResult['remaining'],
+        . ' remaining=' . (int)$deliveryResult['remaining']
+        . ' cleaned=' . (int)$cleanupResult['removed'],
         1
     );
 
@@ -191,5 +235,48 @@ function recordSchedulerRun(bool $success, string $message, AutomationStore $sto
         ]);
     } catch (Exception $e) {
         // Silently fail
+    }
+}
+
+function logSchedulerExecutionEvent(
+    DatabaseAdapter $db,
+    string $userUuid,
+    string $switchName,
+    array $profileIds,
+    array $templateIds,
+    int $commandCount,
+    bool $ok,
+    array $extra = []
+): void {
+    $payload = array_merge([
+        'event' => 'script_execution',
+        'mode' => 'scheduler_queue',
+        'switch' => $switchName,
+        'profile' => count($profileIds) === 1 ? (string)$profileIds[0] : 'mixed',
+        'profiles' => array_values(array_filter(array_map('strval', $profileIds), static fn(string $v): bool => trim($v) !== '')),
+        'template' => count($templateIds) === 1 ? (string)$templateIds[0] : 'mixed',
+        'templates' => array_values(array_filter(array_map('strval', $templateIds), static fn(string $v): bool => trim($v) !== '')),
+        'command_count' => max(0, $commandCount),
+        'ok' => $ok
+    ], $extra);
+
+    $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($encoded)) {
+        $encoded = '{"event":"script_execution","mode":"scheduler_queue","error":"encoding_failed"}';
+    }
+
+    try {
+        $db->db_query(
+            "INSERT INTO changelog (users, operation, changed_table, changed_row, changed_data)
+             VALUES (:users, :operation, :changed_table, gen_random_uuid(), :changed_data)",
+            [
+                'users' => trim($userUuid) !== '' ? $userUuid : null,
+                'operation' => 'INSERT',
+                'changed_table' => 'script_execution',
+                'changed_data' => $encoded
+            ]
+        );
+    } catch (\Throwable $ignored) {
+        // Best-effort history logging for scheduler runs.
     }
 }

@@ -15,7 +15,10 @@ class SlackStubProvider implements ProviderInterface {
             return ['ok' => false, 'error' => 'slack channel disabled'];
         }
 
-        $webhook = defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? trim((string)NOTIFICATION_SLACK_WEBHOOK_URL) : '';
+        $recipient = is_array($entry['recipient'] ?? null) ? $entry['recipient'] : [];
+        $recipientWebhook = trim((string)($recipient['slack_webhook_url'] ?? ''));
+        $globalWebhook = defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? trim((string)NOTIFICATION_SLACK_WEBHOOK_URL) : '';
+        $webhook = $recipientWebhook !== '' ? $recipientWebhook : $globalWebhook;
         if ($webhook === '') {
             return ['ok' => false, 'error' => 'slack webhook missing'];
         }

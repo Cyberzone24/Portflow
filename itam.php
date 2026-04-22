@@ -39,11 +39,14 @@
         height: 1.25rem;
     }
 
+    .itam-shell {
+        align-items: stretch;
+        height: calc(100vh - 7.2rem);
+    }
+
     @media (min-width: 1024px) {
         .itam-shell {
             grid-template-columns: minmax(76px, 15.5rem) minmax(0, 1fr);
-            align-items: stretch;
-            height: calc(100vh - 7.2rem);
         }
 
         .itam-shell.sidebar-collapsed {
@@ -93,32 +96,40 @@
     .viewer-expert-menu summary::-webkit-details-marker {
         display: none;
     }
+
+    .itam-table-scroll thead th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background-color: #e5e7eb;
+        box-shadow: inset 0 -1px 0 #cbd5e1;
+    }
 </style>
 <div class="itam-shell mx-4 mb-4 mt-0 grid min-h-0 grid-cols-1 gap-4" id="itamShell">
-    <aside class="itam-sidebar relative hidden min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white p-4 lg:flex lg:flex-col" id="itamSidebar">  
-        <div class="itam-sidebar-head mb-3 flex items-center justify-between gap-2 pr-10">
+    <aside class="itam-sidebar relative hidden min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white p-4 lg:flex lg:flex-col lg:justify-between" id="itamSidebar">  
+        <div class="itam-sidebar-head mb-3 flex flex-col justify-between gap-2">
             <div class="itam-sidebar-copy">
                 <p class="text-lg font-bold"><?php echo $lang['it asset-management']; ?></p>
                 <p class="text-sm text-slate-500"><?php echo $lang['navigation'] ?? 'Navigation'; ?></p>
             </div>
-            <button id="itamSidebarToggle" class="absolute right-3 top-3 inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-400 text-white shadow-md transition hover:bg-slate-500" type="button" title="Leiste verkleinern">
-                <i data-lucide="panel-left"></i>
-            </button>
+            <ul class="itam-nav grid gap-2.5 lg:gap-3" id="itam_nav">
+                <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-blue-600 bg-blue-600 px-3 py-2.5 font-semibold text-white transition hover:bg-slate-100 hover:text-slate-800"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="map-pin"></i><span class="itam-nav-label truncate"><?php echo $lang['location']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+                <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="network"></i><span class="itam-nav-label truncate"><?php echo $lang['ipam']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+                <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="layers"></i><span class="itam-nav-label truncate"><?php echo $lang['vlan']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+                <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="server"></i><span class="itam-nav-label truncate"><?php echo $lang['devices']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+                <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="ethernet-port"></i><span class="itam-nav-label truncate"><?php echo $lang['device ports']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+                <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
+            </ul>
         </div>
-        <ul class="itam-nav grid gap-2.5 lg:gap-3" id="itam_nav">
-            <li onclick="loadTable('location_details')" data-table="location_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-blue-600 bg-blue-600 px-3 py-2.5 font-semibold text-white transition hover:bg-slate-100 hover:text-slate-800"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="map-pin"></i><span class="itam-nav-label truncate"><?php echo $lang['location']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('ip_range_join_metadata')" data-table="ip_range_join_metadata" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="network"></i><span class="itam-nav-label truncate"><?php echo $lang['ipam']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('vlan_details')" data-table="vlan_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="layers"></i><span class="itam-nav-label truncate"><?php echo $lang['vlan']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('device_details')" data-table="device_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="server"></i><span class="itam-nav-label truncate"><?php echo $lang['devices']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('device_port_details')" data-table="device_port_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="ethernet-port"></i><span class="itam-nav-label truncate"><?php echo $lang['device ports']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
-            <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
-        </ul>
+        <button id="itamSidebarToggle" class="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-400 text-white shadow-md transition hover:bg-slate-500" type="button" title="Leiste verkleinern">
+            <i data-lucide="panel-left"></i>
+        </button>
     </aside>
-    <div class="itam-content relative min-h-0 overflow-auto rounded-2xl border border-slate-300 bg-white">
-        <div class="h-fit w-full p-4">
+    <div class="itam-content relative min-h-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
+        <div class="flex h-full min-h-0 w-full flex-col p-4">
             <div class="mb-4">
                 <div class="text-2xl font-bold text-slate-900"><?php echo $lang['it asset-management']; ?></div>
-                <div class="mt-1 text-sm text-slate-500"><?php echo $lang['quick note'] ?? 'Kurze Erklaerung: Hier werden Locations, Devices, Ports und Verbindungen schnell erfasst und gepflegt.'; ?></div>
+                <div class="mt-1 text-sm text-slate-500"><?php echo $lang['quick note'] ?? 'Verwaltung von Standorten, Geräten, Ports und Verbindungen'; ?></div>
             </div>
 
             <ul class="itam-mobile-subnav flex items-center gap-2 overflow-x-auto pb-1 lg:hidden" id="itam_nav_mobile">
@@ -130,7 +141,7 @@
                 <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex flex-none cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span></li>
             </ul>
 
-            <div class="mb-4 grid gap-3">
+            <div class="mb-4 grid flex-shrink-0 gap-3">
                 <div class="block">
                     <div class="flex min-w-0 flex-nowrap items-center gap-2.5">
                         <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="searchTable(event)">
@@ -160,11 +171,13 @@
                     </div>
                 </div>
             </div>
-            <div class="overflow-auto rounded-xl border border-slate-300 bg-white shadow-sm">
-            <table class="static w-full min-w-full rounded-lg text-left text-sm text-gray-500 shadow-md">
-                <thead class="text-gray-800"></thead>
-                <tbody></tbody>
-            </table>
+            <div class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+                <div class="itam-table-scroll h-full w-full overflow-y-auto">
+                    <table class="static w-full min-w-full table-auto rounded-lg text-left text-sm text-gray-500 shadow-md">
+                        <thead class="bg-white text-gray-800"></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
         </div>
         
@@ -4773,14 +4786,6 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 </div>
 
                 <div class="grid gap-3">
-            <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Overlay-Metrik</span>
-                <select id="viewer3dMetric" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="change3DMetric(this.value)">
-                    <option value="weight">Gewicht (kg)</option>
-                    <option value="power">Power (W)</option>
-                    <option value="thermal">Thermal (W)</option>
-                </select>
-            </label>
 
             <label class="flex flex-col gap-1 text-sm">
                 <span class="font-semibold text-slate-700">Kabel-Preset</span>
@@ -4814,16 +4819,6 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 <span class="text-sm font-semibold text-slate-700">Nur fokussiertes Rack mit Geraeten</span>
             </label>
             ` : ''}
-
-            <label class="flex items-end gap-2">
-                <input type="checkbox" id="viewer3dRackEarsToggle" checked onchange="toggle3DFeature('rackEars', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Rackohren anzeigen</span>
-            </label>
-
-            <label class="flex items-end gap-2">
-                <input type="checkbox" id="viewer3dLoadOverlayToggle" onchange="toggle3DFeature('loadOverlay', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Last-Overlay anzeigen</span>
-            </label>
             
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dPortsToggle" checked onchange="toggle3DFeature('ports', this.checked)" class="h-4 w-4">
@@ -4831,7 +4826,7 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
             </label>
 
             <label class="flex items-end gap-2">
-                <input type="checkbox" id="viewer3dPortLabelsToggle" onchange="toggle3DFeature('portLabels', this.checked)" class="h-4 w-4">
+                <input type="checkbox" id="viewer3dPortLabelsToggle" checked onchange="toggle3DFeature('portLabels', this.checked)" class="h-4 w-4">
                 <span class="text-sm font-semibold text-slate-700">Port-Beschriftung</span>
             </label>
             
@@ -4839,10 +4834,44 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 <input type="checkbox" id="viewer3dCablesToggle" checked onchange="toggle3DFeature('cables', this.checked)" class="h-4 w-4">
                 <span class="text-sm font-semibold text-slate-700">Kabel anzeigen</span>
             </label>
+            
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dCableLabelsToggle" checked onchange="toggle3DFeature('cableLabels', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Kabel-Beschriftung</span>
+            </label>
 
             <details class="viewer-expert-menu rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
                 <summary class="text-xs font-bold uppercase tracking-wide text-slate-600">Expertenmenue</summary>
                 <div class="mt-3 grid gap-3">
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dHoverLabelsOnlyToggle" checked onchange="toggle3DFeature('hoverLabelsOnly', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Beschriftung nur bei Hover</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dRenderAllCablesToggle" checked onchange="toggle3DFeature('renderAllCables', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Alle Kabel rendern</span>
+            </label>
+
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dRackEarsToggle" checked onchange="toggle3DFeature('rackEars', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Rackohren anzeigen</span>
+            </label>
+            
+            <label class="flex items-end gap-2">
+                <input type="checkbox" id="viewer3dLoadOverlayToggle" onchange="toggle3DFeature('loadOverlay', this.checked)" class="h-4 w-4">
+                <span class="text-sm font-semibold text-slate-700">Last-Overlay anzeigen</span>
+            </label>
+
+            <label class="flex flex-col gap-1 text-sm">
+                <span class="font-semibold text-slate-700">Overlay-Metrik</span>
+                <select id="viewer3dMetric" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="change3DMetric(this.value)">
+                    <option value="weight">Gewicht (kg)</option>
+                    <option value="power">Power (W)</option>
+                    <option value="thermal">Thermal (W)</option>
+                </select>
+            </label>
 
             ${isRoomMode ? `
             <label class="flex flex-col gap-1 text-sm">
@@ -4860,21 +4889,6 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 <input type="number" id="viewer3dFetchConcurrency" min="1" step="1" value="4" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
             </label>
             ` : ''}
-
-            <label class="flex items-end gap-2">
-                <input type="checkbox" id="viewer3dCableLabelsToggle" onchange="toggle3DFeature('cableLabels', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Kabel-Beschriftung</span>
-            </label>
-
-            <label class="flex items-end gap-2">
-                <input type="checkbox" id="viewer3dHoverLabelsOnlyToggle" checked onchange="toggle3DFeature('hoverLabelsOnly', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Beschriftung nur bei Hover</span>
-            </label>
-
-            <label class="flex items-end gap-2">
-                <input type="checkbox" id="viewer3dRenderAllCablesToggle" checked onchange="toggle3DFeature('renderAllCables', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Alle Kabel rendern</span>
-            </label>
 
             <label class="flex flex-col gap-1 text-sm">
                 <span class="font-semibold text-slate-700">Kabel nur fuer Geraete</span>

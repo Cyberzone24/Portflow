@@ -14,6 +14,8 @@ bash <(curl -s https://raw.githubusercontent.com/Cyberzone24/Portflow/main/insta
 - (Lighttpd - if you are using our installer)
 
 ## Scheduler alle 5 Minuten laufen lassen!
+*/5 * * * * /usr/bin/php /var/www/html/Portflow-DEV/scheduler.php
+#### Kann Benachrichtigungen schicken oder aufräumen
 
 ## ITAM Port Type Codes
 
