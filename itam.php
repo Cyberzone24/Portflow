@@ -3788,6 +3788,12 @@ function loadTable(table = 'location_details', search = '', limit = null, page =
         if (search) params.set('search', search);
         if (limit) params.set('limit', limit);
         if (page && page > 1) params.set('page', page);
+        // Server-side sort (per-table, persisted in sessionStorage).
+        const sort = getTableSort(table);
+        if (sort && sort.col && sort.dir) {
+            params.set('sort', sort.col);
+            params.set('dir', sort.dir);
+        }
         const query = params.toString() ? ('?' + params.toString()) : '';
 
         ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
@@ -3848,8 +3854,19 @@ function displayTable(columnsConfig, userColumns, rows) {
     const TAG_COLORS = ['bg-orange-400', 'bg-lime-400', 'bg-emerald-400', 'bg-cyan-400', 'bg-indigo-400', 'bg-fuchsia-400', 'bg-rose-400'];
 
     // Tabellenkopf erstellen
+    const sortState = getTableSort(currentTable) || { col: null, dir: null };
     let trHead = $('<tr class="border-b bg-gray-200">');
-    userColumns.forEach(colKey => trHead.append($('<th class="p-2">').text(columnsConfig[colKey] || colKey)));
+    userColumns.forEach(colKey => {
+        const isActive = sortState.col === colKey;
+        const arrow = isActive
+            ? (sortState.dir === 'asc' ? '<i data-lucide="arrow-up" class="inline-block h-4 w-4 ml-1 align-middle"></i>'
+                                       : '<i data-lucide="arrow-down" class="inline-block h-4 w-4 ml-1 align-middle"></i>')
+            : '<i data-lucide="chevrons-up-down" class="inline-block h-4 w-4 ml-1 align-middle text-slate-400"></i>';
+        const $th = $('<th class="p-2 cursor-pointer select-none hover:bg-gray-300" data-col-key="' + colKey + '"></th>')
+            .html('<span>' + $('<div>').text(columnsConfig[colKey] || colKey).html() + '</span>' + arrow)
+            .on('click', function () { toggleColumnSort(colKey); });
+        trHead.append($th);
+    });
     trHead.append($('<th class="p-2">Actions</th>'));
     $tableHead.append(trHead);
 
@@ -4197,6 +4214,49 @@ function displayTable(columnsConfig, userColumns, rows) {
     renderer(rows);
 
     lucide.createIcons();
+}
+
+// Toggle per-table sort state and reload. Cycle: none → asc → desc → none.
+function getTableSort(table) {
+    if (!window.__pfTableSort) {
+        // Hydrate from sessionStorage so the sort state survives navigation
+        // within the page (search input, pagination, table picker, etc.).
+        try {
+            const raw = sessionStorage.getItem('pf_table_sort');
+            window.__pfTableSort = raw ? (JSON.parse(raw) || {}) : {};
+        } catch (e) {
+            window.__pfTableSort = {};
+        }
+    }
+    return window.__pfTableSort[table] || null;
+}
+
+function setTableSort(table, sort) {
+    if (!window.__pfTableSort) window.__pfTableSort = {};
+    if (sort && sort.col && sort.dir) {
+        window.__pfTableSort[table] = { col: sort.col, dir: sort.dir };
+    } else {
+        delete window.__pfTableSort[table];
+    }
+    try { sessionStorage.setItem('pf_table_sort', JSON.stringify(window.__pfTableSort)); } catch (e) {}
+}
+
+function toggleColumnSort(colKey) {
+    if (!currentTable || !colKey) return;
+    const cur = getTableSort(currentTable) || { col: null, dir: null };
+    let next;
+    if (cur.col !== colKey) {
+        next = { col: colKey, dir: 'asc' };
+    } else if (cur.dir === 'asc') {
+        next = { col: colKey, dir: 'desc' };
+    } else {
+        next = { col: null, dir: null };
+    }
+    setTableSort(currentTable, next);
+    // Reload first page so the new ordering applies across the dataset.
+    const searchEl = document.querySelector('#searchForm input[name="search"]');
+    const search = searchEl ? searchEl.value : '';
+    loadTable(currentTable, search, null, 1);
 }
 
 // Load user column preferences

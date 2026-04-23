@@ -460,7 +460,7 @@ class API {
 
             // Überprüfe auf zusätzliche WHERE-Parameter
             foreach ($data as $key => $value) {
-                if (!in_array($key, ['limit', 'page', 'search'])) {
+                if (!in_array($key, ['limit', 'page', 'search', 'sort', 'dir'])) {
                     if (preg_match('/^(.*)In$/', $key, $inMatches)) {
                         $column = $inMatches[1];
                         if (!isset($validColumnSet[$column])) {
@@ -536,8 +536,17 @@ class API {
                 $whereClause = 'WHERE ' . implode(' AND ', $conditions);
             }
 
+            // ORDER BY (whitelisted column + direction).
+            $orderClause = '';
+            if (!empty($data['sort']) && isset($validColumnSet[$data['sort']])) {
+                $sortCol = $data['sort'];
+                $dirRaw = strtolower((string)($data['dir'] ?? 'asc'));
+                $sortDir = ($dirRaw === 'desc') ? 'DESC' : 'ASC';
+                $orderClause = "ORDER BY \"$sortCol\" $sortDir NULLS LAST";
+            }
+
             // Erstelle die Abfragen
-            $query = "SELECT * FROM $resource $whereClause LIMIT $limit OFFSET $offset";
+            $query = "SELECT * FROM $resource $whereClause $orderClause LIMIT $limit OFFSET $offset";
             $queryTotal = "SELECT COUNT(*) FROM $resource $whereClause";
 
             $results = $this->dbAdapter->db_query($query);
