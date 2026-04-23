@@ -59,10 +59,10 @@
                 "parent_location": {
                     "label": "Parent Location",
                     "type": "searchDropdown",
-                    "resource": "location_join_metadata",
+                    "resource": "location_details",
+                    "displayFields": ["location_parent_location_metadata_caption", "location_metadata_caption"],
                     "dependencies": {
-                        "typeMax": "location_type",
-                        "location": "parent_location"
+                        "typeMax": "location_type"
                     },
                     "required": false
                 },
@@ -265,10 +265,8 @@
                 "location": {
                     "label": "Location",
                     "type": "searchDropdown",
-                    "resource": "location_join_metadata",
-                    "dependencies": {
-                        "location": "location"
-                    },
+                    "resource": "location_details",
+                    "displayFields": ["location_parent_location_metadata_caption", "location_metadata_caption"],
                     "required": false
                 },
                 "expected_location": {

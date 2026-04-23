@@ -2014,6 +2014,55 @@ function formatSearchResultLabel(item, config) {
     return item[captionKey] || item.uuid || '[kein Name]';
 }
 
+let __locationBreadcrumbCachePromise = null;
+function getLocationBreadcrumbCache(forceReload = false) {
+    if (forceReload) {
+        __locationBreadcrumbCachePromise = null;
+    }
+    if (!__locationBreadcrumbCachePromise) {
+        __locationBreadcrumbCachePromise = (async () => {
+            try {
+                const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/location_details?limit=10000');
+                const payload = await response.json();
+                const rows = (payload && payload.items) ? payload.items : [];
+                const byUuid = new Map();
+                rows.forEach(row => {
+                    const uuid = String(row.location_uuid || row.uuid || '').trim();
+                    if (!uuid) return;
+                    byUuid.set(uuid, {
+                        uuid,
+                        caption: String(row.location_metadata_caption || '').trim(),
+                        parent: String(row.location_parent_location || '').trim()
+                    });
+                });
+                return byUuid;
+            } catch (err) {
+                console.warn('Location-Cache konnte nicht geladen werden:', err);
+                return new Map();
+            }
+        })();
+    }
+    return __locationBreadcrumbCachePromise;
+}
+
+function buildLocationBreadcrumb(uuid, cache) {
+    if (!uuid || !cache) return '';
+    const parts = [];
+    const seen = new Set();
+    let cursor = String(uuid).trim();
+    while (cursor && !seen.has(cursor) && cache.has(cursor)) {
+        seen.add(cursor);
+        const node = cache.get(cursor);
+        if (node.caption) parts.unshift(node.caption);
+        cursor = node.parent;
+    }
+    if (parts.length === 0) {
+        const node = cache.get(String(uuid).trim());
+        return node ? (node.caption || '') : '';
+    }
+    return parts.join(' › ');
+}
+
 function toggleConnectionView(container, forms, suggestionsPanel, activeView) {
     const manualVisible = activeView === 'manual';
     forms.forEach(form => {
@@ -3326,13 +3375,21 @@ function generateField(name, config) {
                     const results = await response.json();
                     dropdownList.classList.remove('hidden');
 
+                    // For location resources: build a parent breadcrumb (Building › Room › Rack)
+                    // by walking the parent chain via a one-time loaded location cache.
+                    const isLocationResource = config.resource === 'location_details'
+                        || config.resource === 'location_join_metadata';
+                    const locationCache = isLocationResource ? await getLocationBreadcrumbCache() : null;
+
                     results.items.forEach(item => {
                         let resourceBase = config.resource.replace(/_details$/, '');
-                        let uuidKey = Object.keys(item).find(k => k === resourceBase + '_uuid') 
-                            || Object.keys(item).find(k => k.endsWith('_uuid')) 
+                        let uuidKey = Object.keys(item).find(k => k === resourceBase + '_uuid')
+                            || Object.keys(item).find(k => k.endsWith('_uuid'))
                             || 'uuid';
-                        let displayLabel = formatSearchResultLabel(item, config);
-                    
+                        let displayLabel = isLocationResource
+                            ? buildLocationBreadcrumb(item[uuidKey], locationCache)
+                            : formatSearchResultLabel(item, config);
+
                         const entry = document.createElement('div');
                         entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
                         entry.textContent = displayLabel || item[uuidKey] || '[kein Name]';
