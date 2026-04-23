@@ -324,6 +324,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js" integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="./includes/js/lucide.min.js"></script>
+    <script>
+        // Expose the server-configured Portflow hostname + API base to all client modules.
+        window.PORTFLOW_HOSTNAME = <?php echo json_encode(rtrim((string) (defined('PORTFLOW_HOSTNAME') ? PORTFLOW_HOSTNAME : ''), '/')); ?>;
+        window.PORTFLOW_API_BASE = window.PORTFLOW_HOSTNAME + '/api';
+    </script>
+    <script src="./includes/js/PortflowSwitch2D.js?v=<?php echo @filemtime(__DIR__ . '/js/PortflowSwitch2D.js') ?: time(); ?>"></script>
+    <script src="./includes/js/PortflowCableTrace.js?v=<?php echo @filemtime(__DIR__ . '/js/PortflowCableTrace.js') ?: time(); ?>"></script>
     <style>
         .pf-header-shell {
             margin: 0.75rem;

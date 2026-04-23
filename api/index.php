@@ -221,6 +221,14 @@ class API {
             return;
         }
 
+        // Cable trace endpoint — reusable backend module so multiple detail
+        // views (switch port, connection, cable, etc.) can share one path.
+        if ($_SERVER['REQUEST_METHOD'] === 'GET'
+            && strpos($_SERVER['REQUEST_URI'], '/api/cable_trace') !== false) {
+            require __DIR__ . '/cable_trace.php';
+            return;
+        }
+
         // check media types
         $this->checkMediaTypes($this->allowedContentTypes, $this->allowedAcceptTypes);
 

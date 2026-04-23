@@ -205,6 +205,16 @@
                     >
                         <i data-lucide="cube" class="inline mr-1 h-4 w-4"></i>3D Ansicht
                     </button>
+                    <button 
+                        type="button"
+                        data-tab="topology"
+                        id="detailsTabTopologyBtn"
+                        class="details-tab px-3 py-2 text-sm font-semibold text-slate-600 border-b-2 border-transparent transition hover:border-slate-300"
+                        onclick="switchDetailsTab('topology')"
+                        style="display: none;"
+                    >
+                        <i data-lucide="route" class="inline mr-1 h-4 w-4"></i>Topologie
+                    </button>
                 </div>
             </div>
             
@@ -213,6 +223,9 @@
             
             <!-- Tab Content: 3D View (wird per Include eingefügt) -->
             <div id="detailsContent3d" class="space-y-2 details-tab-content flex-1" data-tab="3d" style="display: none;"></div>
+
+            <!-- Tab Content: Topology (Switch 2D / Cable Trace) -->
+            <div id="detailsContentTopology" class="space-y-3 details-tab-content flex-1 overflow-auto" data-tab="topology" style="display: none;"></div>
         </div>
 
         <!-- New Location -->
@@ -4934,6 +4947,19 @@ async function openDetailsPopup(rowData) {
         if (tabNavEl) tabNavEl.style.display = 'none';
         if (tab3dBtn) tab3dBtn.style.display = 'none';
     }
+
+    // Topology / Cable-Trace tab visibility ---------------------------------
+    // Show "Topologie" for: a switch/router/patchpanel device,
+    // any device_port row, and any connection row.
+    const topoBtn = document.getElementById('detailsTabTopologyBtn');
+    const topoContext = resolveTopologyContext(rowData);
+    if (topoContext) {
+        const tabNavEl = document.getElementById('detailsTabNav');
+        if (tabNavEl) tabNavEl.style.display = 'flex';
+        if (topoBtn) topoBtn.style.display = 'block';
+    } else if (topoBtn) {
+        topoBtn.style.display = 'none';
+    }
     
     $('#detailsPopup').removeClass('hidden');
 }
@@ -4948,10 +4974,17 @@ function closeDetailsPopup() {
         details3d.innerHTML = '';
     }
 
+    const detailsTopology = document.getElementById('detailsContentTopology');
+    if (detailsTopology) {
+        detailsTopology.innerHTML = '';
+    }
+
     const tabNavEl = document.getElementById('detailsTabNav');
     const tab3dBtn = document.getElementById('detailsTab3dBtn');
+    const topoBtn  = document.getElementById('detailsTabTopologyBtn');
     if (tabNavEl) tabNavEl.style.display = 'none';
     if (tab3dBtn) tab3dBtn.style.display = 'none';
+    if (topoBtn)  topoBtn.style.display  = 'none';
 
     // Reset to info tab
     switchDetailsTab('info');
@@ -4992,6 +5025,185 @@ function switchDetailsTab(tabName) {
             console.warn('[3D-VIEW] Keine UUID für 3D-Initialisierung gefunden', currentDetailsRowData);
         }
     }
+
+    // Wenn Topologie-Tab gewählt -> Switch 2D + Trace rendern
+    if (tabName === 'topology' && currentDetailsRowData) {
+        renderTopologyTab(currentDetailsRowData);
+    }
+}
+
+/**
+ * Decide which kind of topology view applies to the current details row.
+ * Returns null if the topology tab should stay hidden.
+ */
+function resolveTopologyContext(rowData) {
+    if (!rowData) return null;
+    if (currentTable === 'device_details') {
+        const dt = String(rowData.device_type || rowData.type || '').trim().toLowerCase();
+        if (['switch', 'router', 'patchpanel', 'firewall'].includes(dt)) {
+            return { mode: 'device', deviceUuid: rowData.device_uuid || rowData.uuid };
+        }
+        return null;
+    }
+    if (currentTable === 'device_port_details') {
+        return {
+            mode: 'port',
+            portUuid: rowData.device_port_uuid || rowData.uuid,
+            deviceUuid: rowData.device_port_device || rowData.device_port_device_uuid || null,
+            portCaption: rowData.device_port_metadata_caption || null,
+        };
+    }
+    if (currentTable === 'connection_details') {
+        return { mode: 'connection', connectionUuid: rowData.connection_uuid || rowData.uuid };
+    }
+    return null;
+}
+
+/**
+ * Render content of the Topology tab. Reuses the standalone modules
+ * window.PortflowSwitch2D and window.PortflowCableTrace, both loaded
+ * globally via includes/header.php.
+ */
+function renderTopologyTab(rowData) {
+    const container = document.getElementById('detailsContentTopology');
+    if (!container) return;
+    const ctx = resolveTopologyContext(rowData);
+    if (!ctx) {
+        container.innerHTML = '<div class="text-sm text-slate-500">Keine Topologie verfuegbar.</div>';
+        return;
+    }
+    container.innerHTML = '';
+
+    if (ctx.mode === 'connection') {
+        // Render the trace inline (no separate modal needed since this IS the trace view).
+        const wrap = document.createElement('div');
+        wrap.className = 'rounded-xl border border-slate-200 bg-white p-3';
+        wrap.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Kabelverlauf</div><div id="topologyInlineTrace" class="text-sm text-slate-600">Lade ...</div>';
+        container.appendChild(wrap);
+        loadInlineTrace('connection', ctx.connectionUuid, '#topologyInlineTrace');
+        return;
+    }
+
+    if (ctx.mode === 'port') {
+        // Show the parent switch faceplate + the trace from this port below.
+        const top = document.createElement('div');
+        top.className = 'space-y-3';
+        const header = document.createElement('div');
+        header.className = 'rounded-xl border border-slate-200 bg-white p-3';
+        header.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Switch-Ansicht</div><div id="topologySwitchView"></div>';
+        top.appendChild(header);
+        const trace = document.createElement('div');
+        trace.className = 'rounded-xl border border-slate-200 bg-white p-3';
+        trace.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Kabelverlauf ab diesem Port</div><div id="topologyInlineTrace" class="text-sm text-slate-600">Lade ...</div>';
+        top.appendChild(trace);
+        container.appendChild(top);
+        if (ctx.deviceUuid) {
+            window.PortflowSwitch2D.render('#topologySwitchView', {
+                deviceUuid: ctx.deviceUuid,
+                onPortClick: (portRow) => {
+                    const pUuid = String(portRow.device_port_uuid || portRow.uuid || '');
+                    loadInlineTrace('device_port', pUuid, '#topologyInlineTrace');
+                }
+            });
+        } else {
+            document.getElementById('topologySwitchView').innerHTML = '<div class="text-xs text-slate-500">Geraet nicht aufloesbar.</div>';
+        }
+        loadInlineTrace('device_port', ctx.portUuid, '#topologyInlineTrace');
+        return;
+    }
+
+    // mode: 'device' (switch / router / patchpanel)
+    const wrap = document.createElement('div');
+    wrap.className = 'space-y-3';
+    const card = document.createElement('div');
+    card.className = 'rounded-xl border border-slate-200 bg-white p-3';
+    card.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Switch-Ansicht</div><div id="topologySwitchView"></div>';
+    wrap.appendChild(card);
+    const trace = document.createElement('div');
+    trace.className = 'rounded-xl border border-slate-200 bg-white p-3';
+    trace.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Klicke einen Port fuer den Kabelverlauf</div><div id="topologyInlineTrace" class="text-sm text-slate-500">Noch kein Port gewaehlt.</div>';
+    wrap.appendChild(trace);
+    container.appendChild(wrap);
+
+    window.PortflowSwitch2D.render('#topologySwitchView', {
+        deviceUuid: ctx.deviceUuid,
+        onPortClick: (portRow) => {
+            const pUuid = String(portRow.device_port_uuid || portRow.uuid || '');
+            loadInlineTrace('device_port', pUuid, '#topologyInlineTrace');
+        }
+    });
+}
+
+async function loadInlineTrace(kind, uuid, selector) {
+    const target = document.querySelector(selector);
+    if (!target || !uuid) return;
+    target.innerHTML = '<div class="text-sm text-slate-500">Lade Kabelverlauf ...</div>';
+    try {
+        const r = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/cable_trace?from=' + encodeURIComponent(uuid) + '&kind=' + encodeURIComponent(kind), {
+            credentials: 'same-origin', headers: { 'Accept': 'application/json' }
+        });
+        const result = await r.json();
+        // Re-use the rendering logic from PortflowCableTrace by populating a temporary element.
+        const tmp = document.createElement('div');
+        tmp.id = 'pf-cable-trace-body';
+        target.innerHTML = '';
+        target.appendChild(tmp);
+        // The PortflowCableTrace module renders into #pf-cable-trace-body, but
+        // here we want inline rendering — duplicate the simple chain renderer.
+        target.innerHTML = renderTraceInlineHtml(result);
+        if (window.lucide) window.lucide.createIcons();
+    } catch (e) {
+        target.innerHTML = '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">Fehler: ' + escapeHtml(e.message || e) + '</div>';
+    }
+}
+
+function renderTraceInlineHtml(result) {
+    if (!result || result.error) return '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml(result && result.error || 'Fehler') + '</div>';
+    if (result.kind === 'device') {
+        const ports = Array.isArray(result.ports) ? result.ports : [];
+        if (!ports.length) return '<div class="text-xs text-slate-500">Keine verbundenen Ports.</div>';
+        return ports.map(p => '<div class="mb-3">' + renderTraceInlineHtml(p) + '</div>').join('');
+    }
+    const branches = Array.isArray(result.branches) ? result.branches : [];
+    if (!branches.length) return '<div class="text-xs text-slate-500">Keine Verbindungen ab diesem Punkt.</div>';
+    return branches.map((branch, idx) => {
+        const items = [];
+        if (result.kind === 'device_port' && result.start) items.push(traceNodePill(result.start));
+        for (const hop of branch) {
+            items.push(traceCableArrow(hop.cable || {}));
+            items.push(traceNodePill(hop.port));
+        }
+        return '<div class="mb-2"><div class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pfad ' + (idx + 1) + '</div>' +
+               '<div class="flex flex-wrap items-stretch gap-1">' + items.join('') + '</div></div>';
+    }).join('');
+}
+
+function traceNodePill(node) {
+    if (!node || node.type !== 'port') return '<div class="rounded-lg border border-slate-300 bg-slate-100 p-2 text-xs text-slate-700">Unbekannt</div>';
+    const dev = node.device || {};
+    const loc = node.location || {};
+    const status = node.snmp && node.snmp.oper_status === 1 ? 'up' : node.snmp && node.snmp.admin_status === 2 ? 'admin_down' : node.snmp && node.snmp.oper_status === 2 ? 'down' : 'unknown';
+    const sc = { up: 'bg-emerald-100 text-emerald-800', down: 'bg-amber-100 text-amber-800', admin_down: 'bg-red-100 text-red-800', unknown: 'bg-slate-100 text-slate-700' }[status];
+    const endpointBadge = node.endpoint ? '<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-blue-700">Endpunkt</span>' : '';
+    const truncated = node.truncated_reason ? '<div class="mt-1 text-[10px] text-amber-700">⚠ ' + escapeHtml(node.truncated_reason) + '</div>' : '';
+    return '<div class="min-w-[170px] rounded-lg border border-slate-300 bg-white p-2 text-xs shadow-sm">' +
+        '<div class="flex items-center justify-between gap-1"><div class="font-bold text-slate-900">' + escapeHtml(dev.caption || 'Device') + endpointBadge + '</div>' +
+        '<span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase ' + sc + '">' + escapeHtml(dev.type || '') + '</span></div>' +
+        (loc.caption ? '<div class="text-[10px] text-slate-500">📍 ' + escapeHtml(loc.caption) + '</div>' : '') +
+        '<div class="mt-1 rounded bg-slate-50 px-1.5 py-0.5"><span class="font-semibold">Port:</span> ' + escapeHtml(node.caption || '—') + '</div>' +
+        (node.ip ? '<div class="text-[10px] text-slate-600">IP: ' + escapeHtml(node.ip) + '</div>' : '') +
+        truncated +
+        '</div>';
+}
+
+function traceCableArrow(edge) {
+    const parts = [];
+    if (edge.cable_name) parts.push(escapeHtml(edge.cable_name));
+    if (edge.cable_type) parts.push(escapeHtml(edge.cable_type));
+    if (edge.length) parts.push(escapeHtml(edge.length) + ' m');
+    const label = parts.length ? parts.join(' · ') : 'Kabel';
+    return '<div class="flex flex-col items-center justify-center px-1 text-slate-500"><div class="text-[9px] uppercase tracking-wider">' + label + '</div>' +
+        '<svg viewBox="0 0 60 12" width="60" height="12" class="my-0.5"><line x1="2" y1="6" x2="58" y2="6" stroke="#64748b" stroke-width="2" stroke-dasharray="4 3"/><polygon points="58,6 52,3 52,9" fill="#64748b"/></svg></div>';
 }
 
 /**
