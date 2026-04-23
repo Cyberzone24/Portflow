@@ -95,7 +95,7 @@ class PortReconciler
 
             $this->applyInterfaceFacts($port, $iface);
             $this->applyMetadataStatus($port, $iface);
-            $this->applyPortVlanFromPvid($port, $iface, $vlanUuidById);
+            $this->applyPortVlans($port, $iface, $vlanUuidById);
             $this->upsertSnmpState($port['uuid'], (string)$facts['run_uuid'], $iface);
         }
 
@@ -250,42 +250,121 @@ class PortReconciler
     }
 
     /**
-     * Reconcile the untagged native VLAN (PVID) into device_port_vlan. Only touches the
-     * `vlan` and `tagged` columns, never `expected_vlan` / `expected_tagged`.
-     * Tagged/trunk VLAN membership is intentionally not handled here yet (would
-     * require Q-BRIDGE-MIB::dot1qVlanCurrentEgressPorts walks).
+     * Reconcile native (untagged) and tagged VLAN membership into device_port_vlan.
+     *
+     * Inputs (from SnmpScanner):
+     *  - $iface['untagged_vlan']         int|null  - native VLAN id, or null on trunk-only ports.
+     *  - $iface['tagged_vlans']          int[]     - list of trunked VLAN ids.
+     *  - $iface['vlan_membership_known'] bool      - true if Q-BRIDGE-MIB egress walk succeeded.
+     *  - $iface['pvid']                  int|null  - legacy PVID (used as fallback only).
+     *
+     * Behaviour:
+     *  - When membership is reliably known we fully sync untagged + tagged rows
+     *    (including DELETE of stale rows on trunk-only ports).
+     *  - When membership is NOT known we fall back to the previous PVID-only behaviour
+     *    (write/refresh untagged row, never touch tagged rows or delete anything).
+     *
+     * Only the `vlan` and `tagged` columns are touched, never `expected_*`.
      *
      * @param array<int,string> $vlanUuidById vlanId -> vlan.uuid
      */
-    private function applyPortVlanFromPvid(array $port, array $iface, array $vlanUuidById): void
+    private function applyPortVlans(array $port, array $iface, array $vlanUuidById): void
     {
-        $pvid = isset($iface['pvid']) ? (int)$iface['pvid'] : 0;
-        if ($pvid <= 0) {
-            return;
+        $membershipKnown = !empty($iface['vlan_membership_known']);
+
+        $untaggedVlan = isset($iface['untagged_vlan']) && $iface['untagged_vlan'] !== null
+            ? (int)$iface['untagged_vlan']
+            : 0;
+        if (!$membershipKnown && $untaggedVlan === 0) {
+            // Legacy fallback: use raw PVID as native VLAN.
+            $untaggedVlan = isset($iface['pvid']) ? (int)$iface['pvid'] : 0;
         }
-        $vlanUuid = $vlanUuidById[$pvid] ?? null;
-        if ($vlanUuid === null) {
-            return; // VLAN not known in Portflow inventory -- skip silently
-        }
-        $existing = $this->db->db_query(
+        $desiredUntaggedUuid = $untaggedVlan > 0 ? ($vlanUuidById[$untaggedVlan] ?? null) : null;
+
+        // --- untagged row sync ---
+        $existingUntagged = $this->db->db_query(
             'SELECT uuid, vlan FROM device_port_vlan WHERE device_port = :dp AND tagged = FALSE',
             ['dp' => $port['uuid']]
         );
-        if (is_array($existing) && !empty($existing)) {
-            $row = $existing[0];
-            if ((string)($row['vlan'] ?? '') === $vlanUuid) {
-                return;
+        $existingUntagged = is_array($existingUntagged) ? $existingUntagged : [];
+
+        if ($desiredUntaggedUuid === null) {
+            // No native VLAN. Only delete stale rows when we trust the source (egress walk OK).
+            if ($membershipKnown && !empty($existingUntagged)) {
+                $this->db->db_query(
+                    'DELETE FROM device_port_vlan WHERE device_port = :dp AND tagged = FALSE',
+                    ['dp' => $port['uuid']]
+                );
             }
-            $this->db->db_query(
-                'UPDATE device_port_vlan SET vlan = :vlan WHERE uuid = :uuid',
-                ['vlan' => $vlanUuid, 'uuid' => $row['uuid']]
-            );
+        } else {
+            if (!empty($existingUntagged)) {
+                $row = $existingUntagged[0];
+                if ((string)($row['vlan'] ?? '') !== $desiredUntaggedUuid) {
+                    $this->db->db_query(
+                        'UPDATE device_port_vlan SET vlan = :vlan WHERE uuid = :uuid',
+                        ['vlan' => $desiredUntaggedUuid, 'uuid' => $row['uuid']]
+                    );
+                }
+                for ($i = 1, $n = count($existingUntagged); $i < $n; $i++) {
+                    $this->db->db_query(
+                        'DELETE FROM device_port_vlan WHERE uuid = :uuid',
+                        ['uuid' => $existingUntagged[$i]['uuid']]
+                    );
+                }
+            } else {
+                $this->db->db_query(
+                    'INSERT INTO device_port_vlan (device_port, vlan, tagged) VALUES (:dp, :vlan, FALSE)',
+                    ['dp' => $port['uuid'], 'vlan' => $desiredUntaggedUuid]
+                );
+            }
+        }
+
+        // --- tagged row sync (only when membership is reliably known) ---
+        if (!$membershipKnown) {
             return;
         }
-        $this->db->db_query(
-            'INSERT INTO device_port_vlan (device_port, vlan, tagged) VALUES (:dp, :vlan, FALSE)',
-            ['dp' => $port['uuid'], 'vlan' => $vlanUuid]
+        $taggedSource = isset($iface['tagged_vlans']) && is_array($iface['tagged_vlans'])
+            ? $iface['tagged_vlans']
+            : [];
+        $desiredTaggedUuids = [];
+        foreach ($taggedSource as $vid) {
+            $vid = (int)$vid;
+            if ($vid <= 0) {
+                continue;
+            }
+            $u = $vlanUuidById[$vid] ?? null;
+            if ($u !== null) {
+                $desiredTaggedUuids[$u] = true;
+            }
+        }
+
+        $existingTagged = $this->db->db_query(
+            'SELECT uuid, vlan FROM device_port_vlan WHERE device_port = :dp AND tagged = TRUE',
+            ['dp' => $port['uuid']]
         );
+        $existingByVlanUuid = [];
+        if (is_array($existingTagged)) {
+            foreach ($existingTagged as $r) {
+                $existingByVlanUuid[(string)$r['vlan']] = (string)$r['uuid'];
+            }
+        }
+
+        foreach (array_keys($desiredTaggedUuids) as $u) {
+            if (!isset($existingByVlanUuid[$u])) {
+                $this->db->db_query(
+                    'INSERT INTO device_port_vlan (device_port, vlan, tagged) VALUES (:dp, :vlan, TRUE)',
+                    ['dp' => $port['uuid'], 'vlan' => $u]
+                );
+            }
+        }
+        foreach ($existingByVlanUuid as $vlanUuid => $rowUuid) {
+            if (!isset($desiredTaggedUuids[$vlanUuid])) {
+                $this->db->db_query(
+                    'DELETE FROM device_port_vlan WHERE uuid = :uuid',
+                    ['uuid' => $rowUuid]
+                );
+            }
+        }
     }
 
     /**

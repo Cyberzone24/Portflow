@@ -1,5 +1,11 @@
 RewriteEngine On
 
+# Forward the HTTP Authorization header to PHP. Apache + php-fpm/cgi strips it
+# by default, which breaks HTTP Basic auth used by the Portflow CLI tool.
+RewriteCond %{HTTP:Authorization} ^(.+)$
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%1]
+SetEnvIfNoCase Authorization "(.+)" HTTP_AUTHORIZATION=$1
+
 # Stellt sicher, dass Anfragen an Dateien oder Verzeichnisse direkt bedient werden
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

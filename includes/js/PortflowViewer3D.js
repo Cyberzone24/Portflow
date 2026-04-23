@@ -82,6 +82,7 @@ export class PortflowViewer3D {
       roomFocusDevicesOnly: false,
       selectedDeviceUuids: [],
       currentSceneUuid: null,
+      autoFramePending: false,
       
       lastModelSignature: null
     };
@@ -216,6 +217,7 @@ export class PortflowViewer3D {
       this.state.currentRoom = null;
       this.state.sceneMode = 'rack';
       this.state.currentSceneUuid = locationUuid;
+      this.state.autoFramePending = true;
 
       this.state.lastModelSignature = null;
       this._renderSingleRack();
@@ -311,6 +313,7 @@ export class PortflowViewer3D {
       this.state.currentRoom = this._normalizeRoom(roomRow);
       this.state.sceneMode = 'room';
       this.state.currentSceneUuid = roomUuid;
+      this.state.autoFramePending = true;
 
       this.state.lastModelSignature = null;
       this._renderSingleRack();
@@ -557,6 +560,7 @@ export class PortflowViewer3D {
 
   setRoomFocusRack(rackUuid = '') {
     this.state.roomFocusRackUuid = String(rackUuid || '').trim();
+    this.state.autoFramePending = true;
     this._invalidateCache();
   }
 
@@ -680,6 +684,7 @@ export class PortflowViewer3D {
 
   _renderSingleRack() {
     if (!this.state.loaded || !this.state.liveRacks.length) return;
+    const shouldAutoFrame = this.state.autoFramePending === true;
 
     if (this.state.baseGrid) {
       this.state.baseGrid.visible = this.state.sceneMode !== 'room';
@@ -748,63 +753,68 @@ export class PortflowViewer3D {
       this._buildCableGeometry(this.state.liveConnections, portAnchorMap);
     }
 
-    // Camera adjust
-    if (this.state.sceneMode === 'room' && this.state.liveRacks.length > 1) {
-      const focusedRack = this._getRoomFocusedRack();
-      if (focusedRack) {
-        const pos = focusedRack.position || { x: 0, y: 0, z: 0 };
-        const px = (Number(pos.x) || 0) / 1000;
-        const py = (Number(pos.y) || 0) / 1000;
-        const pz = (Number(pos.z) || 0) / 1000;
-        const outerX = (Number(focusedRack.geometry?.outer?.x) || 600) / 1000;
-        const outerY = (Number(focusedRack.geometry?.outer?.y) || 2200) / 1000;
-        const outerZ = (Number(focusedRack.geometry?.outer?.z) || 1000) / 1000;
-        const targetY = py + (outerY * 0.5);
-        const span = Math.max(outerX, outerZ, 1.2);
-        this.state.controls.target.set(px, targetY, pz);
-        this.state.camera.position.set(px + span * 1.1, targetY + span * 0.9, pz + span * 1.2);
-        this._requestRender();
-        return;
+    // Camera adjust only for fresh scene loads or explicit focus changes.
+    if (shouldAutoFrame) {
+      this.state.autoFramePending = false;
+
+      if (this.state.sceneMode === 'room' && this.state.liveRacks.length > 1) {
+        const focusedRack = this._getRoomFocusedRack();
+        if (focusedRack) {
+          const pos = focusedRack.position || { x: 0, y: 0, z: 0 };
+          const px = (Number(pos.x) || 0) / 1000;
+          const py = (Number(pos.y) || 0) / 1000;
+          const pz = (Number(pos.z) || 0) / 1000;
+          const outerX = (Number(focusedRack.geometry?.outer?.x) || 600) / 1000;
+          const outerY = (Number(focusedRack.geometry?.outer?.y) || 2200) / 1000;
+          const outerZ = (Number(focusedRack.geometry?.outer?.z) || 1000) / 1000;
+          const targetY = py + (outerY * 0.5);
+          const span = Math.max(outerX, outerZ, 1.2);
+          this.state.controls.target.set(px, targetY, pz);
+          this.state.camera.position.set(px + span * 1.1, targetY + span * 0.9, pz + span * 1.2);
+          this._requestRender();
+          return;
+        }
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        let sumY = 0;
+        let count = 0;
+
+        for (const rack of this.state.liveRacks) {
+          const pos = rack.position || { x: 0, y: 0, z: 0 };
+          const px = (Number(pos.x) || 0) / 1000;
+          const pz = (Number(pos.z) || 0) / 1000;
+          const halfX = (Number(rack.geometry?.outer?.x) || 600) / 2000;
+          const halfZ = (Number(rack.geometry?.outer?.z) || 1000) / 2000;
+
+          minX = Math.min(minX, px - halfX);
+          maxX = Math.max(maxX, px + halfX);
+          minZ = Math.min(minZ, pz - halfZ);
+          maxZ = Math.max(maxZ, pz + halfZ);
+          sumY += ((Number(pos.y) || 0) / 1000) + ((Number(rack.geometry?.outer?.y) || 2200) / 2000);
+          count += 1;
+        }
+
+        if (count > 0 && Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minZ) && Number.isFinite(maxZ)) {
+          const centerX = (minX + maxX) * 0.5;
+          const centerZ = (minZ + maxZ) * 0.5;
+          const centerY = sumY / count;
+          const span = Math.max(maxX - minX, maxZ - minZ, 1.2);
+          this.state.controls.target.set(centerX, centerY, centerZ);
+          this.state.camera.position.set(centerX + span * 0.8, centerY + span * 0.9, centerZ + span * 1.0);
+        }
+      } else {
+        const rack = this.state.liveRacks[0];
+        const rackX = (Number(rack.position?.x) || 0) / 1000;
+        const rackY = ((Number(rack.position?.y) || 0) / 1000) + (rack.geometry.outer.y * 0.5 / 1000);
+        const rackZ = (Number(rack.position?.z) || 0) / 1000;
+        this.state.controls.target.set(rackX, rackY, rackZ);
+        this.state.camera.position.y = rackY + 1.2;
       }
-
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minZ = Infinity;
-      let maxZ = -Infinity;
-      let sumY = 0;
-      let count = 0;
-
-      for (const rack of this.state.liveRacks) {
-        const pos = rack.position || { x: 0, y: 0, z: 0 };
-        const px = (Number(pos.x) || 0) / 1000;
-        const pz = (Number(pos.z) || 0) / 1000;
-        const halfX = (Number(rack.geometry?.outer?.x) || 600) / 2000;
-        const halfZ = (Number(rack.geometry?.outer?.z) || 1000) / 2000;
-
-        minX = Math.min(minX, px - halfX);
-        maxX = Math.max(maxX, px + halfX);
-        minZ = Math.min(minZ, pz - halfZ);
-        maxZ = Math.max(maxZ, pz + halfZ);
-        sumY += ((Number(pos.y) || 0) / 1000) + ((Number(rack.geometry?.outer?.y) || 2200) / 2000);
-        count += 1;
-      }
-
-      if (count > 0 && Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minZ) && Number.isFinite(maxZ)) {
-        const centerX = (minX + maxX) * 0.5;
-        const centerZ = (minZ + maxZ) * 0.5;
-        const centerY = sumY / count;
-        const span = Math.max(maxX - minX, maxZ - minZ, 1.2);
-        this.state.controls.target.set(centerX, centerY, centerZ);
-        this.state.camera.position.set(centerX + span * 0.8, centerY + span * 0.9, centerZ + span * 1.0);
-      }
-    } else {
-      const rack = this.state.liveRacks[0];
-      const rackX = (Number(rack.position?.x) || 0) / 1000;
-      const rackY = ((Number(rack.position?.y) || 0) / 1000) + (rack.geometry.outer.y * 0.5 / 1000);
-      const rackZ = (Number(rack.position?.z) || 0) / 1000;
-      this.state.controls.target.set(rackX, rackY, rackZ);
-      this.state.camera.position.y = rackY + 1.2;
     }
+
     this._requestRender();
   }
 

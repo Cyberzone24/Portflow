@@ -26,6 +26,14 @@ class SnmpScanner
     public const OID_IF_HC_IN_OCTETS   = '.1.3.6.1.2.1.31.1.1.1.6';
     public const OID_IF_HC_OUT_OCTETS  = '.1.3.6.1.2.1.31.1.1.1.10';
     public const OID_DOT1Q_PVID        = '.1.3.6.1.2.1.17.7.1.4.5.1.1';
+    /** Q-BRIDGE-MIB dot1qVlanCurrentEgressPorts: index = timeMark.vlanId, value = OCTET STRING bitmap (bridge ports). */
+    public const OID_DOT1Q_VLAN_CURRENT_EGRESS   = '.1.3.6.1.2.1.17.7.1.4.2.1.4';
+    /** Q-BRIDGE-MIB dot1qVlanCurrentUntaggedPorts: index = timeMark.vlanId, value = OCTET STRING bitmap (bridge ports). */
+    public const OID_DOT1Q_VLAN_CURRENT_UNTAGGED = '.1.3.6.1.2.1.17.7.1.4.2.1.5';
+    /** Q-BRIDGE-MIB dot1qVlanStaticEgressPorts: index = vlanId, value = OCTET STRING bitmap. Reflects configured membership (incl. down ports). */
+    public const OID_DOT1Q_VLAN_STATIC_EGRESS    = '.1.3.6.1.2.1.17.7.1.4.3.1.2';
+    /** Q-BRIDGE-MIB dot1qVlanStaticUntaggedPorts: index = vlanId, value = OCTET STRING bitmap. */
+    public const OID_DOT1Q_VLAN_STATIC_UNTAGGED  = '.1.3.6.1.2.1.17.7.1.4.3.1.4';
     /** Q-BRIDGE-MIB dot1qVlanStaticName: index = vlan-id, value = name. */
     public const OID_DOT1Q_VLAN_STATIC_NAME = '.1.3.6.1.2.1.17.7.1.4.3.1.1';
     /** Huawei VRP fallback: hwL2VlanDescription (.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.5). */
@@ -106,7 +114,75 @@ class SnmpScanner
             $ifChangeMap = $this->walkMap($config, self::OID_IF_LAST_CHANGE);
             $ifInMap    = $this->walkMap($config, self::OID_IF_HC_IN_OCTETS);
             $ifOutMap   = $this->walkMap($config, self::OID_IF_HC_OUT_OCTETS);
-            $pvidMap    = $this->walkMap($config, self::OID_DOT1Q_PVID);
+
+            // BRIDGE-MIB: bridge port -> ifIndex. Required to translate Q-BRIDGE-MIB
+            // tables (PVID, egress/untagged port bitmaps) which are keyed by bridge port,
+            // NOT ifIndex. If empty (some appliances), we fall back to identity mapping.
+            $bridgePortToIfIndex = $this->walkMap($config, self::OID_DOT1D_BASE_PORT_IFINDEX);
+
+            // dot1qPvid: index = dot1dBasePort. Translate to ifIndex-keyed map.
+            $pvidMapByBridgePort = $this->walkMap($config, self::OID_DOT1Q_PVID);
+            $pvidMap = []; // ifIndex => pvid
+            foreach ($pvidMapByBridgePort as $bp => $pvid) {
+                $bp = (int)$bp;
+                if ($bp <= 0) {
+                    continue;
+                }
+                $ifIdx = isset($bridgePortToIfIndex[$bp])
+                    ? (int)$bridgePortToIfIndex[$bp]
+                    : (empty($bridgePortToIfIndex) ? $bp : null);
+                if ($ifIdx === null || $ifIdx <= 0) {
+                    continue;
+                }
+                $pvidMap[$ifIdx] = (int)$pvid;
+            }
+
+            // Q-BRIDGE-MIB VLAN port membership.
+            // Prefer Static* tables (configured membership, includes down ports) and
+            // fall back to Current* (active forwarding state) if Static is empty
+            // -- some vendors only populate Current. Both tables are bitmap-of-bridge-ports
+            // indexed by VLAN id (last dot segment), so the same helper handles both.
+            $egressByVlan   = $this->walkVlanPortBitmap($config, self::OID_DOT1Q_VLAN_STATIC_EGRESS);
+            $untaggedByVlan = $this->walkVlanPortBitmap($config, self::OID_DOT1Q_VLAN_STATIC_UNTAGGED);
+            $vlanMembershipSource = 'dot1qVlanStatic*';
+            if (empty($egressByVlan)) {
+                $egressByVlan         = $this->walkVlanPortBitmap($config, self::OID_DOT1Q_VLAN_CURRENT_EGRESS);
+                $untaggedByVlan       = $this->walkVlanPortBitmap($config, self::OID_DOT1Q_VLAN_CURRENT_UNTAGGED);
+                $vlanMembershipSource = 'dot1qVlanCurrent*';
+            }
+            $vlanMembershipKnown = !empty($egressByVlan);
+
+            // Pivot: ifIndex => [vlanId => true]
+            $egressByIfIndex   = [];
+            $untaggedByIfIndex = [];
+            $resolveBridgePort = function (int $bp) use ($bridgePortToIfIndex): ?int {
+                if ($bp <= 0) {
+                    return null;
+                }
+                if (isset($bridgePortToIfIndex[$bp])) {
+                    return (int)$bridgePortToIfIndex[$bp];
+                }
+                if (empty($bridgePortToIfIndex)) {
+                    return $bp; // identity fallback
+                }
+                return null;
+            };
+            foreach ($egressByVlan as $vid => $bridgePorts) {
+                foreach ($bridgePorts as $bp) {
+                    $ifIdx = $resolveBridgePort((int)$bp);
+                    if ($ifIdx !== null) {
+                        $egressByIfIndex[$ifIdx][(int)$vid] = true;
+                    }
+                }
+            }
+            foreach ($untaggedByVlan as $vid => $bridgePorts) {
+                foreach ($bridgePorts as $bp) {
+                    $ifIdx = $resolveBridgePort((int)$bp);
+                    if ($ifIdx !== null) {
+                        $untaggedByIfIndex[$ifIdx][(int)$vid] = true;
+                    }
+                }
+            }
 
             // VLAN list: try standard Q-BRIDGE-MIB first, fall back to Huawei MIBs.
             $vlanNameMap = $this->walkMap($config, self::OID_DOT1Q_VLAN_STATIC_NAME);
@@ -133,10 +209,17 @@ class SnmpScanner
                     $vlanIds[$pvid] = '';
                 }
             }
+            // Also include any VLAN IDs that appeared in the egress bitmap walk, so the
+            // VLAN inventory in Portflow gets seeded even for pure trunk VLANs.
+            foreach (array_keys($egressByVlan) as $vid) {
+                $vid = (int)$vid;
+                if ($vid > 0 && !isset($vlanIds[$vid])) {
+                    $vlanIds[$vid] = '';
+                }
+            }
             ksort($vlanIds, SORT_NUMERIC);
 
-            // FDB / Node Tracking: bridge port -> ifIndex, then walk Q-BRIDGE / BRIDGE FDB.
-            $bridgePortToIfIndex = $this->walkMap($config, self::OID_DOT1D_BASE_PORT_IFINDEX);
+            // FDB / Node Tracking: walk Q-BRIDGE / BRIDGE FDB using earlier bridge-port map.
             $nodes = $this->walkFdb($config, $bridgePortToIfIndex);
 
             // LLDP topology neighbors.
@@ -195,18 +278,49 @@ class SnmpScanner
 
             $interfaces = [];
             foreach ($ifNameMap as $ifIndex => $ifName) {
+                $ifIdx        = (int)$ifIndex;
+                $pvid         = $pvidMap[$ifIdx] ?? null;
+                $egressSet    = isset($egressByIfIndex[$ifIdx])   ? array_keys($egressByIfIndex[$ifIdx])   : [];
+                $untaggedSet  = isset($untaggedByIfIndex[$ifIdx]) ? array_keys($untaggedByIfIndex[$ifIdx]) : [];
+                sort($egressSet,   SORT_NUMERIC);
+                sort($untaggedSet, SORT_NUMERIC);
+
+                if ($vlanMembershipKnown) {
+                    // Decide untagged VLAN: prefer PVID iff it actually appears in the untagged
+                    // egress set for this port. Otherwise fall back to the only untagged VLAN if
+                    // there is exactly one. Trunk-only ports end up with NULL (no untagged row).
+                    if ($pvid !== null && $pvid > 0 && in_array($pvid, $untaggedSet, true)) {
+                        $untaggedVlan = (int)$pvid;
+                    } elseif (count($untaggedSet) === 1) {
+                        $untaggedVlan = (int)$untaggedSet[0];
+                    } else {
+                        $untaggedVlan = null;
+                    }
+                    $taggedVlans = array_values(array_filter(
+                        $egressSet,
+                        static fn(int $v) => $untaggedVlan === null || $v !== $untaggedVlan
+                    ));
+                } else {
+                    // No Q-BRIDGE egress data available -- fall back to PVID-only behaviour.
+                    $untaggedVlan = ($pvid !== null && $pvid > 0) ? (int)$pvid : null;
+                    $taggedVlans  = [];
+                }
+
                 $interfaces[$ifIndex] = [
-                    'if_index'         => (int)$ifIndex,
-                    'if_name'          => (string)$ifName,
-                    'if_alias'         => (string)($ifAliasMap[$ifIndex] ?? ''),
-                    'if_high_speed'    => isset($ifSpeedMap[$ifIndex]) ? (int)$ifSpeedMap[$ifIndex] : null,
-                    'if_admin_status'  => isset($ifAdminMap[$ifIndex]) ? (int)$ifAdminMap[$ifIndex] : null,
-                    'if_oper_status'   => isset($ifOperMap[$ifIndex]) ? (int)$ifOperMap[$ifIndex] : null,
-                    'if_phys_address'  => trim((string)($ifMacMap[$ifIndex] ?? '')),
-                    'if_last_change'   => isset($ifChangeMap[$ifIndex]) ? (int)$ifChangeMap[$ifIndex] : null,
-                    'if_hc_in_octets'  => isset($ifInMap[$ifIndex]) ? (string)$ifInMap[$ifIndex] : null,
-                    'if_hc_out_octets' => isset($ifOutMap[$ifIndex]) ? (string)$ifOutMap[$ifIndex] : null,
-                    'pvid'             => isset($pvidMap[$ifIndex]) ? (int)$pvidMap[$ifIndex] : null,
+                    'if_index'              => $ifIdx,
+                    'if_name'               => (string)$ifName,
+                    'if_alias'              => (string)($ifAliasMap[$ifIndex] ?? ''),
+                    'if_high_speed'         => isset($ifSpeedMap[$ifIndex]) ? (int)$ifSpeedMap[$ifIndex] : null,
+                    'if_admin_status'       => isset($ifAdminMap[$ifIndex]) ? (int)$ifAdminMap[$ifIndex] : null,
+                    'if_oper_status'        => isset($ifOperMap[$ifIndex]) ? (int)$ifOperMap[$ifIndex] : null,
+                    'if_phys_address'       => trim((string)($ifMacMap[$ifIndex] ?? '')),
+                    'if_last_change'        => isset($ifChangeMap[$ifIndex]) ? (int)$ifChangeMap[$ifIndex] : null,
+                    'if_hc_in_octets'       => isset($ifInMap[$ifIndex]) ? (string)$ifInMap[$ifIndex] : null,
+                    'if_hc_out_octets'      => isset($ifOutMap[$ifIndex]) ? (string)$ifOutMap[$ifIndex] : null,
+                    'pvid'                  => $pvid,
+                    'untagged_vlan'         => $untaggedVlan,
+                    'tagged_vlans'          => $taggedVlans,
+                    'vlan_membership_known' => $vlanMembershipKnown,
                 ];
             }
 
@@ -260,6 +374,84 @@ class SnmpScanner
             $this->finalizeRun($runUuid, 'failed', $e->getMessage(), 0, 0, 0, ['error' => $e->getMessage()]);
             return ['ok' => false, 'run_uuid' => $runUuid, 'error' => $e->getMessage(), 'findings' => 0, 'interfaces' => 0, 'vlans' => 0];
         }
+    }
+
+    /**
+     * Walk a Q-BRIDGE-MIB current VLAN port-bitmap table (egress or untagged).
+     * Returns vlanId => list of bridge port numbers (1-based, decoded MSB-first).
+     * The OCTET STRING value is forced to hex via SnmpClient::runWalkHex().
+     *
+     * @return array<int,array<int,int>>
+     */
+    private function walkVlanPortBitmap(array $config, string $baseOid): array
+    {
+        $result = $this->client->runWalkHex($config, $baseOid);
+        if (!$result['ok']) {
+            $this->logger->log(
+                sprintf('snmp walk %s failed (%d): %s', $baseOid, $result['exit_code'], implode(' | ', $result['lines'])),
+                3
+            );
+            return [];
+        }
+        $parsed = SnmpClient::parseWalkLines($result['lines']);
+        $byVlan = [];
+        foreach ($parsed as $oid => $value) {
+            // Index = .timeMark.vlanId -- vlanId is the LAST dot-segment.
+            $lastDot = strrpos($oid, '.');
+            if ($lastDot === false) {
+                continue;
+            }
+            $vlanId = (int)substr($oid, $lastDot + 1);
+            if ($vlanId <= 0) {
+                continue;
+            }
+            $ports = $this->decodePortBitmap((string)$value);
+            if (!empty($ports)) {
+                // Multiple timeMarks may produce duplicate rows for the same vlan -- merge.
+                if (!isset($byVlan[$vlanId])) {
+                    $byVlan[$vlanId] = $ports;
+                } else {
+                    $byVlan[$vlanId] = array_values(array_unique(array_merge($byVlan[$vlanId], $ports), SORT_NUMERIC));
+                }
+            } elseif (!isset($byVlan[$vlanId])) {
+                $byVlan[$vlanId] = [];
+            }
+        }
+        return $byVlan;
+    }
+
+    /**
+     * Decode a snmpwalk -Ox hex bitmap (e.g. "50 00 00 00") into a list of 1-based bit numbers
+     * matching the dot1dBasePort numbering: byte 0 bit 7 (MSB) = port 1, byte 0 bit 0 = port 8, etc.
+     *
+     * @return array<int,int>
+     */
+    private function decodePortBitmap(string $value): array
+    {
+        // Strip whitespace, colons, leading 0x.
+        $hex = strtolower($value);
+        $hex = str_replace(['0x', ' ', "\t", "\r", "\n", ':'], '', $hex);
+        if ($hex === '' || preg_match('/[^0-9a-f]/', $hex)) {
+            return [];
+        }
+        if ((strlen($hex) % 2) !== 0) {
+            $hex = '0' . $hex;
+        }
+        $ports = [];
+        $byteCount = strlen($hex) / 2;
+        for ($i = 0; $i < $byteCount; $i++) {
+            $byte = hexdec(substr($hex, $i * 2, 2));
+            if ($byte === 0) {
+                continue;
+            }
+            for ($bit = 0; $bit < 8; $bit++) {
+                // MSB-first: bit 7 of byte 0 => port 1.
+                if (($byte & (1 << (7 - $bit))) !== 0) {
+                    $ports[] = ($i * 8) + $bit + 1;
+                }
+            }
+        }
+        return $ports;
     }
 
     /**

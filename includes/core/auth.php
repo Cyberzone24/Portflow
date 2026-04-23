@@ -149,6 +149,206 @@ class Auth {
         return true;
     }
 
+    /**
+     * Headless authentication entry point for the JSON API / CLI.
+     *
+     * Verifies the supplied credentials against the same providers as the
+     * web sign-in flow (currently: local password_verify, then LDAP if
+     * LDAP_ENABLED) — but WITHOUT CSRF, $_POST coupling, redirects, or
+     * exit() calls. On success the PHP session is populated exactly like
+     * the interactive flow so all downstream session-based authorisation
+     * (api/index.php getAccessRights(), etc.) works unchanged.
+     *
+     * Returns true on success, false on any failure. Never emits output.
+     */
+    public function apiSignin(string $username, string $password): bool
+    {
+        $this->username = $username;
+        $this->password = $password;
+
+        if ($username === '' || $password === '') {
+            return false;
+        }
+
+        // ---- 1. local password verification -------------------------------
+        try {
+            $rows = $this->db_adapter->db_query(
+                "SELECT uuid, password, settings, login_attempts, activation_code
+                   FROM users
+                  WHERE username = :u AND login_provider = 'local'
+                  LIMIT 1",
+                ['u' => $username]
+            );
+            $row = is_array($rows) && !empty($rows) ? $rows[0] : null;
+            if ($row
+                && (string)($row['activation_code'] ?? '') === 'activated'
+                && (int)($row['login_attempts'] ?? 0) <= 3
+                && !empty($row['password'])
+                && password_verify($password, (string)$row['password'])
+            ) {
+                $this->uuid     = (string)$row['uuid'];
+                $this->settings = $row['settings'] ?? null;
+                $this->establishApiSession('local');
+                try {
+                    $this->db_adapter->db_query(
+                        "UPDATE users SET last_login = NOW(), login_attempts = NULL,
+                                          ip_address = :ip
+                          WHERE uuid = :uuid",
+                        ['ip' => $this->ip(), 'uuid' => $this->uuid]
+                    );
+                } catch (\Throwable $e) {
+                    $this->logger->log('apiSignin: local last_login update failed: ' . $e->getMessage(), 2);
+                }
+                return true;
+            }
+        } catch (\Throwable $e) {
+            $this->logger->log('apiSignin: local lookup failed: ' . $e->getMessage(), 2);
+        }
+
+        // ---- 2. LDAP, if enabled -----------------------------------------
+        if (defined('LDAP_ENABLED') && LDAP_ENABLED === true) {
+            try {
+                if ($this->ldapVerifyPassword($username, $password)) {
+                    // Resolve or create the LDAP-backed user row.
+                    $rows = $this->db_adapter->db_query(
+                        "SELECT uuid, settings, activation_code
+                           FROM users
+                          WHERE username = :u AND login_provider = 'ldap'
+                          LIMIT 1",
+                        ['u' => $username]
+                    );
+                    $row = is_array($rows) && !empty($rows) ? $rows[0] : null;
+
+                    if ($row === null) {
+                        // Auto-provision an LDAP user the same way ldap_signin() does.
+                        $roleRows = $this->db_adapter->db_query(
+                            "SELECT uuid FROM role WHERE caption = :c LIMIT 1",
+                            ['c' => 'ldap']
+                        );
+                        if (!is_array($roleRows) || empty($roleRows)) {
+                            $this->logger->log('apiSignin: ldap role missing — cannot auto-create user', 3);
+                            return false;
+                        }
+                        $activation = (defined('LDAP_TRUST') && LDAP_TRUST === true)
+                            ? 'activated' : $this->random_string(10);
+                        $settings = json_encode([
+                            'language'   => 'en-EN',
+                            'appearance' => ['theme' => 'light', 'font_family' => 'jetbrains', 'font_size' => 'normal'],
+                        ]);
+                        $insRows = $this->db_adapter->db_query(
+                            "INSERT INTO users (role, login_provider, username, activation_code, settings, ip_address, created, changed)
+                             VALUES (:r, 'ldap', :u, :a, :s, :ip, NOW(), NOW())
+                             RETURNING uuid, settings, activation_code",
+                            [
+                                'r'  => $roleRows[0]['uuid'],
+                                'u'  => $username,
+                                'a'  => $activation,
+                                's'  => $settings,
+                                'ip' => $this->ip(),
+                            ]
+                        );
+                        $row = is_array($insRows) && !empty($insRows) ? $insRows[0] : null;
+                        if ($row === null) {
+                            return false;
+                        }
+                    }
+
+                    if ((string)($row['activation_code'] ?? '') !== 'activated') {
+                        $this->logger->log("apiSignin: ldap user '$username' not activated", 2);
+                        return false;
+                    }
+
+                    $this->uuid     = (string)$row['uuid'];
+                    $this->settings = $row['settings'] ?? null;
+                    $this->establishApiSession('ldap');
+                    try {
+                        $this->db_adapter->db_query(
+                            "UPDATE users SET last_login = NOW(), login_attempts = NULL,
+                                              ip_address = :ip
+                              WHERE uuid = :uuid",
+                            ['ip' => $this->ip(), 'uuid' => $this->uuid]
+                        );
+                    } catch (\Throwable $e) {
+                        $this->logger->log('apiSignin: ldap last_login update failed: ' . $e->getMessage(), 2);
+                    }
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                $this->logger->log('apiSignin: ldap path failed: ' . $e->getMessage(), 2);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * LDAP credential check distilled from ldap_signin(): connects, optionally
+     * binds with the service account, searches for the user and finally tries
+     * to bind as that user with the supplied password. Returns true on
+     * successful credential bind. Never throws.
+     */
+    private function ldapVerifyPassword(string $username, string $password): bool
+    {
+        if (!function_exists('ldap_connect')) {
+            $this->logger->log('apiSignin: php-ldap extension not available', 3);
+            return false;
+        }
+        $conn = @ldap_connect(LDAP_SERVER, (int)LDAP_PORT);
+        if (!$conn) {
+            return false;
+        }
+        @ldap_set_option($conn, LDAP_OPT_PROTOCOL_VERSION, 3);
+        @ldap_set_option($conn, LDAP_OPT_REFERRALS, 0);
+        @ldap_set_option($conn, LDAP_OPT_NETWORK_TIMEOUT, 10);
+
+        // Initial bind: either with a service account (LDAP_BIND) or directly
+        // with the user's guessed DN (matches ldap_signin() behaviour).
+        if (defined('LDAP_BIND') && LDAP_BIND === true) {
+            if (!@ldap_bind($conn, LDAP_BIND_USER, LDAP_BIND_PASSWORD)) {
+                @ldap_unbind($conn);
+                return false;
+            }
+        } else {
+            $guessDn = "uid=$username," . LDAP_USERDN . "," . LDAP_BASEDN;
+            if (!@ldap_bind($conn, $guessDn, $password)) {
+                @ldap_unbind($conn);
+                return false;
+            }
+        }
+
+        $filter = "(&(|(sAMAccountName=$username)(uid=$username))" . LDAP_FILTER . ")";
+        $res = @ldap_search($conn, LDAP_BASEDN, $filter, ['dn']);
+        if (!$res) { @ldap_unbind($conn); return false; }
+        $entries = @ldap_get_entries($conn, $res);
+        if (!is_array($entries) || (int)($entries['count'] ?? 0) !== 1
+            || empty($entries[0]['dn'])) {
+            @ldap_unbind($conn);
+            return false;
+        }
+        $userDn = $entries[0]['dn'];
+        $ok = @ldap_bind($conn, $userDn, $password);
+        @ldap_unbind($conn);
+        return (bool)$ok;
+    }
+
+    /**
+     * Populate $_SESSION the same way the interactive sign-in flows do, so
+     * that downstream session-based authorisation just works. Starts the
+     * session if necessary; never emits output or redirects.
+     */
+    private function establishApiSession(string $provider): void
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+        @session_regenerate_id(true);
+        $_SESSION['loggedin']    = true;
+        $_SESSION['name']        = $this->username;
+        $_SESSION['uuid']        = $this->uuid;
+        $_SESSION['settings']    = $this->settings;
+        $_SESSION['auth_method'] = $provider;
+    }
+
     private function local_signon($usage) {
         try {
             // check post data

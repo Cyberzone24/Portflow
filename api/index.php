@@ -11,6 +11,62 @@ define('APP_NAME', 'Portflow');
 
 # ================================================================================================= .htaccess config has to be replicated for lighttpd conf, just for testing with apache
 
+// --------------------------------------------------------------------------
+// Pre-session Basic-Auth handshake
+//
+// includes/core/session.php redirects every unauthenticated request to the
+// HTML login page. That redirect would short-circuit the API before any of
+// our code runs, so we resolve HTTP Basic credentials here and delegate
+// verification to includes/core/auth.php (Auth::apiSignin) — which uses
+// the SAME providers as the web sign-in (currently local + LDAP, plus any
+// future provider added there). On success it populates $_SESSION exactly
+// like the interactive flow.
+// --------------------------------------------------------------------------
+if (file_exists(__DIR__ . '/../.env')) {
+    include_once __DIR__ . '/../includes/core/config.php';
+    include_once __DIR__ . '/../includes/core/db_adapter.php';
+
+    // Find Basic credentials in any of the usual places.
+    $__pf_user = $_SERVER['PHP_AUTH_USER'] ?? null;
+    $__pf_pass = $_SERVER['PHP_AUTH_PW']   ?? null;
+    if ($__pf_user === null || $__pf_pass === null) {
+        $__pf_hdr = $_SERVER['HTTP_AUTHORIZATION']
+            ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+            ?? (function_exists('apache_request_headers')
+                ? (apache_request_headers()['Authorization'] ?? '')
+                : '');
+        if (is_string($__pf_hdr) && stripos($__pf_hdr, 'Basic ') === 0) {
+            $__pf_decoded = base64_decode(substr($__pf_hdr, 6), true);
+            if ($__pf_decoded !== false && str_contains($__pf_decoded, ':')) {
+                [$__pf_user, $__pf_pass] = explode(':', $__pf_decoded, 2);
+            }
+        }
+    }
+
+    if (is_string($__pf_user) && is_string($__pf_pass) && $__pf_user !== '' && $__pf_pass !== '') {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        try {
+            include_once __DIR__ . '/../includes/core/auth.php';
+            $__pf_auth = new \Portflow\Core\Auth();
+            if (!$__pf_auth->apiSignin($__pf_user, $__pf_pass)) {
+                header('Content-Type: application/json');
+                header('WWW-Authenticate: Basic realm="Portflow API"');
+                http_response_code(401);
+                echo json_encode(['error' => 'Unauthorized']);
+                exit;
+            }
+        } catch (\Throwable $__pf_e) {
+            header('Content-Type: application/json');
+            http_response_code(500);
+            echo json_encode(['error' => 'Auth backend error', 'detail' => $__pf_e->getMessage()]);
+            exit;
+        }
+    }
+    unset($__pf_user, $__pf_pass, $__pf_hdr, $__pf_decoded, $__pf_auth, $__pf_e);
+}
+
 // check if session exists
 @include_once __DIR__ . '/../includes/core/session.php';
 
@@ -64,8 +120,49 @@ class API {
         $this->allowedAcceptTypes = $this->allowedContentTypes;
     }
 
+    /**
+     * Basic-Auth handshake is now performed up-front in this file (before
+     * session.php runs) and delegates to Auth::apiSignin(). Kept here as a
+     * thin shim so the existing call site below stays valid; if a request
+     * still has no $_SESSION['uuid'] at this point, do the same delegation
+     * one more time as a last-chance fallback.
+     */
+    private function tryBasicAuth(): void
+    {
+        $user = $_SERVER['PHP_AUTH_USER'] ?? null;
+        $pass = $_SERVER['PHP_AUTH_PW']   ?? null;
+        if ($user === null || $pass === null) {
+            $hdr = $_SERVER['HTTP_AUTHORIZATION']
+                ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+                ?? '';
+            if (stripos($hdr, 'Basic ') === 0) {
+                $decoded = base64_decode(substr($hdr, 6), true);
+                if ($decoded !== false && str_contains($decoded, ':')) {
+                    [$user, $pass] = explode(':', $decoded, 2);
+                }
+            }
+        }
+        if (!is_string($user) || !is_string($pass) || $user === '' || $pass === '') {
+            return;
+        }
+        try {
+            include_once __DIR__ . '/../includes/core/auth.php';
+            $auth = new \Portflow\Core\Auth();
+            $auth->apiSignin($user, $pass);
+        } catch (\Throwable $e) {
+            $this->logger->log('tryBasicAuth fallback failed: ' . $e->getMessage(), 2);
+        }
+    }
+
     private function getAccessRights($resource) {
         // ================================================ SESSION ID has to be providable without user login
+
+        // CLI / scripting fallback: HTTP Basic Auth against the users table.
+        // Only kicks in when no web session is established. Stays best-effort
+        // (failure simply leaves $_SESSION untouched -> normal 400 below).
+        if (empty($_SESSION['uuid'])) {
+            $this->tryBasicAuth();
+        }
 
         if (empty($_SESSION['uuid'])) {
             http_response_code(400); 
@@ -114,6 +211,13 @@ class API {
         // Handle file uploads separately (before media type check)
         if (isset($_FILES['file']) && $_SERVER['REQUEST_METHOD'] === 'POST' && strpos($_SERVER['REQUEST_URI'], '/api/upload') !== false) {
             $this->uploadFile();
+            return;
+        }
+
+        // CLI tool endpoint (handled in its own file with HTTP Basic Auth).
+        if ($_SERVER['REQUEST_METHOD'] === 'POST'
+            && strpos($_SERVER['REQUEST_URI'], '/api/cli/record_link') !== false) {
+            require __DIR__ . '/cli_record_link.php';
             return;
         }
 

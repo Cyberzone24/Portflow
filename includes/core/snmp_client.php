@@ -149,27 +149,59 @@ class SnmpClient
     }
 
     /**
+     * Walk that forces OCTET STRING values to be printed in hex (`-Ox`).
+     * Required for Q-BRIDGE-MIB port bitmaps (dot1qVlanCurrentEgressPorts/UntaggedPorts)
+     * because plain `-Oqn` may render them as printable strings and lose data.
+     *
+     * @return array{ok:bool,exit_code:int,lines:array<int,string>,masked_command:string,command:string}
+     */
+    public function runWalkHex(array $config, string $oid): array
+    {
+        return $this->runTool('snmpwalk', $config, [$oid], ['-Oqnx']);
+    }
+
+    /**
      * Parse output of runWalk(...) into an associative map of "<full numeric oid>" => value (string, unquoted).
+     *
+     * Long OCTET STRING values (e.g. Q-BRIDGE-MIB port bitmaps for switches with many
+     * bridge ports) span multiple snmpwalk output lines: only the FIRST line starts with
+     * the OID, and the value is wrapped in quotes that only close on the LAST line.
+     * Continuation lines are appended to the value of the most recently seen OID.
      *
      * @param array<int,string> $lines
      * @return array<string,string>
      */
     public static function parseWalkLines(array $lines): array
     {
-        $result = [];
+        $result   = [];
+        $lastOid  = null;
         foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '' || $line[0] !== '.') {
+            $line = rtrim($line, "\r\n");
+            $trimmed = ltrim($line);
+            if ($trimmed === '') {
                 continue;
             }
-            // -Oqn output: "<.numeric.oid> <value>"
-            $pos = strpos($line, ' ');
-            if ($pos === false) {
-                continue;
+            if ($trimmed[0] === '.') {
+                // -Oqn output: "<.numeric.oid> <value>"
+                $pos = strpos($trimmed, ' ');
+                if ($pos === false) {
+                    $result[$trimmed] = '';
+                    $lastOid = $trimmed;
+                    continue;
+                }
+                $oid = substr($trimmed, 0, $pos);
+                $value = ltrim(substr($trimmed, $pos + 1));
+                $result[$oid] = $value;
+                $lastOid = $oid;
+            } elseif ($lastOid !== null) {
+                // Continuation line of a multi-line OCTET STRING value.
+                $result[$lastOid] .= ' ' . $trimmed;
             }
-            $oid = substr($line, 0, $pos);
-            $value = ltrim(substr($line, $pos + 1));
-            // Strip surrounding quotes from STRING values.
+        }
+        // Strip a single pair of wrapping quotes from each value (now that
+        // multi-line values have been joined).
+        foreach ($result as $oid => $value) {
+            $value = trim($value);
             if (strlen($value) >= 2 && $value[0] === '"' && substr($value, -1) === '"') {
                 $value = substr($value, 1, -1);
             }
