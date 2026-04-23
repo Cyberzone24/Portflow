@@ -348,6 +348,8 @@ if (isset($_GET['nav'])) {
     ];
     $nav['connection_details'] = [
         'default' => ['connection_metadata_status', 'connection_metadata_caption', 'connection_metadata_tags', 'connection_device_port_source_device_metadata_caption', 'connection_device_port_source_metadata_caption', 'connection_device_port_destination_device_metadata_caption', 'connection_device_port_destination_metadata_caption'],
+        'blocked' => [],
+        'unblocked' => [],
         'details_layout' => [
             'primary_title' => 'Verbindungs-Stammdaten',
             'primary_fields' => [
@@ -528,6 +530,13 @@ if (isset($_GET['nav'])) {
             'connection_device_port_destination_device_location_metadata_changed' => 'Zielport Geräte Standort Metadata Geändert'
         ]
     ];
+    require_once __DIR__ . '/../core/table_columns.php';
+    foreach ($nav as $__pf_table => &$__pf_cfg) {
+        if (is_array($__pf_cfg) && isset($__pf_cfg['columns']) && is_array($__pf_cfg['columns'])) {
+            $__pf_cfg['picker_columns'] = \Portflow\Core\TableColumns::pickerKeys($__pf_cfg['columns'], $__pf_cfg);
+        }
+    }
+    unset($__pf_cfg);
     echo json_encode($nav);
 
 } else {
@@ -563,6 +572,13 @@ if (isset($_GET['nav'])) {
         $lang['connections'] = 'Verbindungen';
         $lang['quantity'] = 'Anzahl';
         $lang['datasets'] = 'Datensätze';
+        $lang['save'] = 'Speichern';
+        $lang['cancel'] = 'Abbrechen';
+        $lang['columns_customize'] = 'Spalten anpassen';
+        $lang['columns_hint'] = 'Aktivieren oder deaktivieren Sie Spalten und ziehen Sie sie zum Sortieren.';
+        $lang['columns_reset'] = 'Auf Standard zurücksetzen';
+        $lang['columns_save_failed'] = 'Speichern fehlgeschlagen';
+        $lang['columns_not_available'] = 'Spaltenkonfiguration nicht verfügbar.';
 
         return $lang;
     }

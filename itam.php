@@ -146,6 +146,9 @@
                         <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white shadow-md hover:bg-green-700">
                             <button form="" onclick="openNewEntry()" class="new_entry_button inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="plus"></i></button>
                         </div>
+                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-500 text-white shadow-md hover:bg-slate-700" title="<?php echo $lang['columns_customize'] ?? 'Spalten anpassen'; ?>">
+                            <button type="button" onclick="openColumnPicker()" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="columns-3"></i></button>
+                        </div>
                     </div>
                 </div>
                 <div class="grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
@@ -3771,7 +3774,15 @@ function loadTable(table = 'location_details', search = '', limit = null, page =
     ajaxGet(configUrl, config => {
         currentNavConfig = config || {};
         let { columns, default: defaultColumns } = config[table];
+        // Make the picker-allowed columns available to loadUserColumns so it
+        // can defensively strip any blocked entries from a stored preference.
+        if (!window.__pfTableAllowed) window.__pfTableAllowed = {};
+        const pickerCols = (config[table] && Array.isArray(config[table].picker_columns)) ? config[table].picker_columns : Object.keys(columns || {});
+        window.__pfTableAllowed[table] = pickerCols;
         let userColumns = loadUserColumns(table, defaultColumns);
+        // Remember the active selection for the column picker.
+        window.__pfTableUserColumns = window.__pfTableUserColumns || {};
+        window.__pfTableUserColumns[table] = userColumns;
 
         const params = new URLSearchParams();
         if (search) params.set('search', search);
@@ -4190,8 +4201,192 @@ function displayTable(columnsConfig, userColumns, rows) {
 
 // Load user column preferences
 function loadUserColumns(table, defaultColumns) {
-    const userSettings = <?php echo json_encode($_SESSION['settings'] ?? []); ?>;
-    return userSettings.tables && userSettings.tables[table] ? userSettings.tables[table] : defaultColumns;
+    const allowed = (window.__pfTableAllowed && window.__pfTableAllowed[table]) || null;
+    const allowedSet = allowed ? new Set(allowed) : null;
+    const sanitize = (cols) => {
+        if (!allowedSet) return cols.slice();
+        const filtered = cols.filter(c => allowedSet.has(c));
+        return filtered.length ? filtered : defaultColumns.slice();
+    };
+
+    // 1. Live cache wins — it reflects the most recent save in this session.
+    const live = window.__pfTableUserColumns && window.__pfTableUserColumns[table];
+    if (Array.isArray(live) && live.length > 0) {
+        return sanitize(live);
+    }
+
+    // 1b. If the user explicitly reset this table in this session, skip the
+    // page-load snapshot and use defaults — otherwise the stale snapshot
+    // would re-apply the previous selection until the next page reload.
+    if (window.__pfTableUserColumnsReset && window.__pfTableUserColumnsReset[table]) {
+        return defaultColumns.slice();
+    }
+
+    // 2. Fall back to the snapshot embedded at page load.
+    const userSettings = <?php
+        // $_SESSION['settings'] is stored as a JSON string by saveUserSettings();
+        // decode it once on the server so the JS gets a real object.
+        $__pf_raw = $_SESSION['settings'] ?? null;
+        $__pf_settings = is_array($__pf_raw)
+            ? $__pf_raw
+            : (is_string($__pf_raw) && $__pf_raw !== '' ? (json_decode($__pf_raw, true) ?: []) : []);
+        echo json_encode($__pf_settings);
+    ?>;
+    const stored = userSettings && userSettings.tables && userSettings.tables[table];
+    if (!Array.isArray(stored) || stored.length === 0) {
+        return defaultColumns.slice();
+    }
+    return sanitize(stored);
+}
+
+// ============================================================
+// Column picker — lets the user choose which columns of the
+// current itam table should be visible. Persists per-user via
+// POST /api/user_table_columns and stores the result in the
+// user profile (users.settings JSON).
+// ============================================================
+
+function openColumnPicker() {
+    const table = currentTable;
+    const cfg = currentNavConfig && currentNavConfig[table];
+    if (!cfg || !cfg.columns) {
+        alert('<?php echo $lang['columns_not_available'] ?? 'Spaltenkonfiguration nicht verfuegbar.'; ?>');
+        return;
+    }
+    const allowed = Array.isArray(cfg.picker_columns) && cfg.picker_columns.length
+        ? cfg.picker_columns
+        : Object.keys(cfg.columns);
+    const labels  = cfg.columns;
+    const current = (window.__pfTableUserColumns && window.__pfTableUserColumns[table]) || cfg.default || [];
+
+    // Order: selected columns first (in their stored order), then the
+    // remaining allowed columns in their config order.
+    const selectedSet = new Set(current);
+    const ordered = current.filter(k => allowed.includes(k))
+        .concat(allowed.filter(k => !selectedSet.has(k)));
+
+    let modal = document.getElementById('pf-column-picker');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'pf-column-picker';
+        modal.className = 'fixed inset-0 z-[1200] hidden items-center justify-center bg-slate-900/70 p-4';
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+        <div class="flex h-full max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-700"><i data-lucide="columns-3" class="h-4 w-4"></i></span>
+                    <div>
+                        <div class="text-sm font-bold text-slate-900"><?php echo $lang['columns_customize'] ?? 'Spalten anpassen'; ?></div>
+                        <div class="text-xs text-slate-500">${escapeHtml(table)}</div>
+                    </div>
+                </div>
+                <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-800 hover:bg-slate-400" onclick="closeColumnPicker()" aria-label="Schliessen"><i data-lucide="x" class="h-4 w-4"></i></button>
+            </div>
+            <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600"><?php echo $lang['columns_hint'] ?? 'Aktivieren oder deaktivieren Sie Spalten und ziehen Sie sie zum Sortieren.'; ?></div>
+            <div id="pf-column-picker-list" class="flex-1 overflow-auto p-3 space-y-1"></div>
+            <div class="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+                <button type="button" onclick="resetColumnPicker()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><i data-lucide="rotate-ccw" class="mr-1 inline-block h-3.5 w-3.5"></i><?php echo $lang['columns_reset'] ?? 'Auf Standard zuruecksetzen'; ?></button>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="closeColumnPicker()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><?php echo $lang['cancel'] ?? 'Abbrechen'; ?></button>
+                    <button type="button" onclick="saveColumnPicker()" class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"><?php echo $lang['save'] ?? 'Speichern'; ?></button>
+                </div>
+            </div>
+        </div>
+    `;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    const list = document.getElementById('pf-column-picker-list');
+    list.innerHTML = '';
+    ordered.forEach(key => list.appendChild(buildColumnPickerRow(key, labels[key] || key, selectedSet.has(key))));
+
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+}
+
+function buildColumnPickerRow(key, label, checked) {
+    const row = document.createElement('div');
+    row.className = 'pf-col-row flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 hover:bg-slate-50';
+    row.draggable = true;
+    row.dataset.colKey = key;
+    row.innerHTML = `
+        <span class="cursor-grab text-slate-400 hover:text-slate-600" title="ziehen"><i data-lucide="grip-vertical" class="h-4 w-4"></i></span>
+        <input type="checkbox" class="pf-col-check h-4 w-4 rounded border-slate-300" ${checked ? 'checked' : ''} />
+        <code class="text-[10px] text-slate-400">${escapeHtml(key)}</code>
+        <span class="ml-1 flex-1 text-sm text-slate-800">${escapeHtml(label)}</span>
+    `;
+    // HTML5 drag & drop reordering
+    row.addEventListener('dragstart', (ev) => {
+        row.classList.add('opacity-50');
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', key);
+    });
+    row.addEventListener('dragend', () => row.classList.remove('opacity-50'));
+    row.addEventListener('dragover', (ev) => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; });
+    row.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        const srcKey = ev.dataTransfer.getData('text/plain');
+        if (!srcKey || srcKey === key) return;
+        const list = row.parentElement;
+        const srcEl = list.querySelector('.pf-col-row[data-col-key="' + CSS.escape(srcKey) + '"]');
+        if (!srcEl) return;
+        const rect = row.getBoundingClientRect();
+        const before = (ev.clientY - rect.top) < (rect.height / 2);
+        list.insertBefore(srcEl, before ? row : row.nextSibling);
+    });
+    return row;
+}
+
+function closeColumnPicker() {
+    const m = document.getElementById('pf-column-picker');
+    if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+}
+
+async function saveColumnPicker() {
+    const table = currentTable;
+    const list = document.getElementById('pf-column-picker-list');
+    if (!list) return closeColumnPicker();
+    const picked = [];
+    list.querySelectorAll('.pf-col-row').forEach(row => {
+        const cb = row.querySelector('.pf-col-check');
+        if (cb && cb.checked) picked.push(row.dataset.colKey);
+    });
+    await persistColumnPicker(table, picked);
+}
+
+async function resetColumnPicker() {
+    const table = currentTable;
+    await persistColumnPicker(table, null);
+}
+
+async function persistColumnPicker(table, columns) {
+    try {
+        const r = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/user_table_columns', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ table: table, columns: columns })
+        });
+        const j = await r.json();
+        if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+        // Update local cache + re-render the table without a full reload.
+        if (!window.__pfTableUserColumns) window.__pfTableUserColumns = {};
+        if (!window.__pfTableUserColumnsReset) window.__pfTableUserColumnsReset = {};
+        if (Array.isArray(j.columns) && j.columns.length) {
+            window.__pfTableUserColumns[table] = j.columns;
+            delete window.__pfTableUserColumnsReset[table];
+        } else {
+            // Reset → drop the cache and remember the reset so loadUserColumns
+            // ignores the stale page-load snapshot and falls back to defaults.
+            delete window.__pfTableUserColumns[table];
+            window.__pfTableUserColumnsReset[table] = true;
+        }
+        closeColumnPicker();
+        loadTable(table);
+    } catch (e) {
+        alert('<?php echo $lang['columns_save_failed'] ?? 'Speichern fehlgeschlagen'; ?>: ' + (e.message || e));
+    }
 }
 
 // Open new close entry details

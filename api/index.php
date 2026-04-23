@@ -229,6 +229,13 @@ class API {
             return;
         }
 
+        // Persist per-user table column visibility/order.
+        if ($_SERVER['REQUEST_METHOD'] === 'POST'
+            && strpos($_SERVER['REQUEST_URI'], '/api/user_table_columns') !== false) {
+            require __DIR__ . '/user_table_columns.php';
+            return;
+        }
+
         // check media types
         $this->checkMediaTypes($this->allowedContentTypes, $this->allowedAcceptTypes);
 

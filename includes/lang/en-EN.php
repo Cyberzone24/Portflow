@@ -366,6 +366,13 @@ if (isset($_GET['nav'])) {
         'device_port_caption_1' => 'Destination',
         'length' => 'Length'
     ];
+    require_once __DIR__ . '/../core/table_columns.php';
+    foreach ($nav as $__pf_table => &$__pf_cfg) {
+        if (is_array($__pf_cfg) && isset($__pf_cfg['columns']) && is_array($__pf_cfg['columns'])) {
+            $__pf_cfg['picker_columns'] = \Portflow\Core\TableColumns::pickerKeys($__pf_cfg['columns'], $__pf_cfg);
+        }
+    }
+    unset($__pf_cfg);
     echo json_encode($nav);
 
 } else {
@@ -399,6 +406,13 @@ if (isset($_GET['nav'])) {
         $lang['port vlans'] = 'Port VLANs';
         $lang['connections'] = 'Connections';
         $lang['quantity'] = 'Quantity';
+        $lang['save'] = 'Save';
+        $lang['cancel'] = 'Cancel';
+        $lang['columns_customize'] = 'Customize columns';
+        $lang['columns_hint'] = 'Toggle columns and drag them to reorder.';
+        $lang['columns_reset'] = 'Reset to default';
+        $lang['columns_save_failed'] = 'Saving failed';
+        $lang['columns_not_available'] = 'Column configuration not available.';
 
         return $lang;
     }
