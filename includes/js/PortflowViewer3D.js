@@ -1621,7 +1621,7 @@ export class PortflowViewer3D {
     const rect = this.state.renderer.domElement.getBoundingClientRect();
     const referenceSize = Math.max(1, Math.min(rect.width || 1, rect.height || 1));
     const sceneScale = this._getZoomSceneScale();
-    const unitsPerPixel = Math.max(0.0015, sceneScale / referenceSize * 1.35);
+    const unitsPerPixel = Math.max(0.001, sceneScale / referenceSize * 0.8);
 
     const forward = this.state.controls.target.clone().sub(this.state.camera.position).normalize();
     const right = forward.clone().cross(this.state.camera.up).normalize();

@@ -1782,8 +1782,8 @@ function applyDeviceTemplateToForms(templateRow) {
     // When size is applied above, the builder will pick it up on re-init
     setupDevicePortAutomation();
 
-    // Saving from template should create a normal device by default.
-    setFieldValue(deviceForm, 'template', false);
+    // Do NOT touch the 'template' checkbox here. The user controls it explicitly
+    // so they can also create a new template based on an existing template.
 }
 
 async function loadDeviceTemplates() {
@@ -1877,10 +1877,8 @@ function setupDeviceTemplateMode(container) {
         templateButton.classList.toggle('text-slate-700', !templateMode);
         picker.classList.toggle('hidden', !templateMode);
 
-        // Keep template checkbox off when creating from template.
-        if (templateMode) {
-            setFieldValue(deviceForm, 'template', false);
-        }
+        // Do NOT force the template checkbox; the user decides whether the
+        // newly created entry should itself be a template.
     };
 
     const fillTemplateSelect = async () => {
@@ -2385,6 +2383,9 @@ function setupDevicePortAutomation() {
     // Port groups state
     let portGroups = [];
     let builderContainer = null;
+    // Guard: when the builder writes to sizeField via syncConfigField, the resulting
+    // input/change event must NOT trigger reloadFromSize (which would re-render and steal focus).
+    let writingFromBuilder = false;
 
     const getDeviceDimensions = () => {
         let dw = 440, dh = 44;
@@ -2404,7 +2405,12 @@ function setupDevicePortAutomation() {
         parsed.portLayout = { deviceWidth: dim.w, deviceHeight: dim.h, groups: portGroups };
         // Preserve power fields
         syncPowerFieldsToSize(parsed);
-        sizeField.value = JSON.stringify(parsed);
+        writingFromBuilder = true;
+        try {
+            sizeField.value = JSON.stringify(parsed);
+        } finally {
+            writingFromBuilder = false;
+        }
     };
 
     // --- Power fields sync via metadata specification ---
@@ -2874,15 +2880,111 @@ function setupDevicePortAutomation() {
 
         renderGroupList();
         renderCanvas();
+
+        // Edit mode: if size has no portLayout but the device already has ports
+        // in the database (legacy devices created before portLayout was persisted),
+        // reconstruct portGroups from the existing device_port rows so the builder
+        // shows the actual layout and the device can be turned into a template.
+        if (portGroups.length === 0
+            && itamFormState && itamFormState.mode === 'edit'
+            && itamFormState.uuids && itamFormState.uuids.device) {
+            reconstructGroupsFromExistingPorts(itamFormState.uuids.device);
+        }
+    };
+
+    const reconstructGroupsFromExistingPorts = async (deviceUuid) => {
+        try {
+            const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port_details?limit=5000');
+            const payload = await response.json();
+            const rows = (payload && payload.items) ? payload.items : [];
+            const ports = rows
+                .filter(r => String(r.device_port_device || r.device || '') === String(deviceUuid))
+                .map(r => {
+                    const positionRaw = r.device_port_position || r.position || '{}';
+                    const position = parseJsonObjectOrDefault(positionRaw, {});
+                    return {
+                        typeCode: parseInt(r.device_port_type || r.type || 0, 10) || 0,
+                        label: String(r.device_port_metadata_caption || r.metadata_caption || r.caption || '').trim(),
+                        side: String(position.side || 'front'),
+                        x: parseFloat(position.x) || 0,
+                        y: parseFloat(position.y) || 0
+                    };
+                });
+
+            if (ports.length === 0) return;
+
+            // Sort by side, then by y (rows top→bottom), then by x (columns left→right)
+            ports.sort((a, b) => {
+                if (a.side !== b.side) return a.side < b.side ? -1 : 1;
+                if (Math.abs(a.y - b.y) > 0.5) return a.y - b.y;
+                return a.x - b.x;
+            });
+
+            // Group consecutive ports sharing typeCode + side.
+            const groups = [];
+            let current = null;
+            ports.forEach(p => {
+                if (!current || current.typeCode !== p.typeCode || current.side !== p.side) {
+                    current = {
+                        typeCode: p.typeCode,
+                        side: p.side,
+                        startLabel: p.label || '1',
+                        labelPattern: '{prefix}{index}',
+                        offsetX: p.x,
+                        offsetY: p.y,
+                        gapX: 2,
+                        gapY: 2,
+                        rows: 1,
+                        numbering: 'row-first',
+                        _ys: [p.y],
+                        count: 0
+                    };
+                    groups.push(current);
+                }
+                current.count += 1;
+                if (!current._ys.includes(p.y)) current._ys.push(p.y);
+            });
+
+            // Estimate rows from distinct y-positions (round to 1mm to ignore noise).
+            groups.forEach(g => {
+                const distinctRows = new Set(g._ys.map(y => Math.round(y))).size;
+                if (distinctRows > 1) g.rows = distinctRows;
+                delete g._ys;
+            });
+
+            portGroups = groups;
+            // Persist into size so the user can save the device as template.
+            syncConfigField();
+            renderGroupList();
+            renderCanvas();
+        } catch (err) {
+            console.warn('Port-Layout konnte nicht aus vorhandenen Ports rekonstruiert werden:', err);
+        }
     };
 
     if (typeField) {
         typeField.addEventListener('change', () => { renderCanvas(); updatePowerPanelVisibility(); });
     }
 
+    // External writes to sizeField (e.g. template apply, edit-mode population)
+    // must repopulate the builder. syncConfigField sets writingFromBuilder to skip.
+    const reloadFromSize = () => {
+        if (writingFromBuilder) {
+            renderCanvas();
+            return;
+        }
+        if (!sizeField) return;
+        const parsed = parseJsonObjectOrDefault(sizeField.value || '{}', {});
+        if (parsed.portLayout && Array.isArray(parsed.portLayout.groups)) {
+            portGroups = parsed.portLayout.groups;
+            renderGroupList();
+        }
+        renderCanvas();
+    };
+
     if (sizeField) {
-        sizeField.addEventListener('input', () => { renderCanvas(); });
-        sizeField.addEventListener('change', () => { renderCanvas(); });
+        sizeField.addEventListener('input', reloadFromSize);
+        sizeField.addEventListener('change', reloadFromSize);
     }
 
     if (templateField) {
@@ -3398,10 +3500,6 @@ async function submitForms(table) {
             }
 
             postData.item_group = parsedItemGroup || null;
-
-            if (currentDeviceCreateMode === 'template') {
-                postData.template = false;
-            }
 
             const isTemplateDevice = isTruthyTemplateValue(postData.template);
 
