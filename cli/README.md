@@ -167,6 +167,29 @@ The CLI talks to two endpoints:
 Authentication is HTTP Basic, validated against the `users` table (same
 `password_hash` that the web UI uses). No new account or token is required.
 
+The API does not maintain a separate CLI-specific auth stack. Instead it
+reuses the same provider flow as the web sign-in in `includes/core/auth.php`:
+
+- local users are verified against the existing `users.password` hash
+- LDAP users are verified through the configured LDAP bind/search flow
+- activation state and existing `login_attempts` handling stay aligned with
+   the browser login logic
+- API requests now return JSON `401 Unauthorized` instead of being redirected
+   to the HTML login page
+
+For a quick end-to-end smoke test of that shared auth path you can run:
+
+```bash
+python cli/scripts/auth_smoke.py \
+   --url http://portflow.local/Portflow-DEV \
+   --user marius \
+   --password 'secret'
+```
+
+The script checks valid API auth, invalid API auth, and whether the CLI route
+reaches application logic with valid credentials instead of redirecting back
+to the login page.
+
 `/api/cli/record_link` resolves or creates:
 
 1. **Patchpanel port** by `recorded_outlet_port` or `outlet_caption`.

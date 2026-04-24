@@ -909,34 +909,11 @@ $logger = new Logger();
 
 // ---- 1. Authentication -----------------------------------------------------
 if (empty($_SESSION['uuid'])) {
-    $user = $_SERVER['PHP_AUTH_USER'] ?? null;
-    $pass = $_SERVER['PHP_AUTH_PW'] ?? null;
-    if ($user === null || $pass === null) {
-        $hdr = $_SERVER['HTTP_AUTHORIZATION']
-            ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-            ?? (function_exists('apache_request_headers')
-                ? (apache_request_headers()['Authorization'] ?? '')
-                : '');
-        if (is_string($hdr) && stripos($hdr, 'Basic ') === 0) {
-            $decoded = base64_decode(substr($hdr, 6), true);
-            if ($decoded !== false && str_contains($decoded, ':')) {
-                [$user, $pass] = explode(':', $decoded, 2);
-            }
-        }
-    }
-    if (!is_string($user) || !is_string($pass) || $user === '' || $pass === '') {
-        header('WWW-Authenticate: Basic realm="Portflow CLI"');
-        cli_fail(401, 'Unauthorized');
-    }
-    include_once __DIR__ . '/../includes/core/auth.php';
-    $auth = new \Portflow\Core\Auth();
-    if (!$auth->apiSignin($user, $pass)) {
-        header('WWW-Authenticate: Basic realm="Portflow CLI"');
-        cli_fail(401, 'Unauthorized');
-    }
+    header('WWW-Authenticate: Basic realm="Portflow CLI"');
+    cli_fail(401, 'Unauthorized');
 }
 $userUuid = (string)$_SESSION['uuid'];
-$actor = (string)($_SERVER['PHP_AUTH_USER'] ?? ($_SESSION['username'] ?? 'cli'));
+$actor = (string)($_SESSION['name'] ?? ($_SERVER['PHP_AUTH_USER'] ?? 'cli'));
 
 // ---- 2. Parse + validate payload -------------------------------------------
 $raw = file_get_contents('php://input');

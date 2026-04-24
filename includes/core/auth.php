@@ -47,6 +47,7 @@ class Auth {
     private $ldap_found_user_dn;
     private $ldap_binduser_dn;
     private $activation_code;
+    private $pendingWebAuthIssue;
 
     public function __construct() {
         // define post variables
@@ -116,7 +117,7 @@ class Auth {
     public function csrf_check() {
         // Check CSRF token
         if (!isset($this->csrf) || empty($this->csrf)) {
-            $this->logger->log('csrf token not present in post request', 2, echoToWeb: true);
+            $this->logger->log('csrf token not present in post request', 2);
             return false;
         }
 
@@ -125,24 +126,24 @@ class Auth {
         
         // Check if session token is set and split token and timestamp from session data
         if (!isset($_SESSION['csrf']) || !strpos($_SESSION['csrf'], ':')) {
-            $this->logger->log('csrf token not set in session or invalid format', 2, echoToWeb: true);
+            $this->logger->log('csrf token not set in session or invalid format', 2);
             return false;
         }
         list($sessionTokenValue, $sessionTokenTimestamp) = explode(':', $_SESSION['csrf']);
 
         // Check if the token matches and is not expired
         if ($tokenValue !== $sessionTokenValue) {
-            $this->logger->log("csrf token incorrect", 2, echoToWeb: true);
+            $this->logger->log("csrf token incorrect", 2);
             return false;
         }
         if ($tokenTimestamp !== $sessionTokenTimestamp) {
-            $this->logger->log("csrf token doesn't match session timestamp", 2, echoToWeb: true);
+            $this->logger->log("csrf token doesn't match session timestamp", 2);
             return false;
         }
 
         // Check if the token is expired (5 minutes = 300 seconds)
         if (time() - $tokenTimestamp > 300) {
-            $this->logger->log('csrf token expired', 2, echoToWeb: true);
+            $this->logger->log('csrf token expired', 2);
             return false;
         }
 
@@ -150,16 +151,13 @@ class Auth {
     }
 
     /**
-     * Headless authentication entry point for the JSON API / CLI.
+     * Headless authentication entry point for JSON API / CLI requests.
      *
-     * Verifies the supplied credentials against the same providers as the
-     * web sign-in flow (currently: local password_verify, then LDAP if
-     * LDAP_ENABLED) — but WITHOUT CSRF, $_POST coupling, redirects, or
-     * exit() calls. On success the PHP session is populated exactly like
-     * the interactive flow so all downstream session-based authorisation
-     * (api/index.php getAccessRights(), etc.) works unchanged.
-     *
-     * Returns true on success, false on any failure. Never emits output.
+     * This intentionally reuses the SAME provider-specific signin paths as
+     * the interactive web flow and only suppresses web-only behaviour such as
+     * redirect targets and CSRF/form coupling. That keeps the database checks,
+     * activation logic, login-attempt handling and notifications aligned
+     * between browser and API authentication.
      */
     public function apiSignin(string $username, string $password): bool
     {
@@ -170,173 +168,23 @@ class Auth {
             return false;
         }
 
-        // ---- 1. local password verification -------------------------------
-        try {
-            $rows = $this->db_adapter->db_query(
-                "SELECT uuid, password, settings, login_attempts, activation_code
-                   FROM users
-                  WHERE username = :u AND login_provider = 'local'
-                  LIMIT 1",
-                ['u' => $username]
-            );
-            $row = is_array($rows) && !empty($rows) ? $rows[0] : null;
-            if ($row
-                && (string)($row['activation_code'] ?? '') === 'activated'
-                && (int)($row['login_attempts'] ?? 0) <= 3
-                && !empty($row['password'])
-                && password_verify($password, (string)$row['password'])
-            ) {
-                $this->uuid     = (string)$row['uuid'];
-                $this->settings = $row['settings'] ?? null;
-                $this->establishApiSession('local');
-                try {
-                    $this->db_adapter->db_query(
-                        "UPDATE users SET last_login = NOW(), login_attempts = NULL,
-                                          ip_address = :ip
-                          WHERE uuid = :uuid",
-                        ['ip' => $this->ip(), 'uuid' => $this->uuid]
-                    );
-                } catch (\Throwable $e) {
-                    $this->logger->log('apiSignin: local last_login update failed: ' . $e->getMessage(), 2);
-                }
-                return true;
-            }
-        } catch (\Throwable $e) {
-            $this->logger->log('apiSignin: local lookup failed: ' . $e->getMessage(), 2);
+        if ($this->local_signin(true)) {
+            return true;
         }
 
-        // ---- 2. LDAP, if enabled -----------------------------------------
-        if (defined('LDAP_ENABLED') && LDAP_ENABLED === true) {
-            try {
-                if ($this->ldapVerifyPassword($username, $password)) {
-                    // Resolve or create the LDAP-backed user row.
-                    $rows = $this->db_adapter->db_query(
-                        "SELECT uuid, settings, activation_code
-                           FROM users
-                          WHERE username = :u AND login_provider = 'ldap'
-                          LIMIT 1",
-                        ['u' => $username]
-                    );
-                    $row = is_array($rows) && !empty($rows) ? $rows[0] : null;
-
-                    if ($row === null) {
-                        // Auto-provision an LDAP user the same way ldap_signin() does.
-                        $roleRows = $this->db_adapter->db_query(
-                            "SELECT uuid FROM role WHERE caption = :c LIMIT 1",
-                            ['c' => 'ldap']
-                        );
-                        if (!is_array($roleRows) || empty($roleRows)) {
-                            $this->logger->log('apiSignin: ldap role missing — cannot auto-create user', 3);
-                            return false;
-                        }
-                        $activation = (defined('LDAP_TRUST') && LDAP_TRUST === true)
-                            ? 'activated' : $this->random_string(10);
-                        $settings = json_encode([
-                            'language'   => 'en-EN',
-                            'appearance' => ['theme' => 'light', 'font_family' => 'jetbrains', 'font_size' => 'normal'],
-                        ]);
-                        $insRows = $this->db_adapter->db_query(
-                            "INSERT INTO users (role, login_provider, username, activation_code, settings, ip_address, created, changed)
-                             VALUES (:r, 'ldap', :u, :a, :s, :ip, NOW(), NOW())
-                             RETURNING uuid, settings, activation_code",
-                            [
-                                'r'  => $roleRows[0]['uuid'],
-                                'u'  => $username,
-                                'a'  => $activation,
-                                's'  => $settings,
-                                'ip' => $this->ip(),
-                            ]
-                        );
-                        $row = is_array($insRows) && !empty($insRows) ? $insRows[0] : null;
-                        if ($row === null) {
-                            return false;
-                        }
-                    }
-
-                    if ((string)($row['activation_code'] ?? '') !== 'activated') {
-                        $this->logger->log("apiSignin: ldap user '$username' not activated", 2);
-                        return false;
-                    }
-
-                    $this->uuid     = (string)$row['uuid'];
-                    $this->settings = $row['settings'] ?? null;
-                    $this->establishApiSession('ldap');
-                    try {
-                        $this->db_adapter->db_query(
-                            "UPDATE users SET last_login = NOW(), login_attempts = NULL,
-                                              ip_address = :ip
-                              WHERE uuid = :uuid",
-                            ['ip' => $this->ip(), 'uuid' => $this->uuid]
-                        );
-                    } catch (\Throwable $e) {
-                        $this->logger->log('apiSignin: ldap last_login update failed: ' . $e->getMessage(), 2);
-                    }
-                    return true;
-                }
-            } catch (\Throwable $e) {
-                $this->logger->log('apiSignin: ldap path failed: ' . $e->getMessage(), 2);
-            }
+        if (defined('LDAP_ENABLED') && LDAP_ENABLED === true && $this->ldap_signin(true)) {
+            return true;
         }
 
         return false;
     }
 
     /**
-     * LDAP credential check distilled from ldap_signin(): connects, optionally
-     * binds with the service account, searches for the user and finally tries
-     * to bind as that user with the supplied password. Returns true on
-     * successful credential bind. Never throws.
+     * Populate $_SESSION for both interactive and headless signins.
+     * The provider is stored so downstream API code can tell whether the
+     * session originated from local auth or LDAP without rebuilding context.
      */
-    private function ldapVerifyPassword(string $username, string $password): bool
-    {
-        if (!function_exists('ldap_connect')) {
-            $this->logger->log('apiSignin: php-ldap extension not available', 3);
-            return false;
-        }
-        $conn = @ldap_connect(LDAP_SERVER, (int)LDAP_PORT);
-        if (!$conn) {
-            return false;
-        }
-        @ldap_set_option($conn, LDAP_OPT_PROTOCOL_VERSION, 3);
-        @ldap_set_option($conn, LDAP_OPT_REFERRALS, 0);
-        @ldap_set_option($conn, LDAP_OPT_NETWORK_TIMEOUT, 10);
-
-        // Initial bind: either with a service account (LDAP_BIND) or directly
-        // with the user's guessed DN (matches ldap_signin() behaviour).
-        if (defined('LDAP_BIND') && LDAP_BIND === true) {
-            if (!@ldap_bind($conn, LDAP_BIND_USER, LDAP_BIND_PASSWORD)) {
-                @ldap_unbind($conn);
-                return false;
-            }
-        } else {
-            $guessDn = "uid=$username," . LDAP_USERDN . "," . LDAP_BASEDN;
-            if (!@ldap_bind($conn, $guessDn, $password)) {
-                @ldap_unbind($conn);
-                return false;
-            }
-        }
-
-        $filter = "(&(|(sAMAccountName=$username)(uid=$username))" . LDAP_FILTER . ")";
-        $res = @ldap_search($conn, LDAP_BASEDN, $filter, ['dn']);
-        if (!$res) { @ldap_unbind($conn); return false; }
-        $entries = @ldap_get_entries($conn, $res);
-        if (!is_array($entries) || (int)($entries['count'] ?? 0) !== 1
-            || empty($entries[0]['dn'])) {
-            @ldap_unbind($conn);
-            return false;
-        }
-        $userDn = $entries[0]['dn'];
-        $ok = @ldap_bind($conn, $userDn, $password);
-        @ldap_unbind($conn);
-        return (bool)$ok;
-    }
-
-    /**
-     * Populate $_SESSION the same way the interactive sign-in flows do, so
-     * that downstream session-based authorisation just works. Starts the
-     * session if necessary; never emits output or redirects.
-     */
-    private function establishApiSession(string $provider): void
+    private function establishAuthenticatedSession(string $provider): void
     {
         if (session_status() === PHP_SESSION_NONE) {
             @session_start();
@@ -349,96 +197,166 @@ class Auth {
         $_SESSION['auth_method'] = $provider;
     }
 
-    private function local_signon($usage) {
-        try {
-            // check post data
-            if (mb_strlen($this->username) > 255 || mb_strlen($this->username) < 2) {
-                $this->logger->log('username length not correct', 2, echoToWeb: true);
-                throw new \Exception('username length not correct');
-            }
+    private function redirectAfterSignin(): void
+    {
+        if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME) === 0) {
+            header('Location: ' . $_SESSION['referrer']);
+            return;
+        }
 
-            if ($usage == 'signin') {
-                if (mb_strlen($this->password) > 128 || mb_strlen($this->password) < 8) {
-                    $this->logger->log('password length not correct', 2, echoToWeb: true);
-                    throw new \Exception('password length not correct');
-                }
-                if (!isset($this->username, $this->password)) {
-                    $this->logger->log('username or password not set', 2, echoToWeb: true);
-                    throw new \Exception('username or password not set');
-                }
-                if (empty($this->username) || empty($this->password)) {
-                    $this->logger->log('username or password empty', 2, echoToWeb: true);
-                    throw new \Exception('username or password empty');
-                }
-            } elseif ($usage == 'signup') {
-                if (mb_strlen($this->password) > 128 || mb_strlen($this->password) < 8) {
-                    $this->logger->log('password length not correct', 2, echoToWeb: true);
-                    throw new \Exception('password length not correct');
-                }
-                if (!isset($this->username, $this->password, $this->email)) {
-                    $this->logger->log('username, password or email not set', 2, echoToWeb: true);
-                    throw new \Exception('username, password or email not set');
-                }
-                if (empty($this->username) || empty($this->password) || empty($this->email)) {
-                    $this->logger->log('username, password or email empty', 2, echoToWeb: true);
-                    throw new \Exception('username, password or email empty');
-                }
-                if(!filter_var($this->email, FILTER_VALIDATE_EMAIL)){
-                    $this->logger->log('email not valid', 2, echoToWeb: true);
-                    throw new \Exception('email not valid');
-                }
-            } elseif ($usage == 'forgot_password') {
-                if (!isset($this->username)) {
-                    $this->logger->log('username not set', 2, echoToWeb: true);
-                    throw new \Exception('username not set');
-                }
-                if (empty($this->username)) {
-                    $this->logger->log('username empty', 2, echoToWeb: true);
-                    throw new \Exception('username empty');
-                }
-            } else {
-                $this->logger->log('invalid usage of local_signon function', 3);
-                throw new \Exception('invalid usage of local_signon function');
-            }
-            $this->logger->log('submitted post data correct', 1);
-        } catch (\Exception $e) {
-            // Log the exception message with ERROR level
-            $this->logger->log('' . $e->getMessage(), 3);
-            // Here you can handle the exception as needed, for example:
-            // - Redirect the user to an error page
-            // - Show a specific error message to the user
-            // Make sure to not directly output the Exception message if it contains sensitive information
+        header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
+    }
+
+    private function resetWebAuthIssue(): void
+    {
+        $this->pendingWebAuthIssue = null;
+    }
+
+    private function rememberWebAuthIssue(string $message, int $level = 2, bool $stopFlow = false): void
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return;
+        }
+
+        if (!is_array($this->pendingWebAuthIssue)) {
+            $this->pendingWebAuthIssue = [
+                'message' => $message,
+                'level' => $level,
+                'stopFlow' => $stopFlow,
+            ];
+            return;
+        }
+
+        if (!$this->pendingWebAuthIssue['stopFlow'] && $stopFlow) {
+            $this->pendingWebAuthIssue = [
+                'message' => $message,
+                'level' => $level,
+                'stopFlow' => true,
+            ];
         }
     }
 
-    private function single_signon() {
-        try {
-            // check post data
-            if (mb_strlen($this->password) > 1024 || mb_strlen($this->password) < 1) {
-                $this->logger->log('password length not correct', 2, echoToWeb: true);
-                throw new \Exception('password length not correct');
-            }
-            if (mb_strlen($this->username) > 1024 || mb_strlen($this->username) < 1) {
-                $this->logger->log('username length not correct', 2, echoToWeb: true);
-                throw new \Exception('username length not correct');
+    private function hasBlockingWebAuthIssue(): bool
+    {
+        return is_array($this->pendingWebAuthIssue) && !empty($this->pendingWebAuthIssue['stopFlow']);
+    }
+
+    private function flushWebAuthIssue(string $fallbackMessage, int $fallbackLevel = 2): void
+    {
+        if (is_array($this->pendingWebAuthIssue)) {
+            $this->logger->log(
+                (string)$this->pendingWebAuthIssue['message'],
+                (int)$this->pendingWebAuthIssue['level'],
+                echoToWeb: true
+            );
+            $this->resetWebAuthIssue();
+            return;
+        }
+
+        $this->logger->log($fallbackMessage, $fallbackLevel, echoToWeb: true);
+    }
+
+    private function resolveWebAuthIssueLevel(\Throwable $exception): int
+    {
+        if ($exception instanceof \InvalidArgumentException) {
+            return 2;
+        }
+
+        $message = strtolower($exception->getMessage());
+        if (str_contains($message, 'database')
+            || str_contains($message, 'ldap role')
+            || str_contains($message, 'no connection')
+            || str_contains($message, "couldn't")
+            || str_contains($message, 'failed to create')) {
+            return 3;
+        }
+
+        return 2;
+    }
+
+    private function logWebAuthException(\Throwable $exception): void
+    {
+        $this->logger->log(
+            $exception->getMessage(),
+            $this->resolveWebAuthIssueLevel($exception),
+            echoToWeb: true
+        );
+    }
+
+    private function local_signon(string $usage): void {
+        // Validation must fail hard here. The callers already decide whether
+        // a bad input should become a web error, a failed login, or an API 401.
+        if (mb_strlen((string)$this->username) > 255 || mb_strlen((string)$this->username) < 2) {
+            $this->logger->log('username length not correct', 2);
+            throw new \InvalidArgumentException('username length not correct');
+        }
+
+        if ($usage == 'signin') {
+            if (mb_strlen((string)$this->password) > 128 || mb_strlen((string)$this->password) < 8) {
+                $this->logger->log('password length not correct', 2);
+                throw new \InvalidArgumentException('password length not correct');
             }
             if (!isset($this->username, $this->password)) {
-                $this->logger->log('username or password not set', 2, echoToWeb: true);
-                throw new \Exception('username or password not set');
+                $this->logger->log('username or password not set', 2);
+                throw new \InvalidArgumentException('username or password not set');
             }
             if (empty($this->username) || empty($this->password)) {
-                $this->logger->log('username or password empty', 2, echoToWeb: true);
-                throw new \Exception('username or password empty');
+                $this->logger->log('username or password empty', 2);
+                throw new \InvalidArgumentException('username or password empty');
             }
-            $this->logger->log('submitted post data correct', 1);
-        } catch (\Exception $e) {
-            // Log the exception message with ERROR level
-            $this->logger->log('' . $e->getMessage(), 3);
-            // Here you can handle the exception as needed, for example:
-            // - Redirect the user to an error page
-            // - Show a specific error message to the user
-            // Make sure to not directly output the Exception message if it contains sensitive information
+        } elseif ($usage == 'signup') {
+            if (mb_strlen((string)$this->password) > 128 || mb_strlen((string)$this->password) < 8) {
+                $this->logger->log('password length not correct', 2);
+                throw new \InvalidArgumentException('password length not correct');
+            }
+            if (!isset($this->username, $this->password, $this->email)) {
+                $this->logger->log('username, password or email not set', 2);
+                throw new \InvalidArgumentException('username, password or email not set');
+            }
+            if (empty($this->username) || empty($this->password) || empty($this->email)) {
+                $this->logger->log('username, password or email empty', 2);
+                throw new \InvalidArgumentException('username, password or email empty');
+            }
+            if(!filter_var($this->email, FILTER_VALIDATE_EMAIL)){
+                $this->logger->log('email not valid', 2);
+                throw new \InvalidArgumentException('email not valid');
+            }
+        } elseif ($usage == 'forgot_password') {
+            if (!isset($this->username)) {
+                $this->logger->log('username not set', 2);
+                throw new \InvalidArgumentException('username not set');
+            }
+            if (empty($this->username)) {
+                $this->logger->log('username empty', 2);
+                throw new \InvalidArgumentException('username empty');
+            }
+        } else {
+            $this->logger->log('invalid usage of local_signon function', 3);
+            throw new \Exception('invalid usage of local_signon function');
         }
+
+        $this->logger->log('submitted post data correct', 1);
+    }
+
+    private function single_signon(): void {
+        if (mb_strlen((string)$this->password) > 1024 || mb_strlen((string)$this->password) < 1) {
+            $this->logger->log('password length not correct', 2);
+            throw new \InvalidArgumentException('password length not correct');
+        }
+        if (mb_strlen((string)$this->username) > 1024 || mb_strlen((string)$this->username) < 1) {
+            $this->logger->log('username length not correct', 2);
+            throw new \InvalidArgumentException('username length not correct');
+        }
+        if (!isset($this->username, $this->password)) {
+            $this->logger->log('username or password not set', 2);
+            throw new \InvalidArgumentException('username or password not set');
+        }
+        if (empty($this->username) || empty($this->password)) {
+            $this->logger->log('username or password empty', 2);
+            throw new \InvalidArgumentException('username or password empty');
+        }
+        $this->logger->log('submitted post data correct', 1);
     }
 
     private function ip(){
@@ -453,47 +371,58 @@ class Auth {
     }
 
     public function signin() {
-        // check csrf token
-        if ($this->csrf_check()) {
-            $this->logger->log('CSRF token correct', 1);
-        } else {
-            $this->logger->log('CSRF token not correct', 2, echoToWeb: true);
-            throw new \Exception('CSRF token not correct');
-        }
+        $this->resetWebAuthIssue();
 
-        // try local_signin
-        if ($this->local_signin()) {
-            return true;
-        } else {
-            // Log the failure of local_signin
-            $this->logger->log("local_signin of '$this->username' failed", 3);
-        }
-
-        // Try ldap_signin
-        if (LDAP_ENABLED == TRUE) {
-            $ldap_signin_result = $this->ldap_signin();
-            if ($ldap_signin_result) {
-                return true;
+        try {
+            if ($this->csrf_check()) {
+                $this->logger->log('CSRF token correct', 1);
             } else {
-                // Log the failure of ldap_signin
+                throw new \InvalidArgumentException('CSRF token not correct');
+            }
+
+            if ($this->local_signin()) {
+                return true;
+            }
+            $this->logger->log("local_signin of '$this->username' failed", 3);
+
+            if ($this->hasBlockingWebAuthIssue()) {
+                $this->flushWebAuthIssue('all available signin methods failed', 2);
+                header("Location: " . PORTFLOW_HOSTNAME);
+                exit();
+            }
+
+            if (LDAP_ENABLED == TRUE) {
+                $ldap_signin_result = $this->ldap_signin();
+                if ($ldap_signin_result) {
+                    return true;
+                }
                 $this->logger->log("ldap_signin of '$this->username' failed", 3);
             }
-        }
 
-        // If both methods fail, redirect to the URI returned by PORTFLOW_HOSTNAME
-        $this->logger->log('all available signin methods failed', 0, echoToWeb: true);
-        header("Location: " . PORTFLOW_HOSTNAME);
-        exit();
+            $this->flushWebAuthIssue('all available signin methods failed', 2);
+            header("Location: " . PORTFLOW_HOSTNAME);
+            exit();
+        } catch (\Exception $e) {
+            $this->logWebAuthException($e);
+            header("Location: " . PORTFLOW_HOSTNAME);
+            exit();
+        }
     }
 
-    private function local_signin() {
+    private function local_signin(bool $headless = false) {
         try {
             if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
                 die("the database table 'users' doesn't exist. please run the init script.");
             }
 
             // check post data
-            $this->local_signon('signin');
+            if ($headless) {
+                if (!isset($this->username, $this->password) || $this->username === '' || $this->password === '') {
+                    throw new \Exception('username or password empty');
+                }
+            } else {
+                $this->local_signon('signin');
+            }
         
             // check if user exists
             $query = "SELECT uuid, password, email, settings, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
@@ -520,11 +449,7 @@ class Auth {
                     if (password_verify($this->password, $this->password_db)) {
 
                         // create session
-                        session_regenerate_id();
-                        $_SESSION['loggedin'] = TRUE;
-                        $_SESSION['name'] = $this->username;
-                        $_SESSION['uuid'] = $this->uuid;
-                        $_SESSION['settings'] = $this->settings;
+                        $this->establishAuthenticatedSession('local');
 
                         // update database
                         $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
@@ -542,10 +467,8 @@ class Auth {
                                 "Erfolgreicher Login fuer Benutzer '{$this->username}'.",
                                 ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
                             );
-                            if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME) === 0) {
-                                header('Location: ' . $_SESSION['referrer']);
-                            } else {
-                                header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
+                            if (!$headless) {
+                                $this->redirectAfterSignin();
                             }
                         } else {
                             // database could not update
@@ -609,6 +532,9 @@ class Auth {
         } catch (\Exception $e) {
             // Log the exception message with ERROR level
             $this->logger->log($e->getMessage(), 3);
+            if (!$headless) {
+                $this->rememberWebAuthIssue($e->getMessage(), $this->resolveWebAuthIssueLevel($e), $e instanceof \InvalidArgumentException);
+            }
             return false;
             // Here you can handle the exception as needed, for example:
             // - Redirect the user to an error page
@@ -617,9 +543,15 @@ class Auth {
         }
     }
 
-    private function ldap_signin() {
+    private function ldap_signin(bool $headless = false) {
         try {
-            $this->single_signon();
+            if ($headless) {
+                if (!isset($this->username, $this->password) || $this->username === '' || $this->password === '') {
+                    throw new \Exception('username or password empty');
+                }
+            } else {
+                $this->single_signon();
+            }
 
             // LDAP parameters
             $this->ldap_server = LDAP_SERVER;
@@ -762,34 +694,28 @@ class Auth {
                                 $this->settings = $params['settings'];
 
                             } else {
-                                $this->logger->log('ldap role does not exist', 3, echoToWeb: true);
+                                $this->logger->log('ldap role does not exist', 3);
                                 throw new \Exception('ldap role does not exist');
                             }
                         }
 
                         // Check if the user is activated if LDAP_TRUST is TRUE
                         if (LDAP_TRUST === TRUE && $this->activation_code !== 'activated') {
-                            $this->logger->log("user '$this->username' not activated", 2, true);
+                            $this->logger->log("user '$this->username' not activated", 2);
                             throw new \Exception("user '$this->username' not activated");
                         } elseif (LDAP_TRUST === FALSE && $this->activation_code !== 'activated') {
-                            $this->logger->log("user '$this->username' not activated", 2, true);
+                            $this->logger->log("user '$this->username' not activated", 2);
                             throw new \Exception("user '$this->username' not activated");
                         } elseif ($this->activation_code == 'deactivated') {
-                            $this->logger->log("user '$this->username' not activated", 2, true);
+                            $this->logger->log("user '$this->username' not activated", 2);
                             throw new \Exception("user '$this->username' not activated");
                         }
 
                         // create session
-                        session_regenerate_id();
-                        $_SESSION['loggedin'] = TRUE;
-                        $_SESSION['name'] = $this->username;
-                        $_SESSION['uuid'] = $this->uuid;
-                        $_SESSION['settings'] = $this->settings;
+                        $this->establishAuthenticatedSession('ldap');
 
-                        if (isset($_SESSION['referrer']) && strpos($_SESSION['referrer'], PORTFLOW_HOSTNAME) === 0) {
-                            header('Location: ' . $_SESSION['referrer']);
-                        } else {
-                            header('Location: ' . PORTFLOW_HOSTNAME . '/portview.php');
+                        if (!$headless) {
+                            $this->redirectAfterSignin();
                         }
                         $this->notifyUsers(
                             [$this->uuid],
@@ -804,7 +730,7 @@ class Auth {
 
                     } else {
                         // If the bind fails, the user's credentials are invalid
-                        $this->logger->log('password verification failed', echoToWeb: true);
+                        $this->logger->log('password verification failed', 2);
                         if (!empty($this->uuid)) {
                             $this->notifyUsers(
                                 [$this->uuid],
@@ -847,6 +773,9 @@ class Auth {
         } catch (\Exception $e) {
             // Log the exception message with ERROR level
             $this->logger->log($e->getMessage(), 3);
+            if (!$headless) {
+                $this->rememberWebAuthIssue($e->getMessage(), $this->resolveWebAuthIssueLevel($e), $e instanceof \InvalidArgumentException);
+            }
             return false;
         } finally {
             // Dieser Block wird ausgeführt, egal ob eine Ausnahme aufgetreten ist oder nicht.
@@ -858,15 +787,13 @@ class Auth {
     }
 
     public function forgot_password() {
-        // check csrf token
-        if ($this->csrf_check()) {
-            $this->logger->log('CSRF token correct', 1);
-        } else {
-            $this->logger->log('CSRF token not correct', 2, echoToWeb: true);
-            throw new \Exception('CSRF token not correct');
-        }
-
         try {
+            if ($this->csrf_check()) {
+                $this->logger->log('CSRF token correct', 1);
+            } else {
+                throw new \InvalidArgumentException('CSRF token not correct');
+            }
+
             if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
                 die("the database table 'users' doesn't exist. please run the init script.");
             }
@@ -926,19 +853,17 @@ class Auth {
                 throw new \Exception('user with this username does not exist or uses a different login provider');
             }
         } catch (\Exception $e) {
-            // Log the exception message with ERROR level
-            $this->logger->log($e->getMessage(), 3);
+            $this->logWebAuthException($e);
             return false;
         }
     }
 
     public function signup() {
-        if (PORTFLOW_FIRST_RUN === FALSE && PORTFLOW_REGISTER === FALSE) {
-            $this->logger->log('registration disabled', 2, echoToWeb: true);
-            throw new \Exception('registration disabled');
-        }
-
         try {
+            if (PORTFLOW_FIRST_RUN === FALSE && PORTFLOW_REGISTER === FALSE) {
+                throw new \InvalidArgumentException('registration disabled');
+            }
+
             if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
                 die("the database table 'users' doesn't exist. please run the init script.");
             }
@@ -1101,7 +1026,6 @@ class Auth {
         
             foreach ($result as $row) {
                 if (!empty($row['uuid'])) {
-                    $this->logger->log('user already exists', 2, echoToWeb: true);
                     throw new \Exception('user already exists');
                 }
             }
@@ -1152,16 +1076,13 @@ class Auth {
                     $this->logger->log('Account successfully created. An activation code has been sent to your e-mail.', 1, echoToWeb: true);
                     header('Location: ' . PORTFLOW_HOSTNAME);
                 } else {
-                    $this->logger->log('Account successfully created. An error occured while sending an activation code to your e-mail.', 3, echoToWeb: true);
                     throw new \Exception('Account successfully created. An error occured while sending an activation code to your e-mail.');
                 }
             } else {
-                $this->logger->log('failed to create user account', 3, echoToWeb: true);
                 throw new \Exception('failed to create user account');
             }
         } catch (\Exception $e) {
-            // Log the exception message with ERROR level and optionally echo to web
-            $this->logger->log($e->getMessage(), 3);
+            $this->logWebAuthException($e);
             // Additional exception handling logic here
         }
     }

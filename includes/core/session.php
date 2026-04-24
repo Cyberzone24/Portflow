@@ -19,6 +19,13 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 
 if (empty($_SESSION['uuid']) || empty($_SESSION['loggedin']) || $_SESSION['loggedin'] !== TRUE) {
+    $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
+    $isApiRequest = preg_match('#(?:^|/)api(?:/|$)#', $requestPath) === 1;
+
+    if ($isApiRequest) {
+        return;
+    }
+
     $_SESSION['referrer'] = uri();
     header('Location: ' . PORTFLOW_HOSTNAME);
     exit();
