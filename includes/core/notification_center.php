@@ -734,7 +734,8 @@ class NotificationCenter {
         if ($channel === 'slack') {
             $enabled = defined('NOTIFICATION_SLACK_ENABLED') && NOTIFICATION_SLACK_ENABLED === true;
             $webhook = defined('NOTIFICATION_SLACK_WEBHOOK_URL') ? trim((string)NOTIFICATION_SLACK_WEBHOOK_URL) : '';
-            if ($enabled && ($userSlackWebhook !== '' || $webhook !== '')) {
+            $candidateWebhook = $userSlackWebhook !== '' ? $userSlackWebhook : $webhook;
+            if ($enabled && $this->isValidSlackWebhookUrl($candidateWebhook)) {
                 return 'slack';
             }
             return 'mail';
@@ -751,6 +752,26 @@ class NotificationCenter {
         }
 
         return 'mail';
+    }
+
+    private function isValidSlackWebhookUrl(string $webhook): bool {
+        $parts = parse_url(trim($webhook));
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower((string)($parts['host'] ?? ''));
+        $path = (string)($parts['path'] ?? '');
+
+        if ($scheme !== 'https') {
+            return false;
+        }
+        if (!in_array($host, ['hooks.slack.com', 'hooks.slack-gov.com'], true)) {
+            return false;
+        }
+
+        return preg_match('#^/services/[A-Za-z0-9/_-]+$#', $path) === 1;
     }
 
     private function isLevelAllowed(string $userLevel, string $eventLevel): bool {

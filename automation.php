@@ -179,11 +179,18 @@
     $activeTab = 'automation';
     $canAutomationWrite = $auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'write');
     $canAutomationExecute = $auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'execute');
+    $csrf = $auth->csrf();
 
     // Handle queue operations
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['queue_action'])) {
         $activeTab = 'queue';
-        if (!$canAutomationExecute) {
+        if (!$auth->csrf_check()) {
+            $logger->log('csrf token invalid for automation queue action', 2, echoToWeb: true);
+            $executionResult = [
+                'ok' => false,
+                'output' => 'Warteschlangen-Operation fehlgeschlagen: Ungueltiger CSRF-Token.'
+            ];
+        } elseif (!$canAutomationExecute) {
             $executionResult = [
                 'ok' => false,
                 'output' => 'Warteschlangen-Operation fehlgeschlagen: Keine Berechtigung.'
@@ -448,7 +455,15 @@
         $requiredPermission = $queueMode ? 'write' : 'execute';
         $hasRequiredPermission = $queueMode ? $canAutomationWrite : $canAutomationExecute;
 
-        if (!$hasRequiredPermission) {
+        if (!$auth->csrf_check()) {
+            $logger->log('csrf token invalid for automation execute', 2, echoToWeb: true);
+            $executionResult = [
+                'ok' => false,
+                'output' => $queueMode
+                    ? 'Warteschlange fehlgeschlagen: Ungueltiger CSRF-Token.'
+                    : 'Ausfuehrung fehlgeschlagen: Ungueltiger CSRF-Token.'
+            ];
+        } elseif (!$hasRequiredPermission) {
             $logger->log('user denied access to automation ' . $requiredPermission, 2, echoToWeb: true);
             $executionResult = [
                 'ok' => false,
@@ -713,6 +728,24 @@
         $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
         $keyFile = null;
 
+        $knownHostsDir = __DIR__ . '/data/automation';
+        if (!is_dir($knownHostsDir) && !mkdir($knownHostsDir, 0700, true) && !is_dir($knownHostsDir)) {
+            return [
+                'ok' => false,
+                'output' => 'Ausfuehrung fehlgeschlagen: Known-Hosts-Verzeichnis konnte nicht angelegt werden.'
+            ];
+        }
+
+        $knownHostsFile = $knownHostsDir . '/known_hosts';
+        if (!file_exists($knownHostsFile) && @touch($knownHostsFile) === false) {
+            return [
+                'ok' => false,
+                'output' => 'Ausfuehrung fehlgeschlagen: Known-Hosts-Datei konnte nicht angelegt werden.'
+            ];
+        }
+
+        @chmod($knownHostsFile, 0600);
+
         $commandFile = tempnam(sys_get_temp_dir(), 'portflow-automation-');
         if ($commandFile === false) {
             return [
@@ -735,7 +768,7 @@
 
         file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
 
-        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
+        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=' . escapeshellarg($knownHostsFile) . ' -o ConnectTimeout=8';
         if ($authMethod === 'password' && $password !== '') {
             $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
         } else {
@@ -780,7 +813,8 @@
                 ];
             }
 
-            $sshCommand = $sshpassPath . ' -p ' . escapeshellarg($password) . ' ' . $sshCommand;
+            putenv('SSHPASS=' . $password);
+            $sshCommand = $sshpassPath . ' -e ' . $sshCommand;
         }
 
         $fullCommand = $sshCommand;
@@ -792,6 +826,9 @@
         $exitCode = 1;
         $startedAt = microtime(true);
         exec($fullCommand . ' 2>&1', $lines, $exitCode);
+        if ($authMethod === 'password' && $password !== '') {
+            putenv('SSHPASS');
+        }
         $durationSec = microtime(true) - $startedAt;
         @unlink($commandFile);
         if ($keyFile !== null) {
@@ -805,7 +842,7 @@
         }
 
         $maskedCommand = ($authMethod === 'password' && $password !== '')
-            ? 'sshpass -p ******** ssh ...'
+            ? 'sshpass -e ssh ...'
             : trim((string)$fullCommand);
 
         $hasErrorSignals = outputHasStrongErrorSignals($lines);
@@ -1958,6 +1995,7 @@
             </div>
             <form id="automation-execute-form" method="POST" action="automation.php" onsubmit="return syncExecutionFormValues();">
                 <input type="hidden" name="execute" value="1">
+                <input type="hidden" name="csrf" value="<?php echo automation_escape((string)$csrf); ?>">
                 <input type="hidden" name="switch" value="<?php echo automation_escape($selectedSwitch); ?>">
                 <input type="hidden" name="profile" value="<?php echo automation_escape($selectedProfile); ?>">
                 <input type="hidden" name="template" value="<?php echo automation_escape($selectedTemplate); ?>">
@@ -2000,11 +2038,13 @@
                         echo '</div>';
                         echo '<div class="flex items-center gap-2">';
                         echo '<form method="POST" action="automation.php" style="display: inline;" id="' . automation_escape($queueGroupId) . '-selected" onsubmit="return ensureQueueSelection(\'' . automation_escape($queueGroupId) . '\');">';
+                        echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                         echo '<input type="hidden" name="queue_action" value="execute_selected">';
                         echo '<input type="hidden" name="execute_selected_switch" value="' . automation_escape($switchName) . '">';
                         echo '<button type="submit" class="queue-action-btn bg-emerald-500 hover:bg-emerald-700 text-white">Auswahl ausfuehren</button>';
                         echo '</form>';
                         echo '<form method="POST" action="automation.php" style="display: inline;">';
+                        echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                         echo '<input type="hidden" name="queue_action" value="execute_all">';
                         echo '<input type="hidden" name="execute_all_switch" value="' . automation_escape($switchName) . '">';
                         echo '<button type="submit" class="queue-action-btn bg-green-500 hover:bg-green-700 text-white">Alle ausfuehren</button>';
@@ -2032,11 +2072,13 @@
                             echo '</div>';
                             echo '<div class="flex gap-2">';
                             echo '<form method="POST" action="automation.php" style="display: inline;">';
+                            echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                             echo '<input type="hidden" name="queue_action" value="execute_one">';
                             echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
                             echo '<button type="submit" class="queue-item-btn bg-green-100 hover:bg-green-200 text-green-700">Ausfuehren</button>';
                             echo '</form>';
                             echo '<form method="POST" action="automation.php" style="display: inline;">';
+                            echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                             echo '<input type="hidden" name="queue_action" value="delete">';
                             echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
                             echo '<button type="submit" class="queue-item-btn bg-red-100 hover:bg-red-200 text-red-700" onclick="return confirm(\'Wirklich loeschen?\')">Loeschen</button>';

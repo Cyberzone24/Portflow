@@ -86,6 +86,136 @@
         return $cliMap[$protocol] ?? $protocol;
     }
 
+    function ensureAutomationKnownHostsFile(): string {
+        $directory = __DIR__ . '/data/automation';
+        if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new RuntimeException('Konnte das Known-Hosts-Verzeichnis nicht anlegen.');
+        }
+
+        $path = $directory . '/known_hosts';
+        if (!file_exists($path) && @touch($path) === false) {
+            throw new RuntimeException('Konnte die Known-Hosts-Datei nicht anlegen.');
+        }
+
+        @chmod($path, 0600);
+        return $path;
+    }
+
+    function isValidAutomationInventoryHost(string $host): bool {
+        $host = trim($host);
+        if ($host === '') {
+            return false;
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6) !== false) {
+            return true;
+        }
+
+        return preg_match('/^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/', $host) === 1;
+    }
+
+    function isValidAutomationInventoryName(string $name): bool {
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/', trim($name)) === 1;
+    }
+
+    function isValidAutomationReferenceUuid(string $value): bool {
+        return preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i', trim($value)) === 1;
+    }
+
+    function configIsValidSlackWebhookUrl(string $url): bool {
+        $trimmed = trim($url);
+        if ($trimmed === '') {
+            return false;
+        }
+
+        $parts = parse_url($trimmed);
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower((string)($parts['host'] ?? ''));
+        $path = (string)($parts['path'] ?? '');
+
+        if ($scheme !== 'https') {
+            return false;
+        }
+        if (!in_array($host, ['hooks.slack.com', 'hooks.slack-gov.com'], true)) {
+            return false;
+        }
+        if (!preg_match('#^/services/[A-Za-z0-9/_-]+$#', $path)) {
+            return false;
+        }
+        if (isset($parts['user'], $parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function validateAutomationInventoryEntry(array $switchEntry, array $profileDefaults): void {
+        $name = trim((string)($switchEntry['name'] ?? ''));
+        $host = trim((string)($switchEntry['mgmt_ip'] ?? ''));
+        $profile = trim((string)($switchEntry['profile'] ?? ''));
+        $credentialMode = trim((string)($switchEntry['credential_mode'] ?? 'global'));
+        $authMethod = trim((string)($switchEntry['ssh_auth_method'] ?? 'password'));
+        $deviceId = trim((string)($switchEntry['device_id'] ?? ''));
+        $itemGroupId = trim((string)($switchEntry['item_group_id'] ?? ''));
+        $username = trim((string)($switchEntry['ssh_username'] ?? ''));
+        $password = (string)($switchEntry['ssh_password'] ?? '');
+        $privateKey = trim((string)($switchEntry['ssh_private_key'] ?? ''));
+
+        if (!isValidAutomationInventoryName($name)) {
+            throw new InvalidArgumentException('Switch-Name enthaelt unzulaessige Zeichen oder ist zu lang.');
+        }
+        if (!isValidAutomationInventoryHost($host)) {
+            throw new InvalidArgumentException('Management-IP/Host ist ungueltig.');
+        }
+        if ($profile === '' || !isset($profileDefaults[$profile])) {
+            throw new InvalidArgumentException('Switch-Profil ist ungueltig.');
+        }
+        if (!in_array($credentialMode, ['global', 'individual'], true)) {
+            throw new InvalidArgumentException('Credential-Mode ist ungueltig.');
+        }
+        if (!in_array($authMethod, ['password', 'key'], true)) {
+            throw new InvalidArgumentException('SSH-Auth-Methode ist ungueltig.');
+        }
+        if ($deviceId !== '' && !isValidAutomationReferenceUuid($deviceId)) {
+            throw new InvalidArgumentException('Device-Referenz ist ungueltig.');
+        }
+        if ($itemGroupId !== '' && !isValidAutomationReferenceUuid($itemGroupId)) {
+            throw new InvalidArgumentException('Item-Group-Referenz ist ungueltig.');
+        }
+
+        if ($credentialMode === 'individual') {
+            if ($username === '') {
+                throw new InvalidArgumentException('Individuelle Credentials erfordern einen SSH-Benutzernamen.');
+            }
+            if ($authMethod === 'password' && $password === '') {
+                throw new InvalidArgumentException('Individuelle Passwort-Authentifizierung erfordert ein Passwort.');
+            }
+            if ($authMethod === 'key' && $privateKey === '') {
+                throw new InvalidArgumentException('Individuelle Key-Authentifizierung erfordert einen SSH-Key.');
+            }
+        }
+    }
+
+    function validateAutomationInventoryJson(string $inventoryJson, array $profileDefaults): string {
+        $decoded = json_decode($inventoryJson, true);
+        if (!is_array($decoded) || !isset($decoded['switches']) || !is_array($decoded['switches'])) {
+            throw new InvalidArgumentException('Switch-Inventory JSON ist ungueltig.');
+        }
+
+        foreach ($decoded['switches'] as $index => $switchEntry) {
+            if (!is_array($switchEntry)) {
+                throw new InvalidArgumentException('Switch-Inventory Eintrag #' . ($index + 1) . ' ist ungueltig.');
+            }
+            validateAutomationInventoryEntry($switchEntry, $profileDefaults);
+        }
+
+        return json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
     function runAutomationSshTest(array $formData, AutomationStore $store, Logger $logger): array {
         $saved = $store->getSettings();
 
@@ -125,7 +255,7 @@
             ];
         }
 
-        if (!preg_match('/^[a-zA-Z0-9.:_-]+$/', $host)) {
+        if (!isValidAutomationInventoryHost($host)) {
             return [
                 'ok' => false,
                 'output' => "SSH-Test fehlgeschlagen: Host enthaelt unzulaessige Zeichen."
@@ -144,7 +274,16 @@
         $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
         $keyFile = null;
 
-        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
+        try {
+            $knownHostsFile = ensureAutomationKnownHostsFile();
+        } catch (RuntimeException $e) {
+            return [
+                'ok' => false,
+                'output' => 'SSH-Test fehlgeschlagen: ' . $e->getMessage()
+            ];
+        }
+
+        $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=' . escapeshellarg($knownHostsFile) . ' -o ConnectTimeout=8';
 
         if ($authMethod === 'password' && $password !== '') {
             $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
@@ -197,7 +336,8 @@
                 ];
             }
 
-            $sshCommand = $sshpassPath . ' -p ' . escapeshellarg($password) . ' ' . $sshCommand;
+            putenv('SSHPASS=' . $password);
+            $sshCommand = $sshpassPath . ' -e ' . $sshCommand;
         }
 
         $fullCommand = $sshCommand;
@@ -208,6 +348,9 @@
         $lines = [];
         $exitCode = 1;
         exec($fullCommand . ' 2>&1', $lines, $exitCode);
+        if ($authMethod === 'password' && $password !== '') {
+            putenv('SSHPASS');
+        }
         @unlink($commandFile);
         if ($keyFile !== null) {
             @unlink($keyFile);
@@ -220,7 +363,7 @@
         }
 
         $maskedCommand = ($authMethod === 'password' && $password !== '')
-            ? 'sshpass -p ******** ssh ...'
+            ? 'sshpass -e ssh ...'
             : trim((string)$fullCommand);
 
         $outputText = "Command: " . $maskedCommand . "\n";
@@ -361,7 +504,7 @@
             ];
         }
 
-        if (!preg_match('/^[a-zA-Z0-9.:_-]+$/', $host)) {
+        if (!isValidAutomationInventoryHost($host)) {
             return [
                 'ok' => false,
                 'title' => 'SNMP Test Output',
@@ -902,7 +1045,7 @@
 
         return [
             'mail' => true,
-            'slack' => $slackEnabled && $slackWebhook !== '',
+            'slack' => $slackEnabled && configIsValidSlackWebhookUrl($slackWebhook),
             'telegram' => $telegramEnabled && $telegramBotToken !== '',
             'slack_enabled' => $slackEnabled,
             'telegram_enabled' => $telegramEnabled,
@@ -1366,7 +1509,7 @@
         if (!configRequirePortRange($dbPort)) {
             return ['ok' => false, 'message' => 'DB-Port muss zwischen 1 und 65535 liegen.'];
         }
-        if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $dbServer)) {
+        if (!isValidAutomationInventoryHost($dbServer)) {
             return ['ok' => false, 'message' => 'DB-Server enthaelt ungueltige Zeichen.'];
         }
 
@@ -1401,7 +1544,7 @@
         if (!configRequirePortRange($ldapPort)) {
             return ['ok' => false, 'message' => 'LDAP-Port muss zwischen 1 und 65535 liegen.'];
         }
-        if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $ldapServer)) {
+        if (!isValidAutomationInventoryHost($ldapServer)) {
             return ['ok' => false, 'message' => 'LDAP-Server enthaelt ungueltige Zeichen.'];
         }
         if ($ldapBind && $ldapBindUser === '') {
@@ -1451,6 +1594,9 @@
 
         if ($mailHost === '') {
             return ['ok' => false, 'message' => 'MAIL_HOST ist erforderlich.'];
+        }
+        if (!isValidAutomationInventoryHost($mailHost)) {
+            return ['ok' => false, 'message' => 'MAIL_HOST enthaelt ungueltige Zeichen.'];
         }
         if (!configRequirePortRange($mailPort)) {
             return ['ok' => false, 'message' => 'MAIL_PORT muss zwischen 1 und 65535 liegen.'];
@@ -1771,6 +1917,12 @@
                 $settings['notifications']['channel'] = in_array($channel, $allowedChannels, true)
                     ? $channel
                     : 'mail';
+                if ($slackWebhook !== '' && !configIsValidSlackWebhookUrl($slackWebhook)) {
+                    setSettingsFeedback('notifications', false, 'Slack Webhook URL ist ungueltig.');
+                    $logger->log('notification preferences update failed: invalid slack webhook', 2, echoToWeb: true);
+                    header('Location: ?site=notifications');
+                    break;
+                }
                 $settings['notifications']['slack_webhook_url'] = $slackWebhook;
                 $settings['notifications']['telegram_chat_id'] = $telegramChatId;
 
@@ -2083,6 +2235,21 @@
                 }
                 if ($notifRetentionDays < 1 || $notifRetentionDays > 365) {
                     $notifRetentionDays = 30;
+                }
+                if ($notifSlackWebhook !== '' && !configIsValidSlackWebhookUrl($notifSlackWebhook)) {
+                    configSetFeedback('notification', false, 'Slack Webhook URL ist ungueltig.', [
+                        'notification_daily_time' => $notifDailyTime,
+                        'notification_timezone'   => $notifTimezone,
+                        'notification_queue_retention_days' => (string)$notifRetentionDays,
+                        'notification_slack_enabled' => $notifSlackEnabled ? '1' : '0',
+                        'notification_slack_webhook_url' => $notifSlackWebhook,
+                        'notification_telegram_enabled' => $notifTelegramEnabled ? '1' : '0',
+                        'notification_telegram_bot_token' => $notifTelegramBotToken,
+                        'notification_telegram_chat_id' => $notifTelegramChatId
+                    ]);
+                    $logger->log('notification configuration save failed: invalid slack webhook', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=notifications#cfg-notification');
+                    break;
                 }
 
                 $notifWriteResult = configWriteEnvValues([
@@ -2689,6 +2856,24 @@
                 $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol($snmpV3PrivProtocol);
 
                 $profileDefaults = fetchAutomationProfilesFromFile();
+                try {
+                    validateAutomationInventoryEntry([
+                        'name' => $name,
+                        'mgmt_ip' => $mgmtIp,
+                        'profile' => $profile,
+                        'credential_mode' => $credentialMode,
+                        'ssh_auth_method' => $switchAuthMethod,
+                        'device_id' => $deviceId,
+                        'item_group_id' => $itemGroupId,
+                        'ssh_username' => $switchUsername,
+                        'ssh_password' => $switchPassword,
+                        'ssh_private_key' => $switchPrivateKey
+                    ], $profileDefaults);
+                } catch (InvalidArgumentException $e) {
+                    $logger->log('automation inventory add failed: ' . $e->getMessage(), 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
                 $profileSnmpDefaults = is_array($profileDefaults[$profile]['snmp'] ?? null) ? $profileDefaults[$profile]['snmp'] : [];
 
                 if ($snmpMib === '') {
@@ -2860,6 +3045,24 @@
                 $snmpV3PrivProtocol = normalizeSnmpV3PrivProtocol($snmpV3PrivProtocol);
 
                 $profileDefaults = fetchAutomationProfilesFromFile();
+                try {
+                    validateAutomationInventoryEntry([
+                        'name' => $name,
+                        'mgmt_ip' => $mgmtIp,
+                        'profile' => $profile,
+                        'credential_mode' => $credentialMode,
+                        'ssh_auth_method' => $switchAuthMethod,
+                        'device_id' => $deviceId,
+                        'item_group_id' => $itemGroupId,
+                        'ssh_username' => $switchUsername,
+                        'ssh_password' => $switchPassword,
+                        'ssh_private_key' => $switchPrivateKey
+                    ], $profileDefaults);
+                } catch (InvalidArgumentException $e) {
+                    $logger->log('automation inventory update failed: ' . $e->getMessage(), 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
                 $profileSnmpDefaults = is_array($profileDefaults[$profile]['snmp'] ?? null) ? $profileDefaults[$profile]['snmp'] : [];
 
                 if ($snmpMib === '') {
@@ -2876,13 +3079,6 @@
                         $snmpV3PrivPassphrase = (string)($profileSnmpDefaults['v3_priv_passphrase'] ?? '');
                     }
                 }
-
-                if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $mgmtIp)) {
-                    $logger->log('automation inventory update failed: mgmt_ip contains invalid chars', 2, echoToWeb: true);
-                    redirectToScriptsTab(getScriptsTabFromRequest());
-                    die();
-                }
-
                 $automationStore = new AutomationStore();
                 $structured = loadAutomationStructuredSettings($automationStore);
                 $settings = $structured['settings'];
@@ -3354,15 +3550,6 @@
                     die();
                 }
 
-                    // Handle scheduler trigger
-                    if (isset($_GET['trigger_scheduler']) && $_GET['trigger_scheduler'] === '1') {
-                        $logger->log('Manual scheduler trigger initiated', 1);
-                        ob_end_clean();
-                        passthru('php ' . escapeshellarg(__DIR__ . '/scheduler.php'));
-                        echo "\nScheduler execution completed.\n";
-                        die();
-                    }
-
                 if (!$auth->csrf_check()) {
                     $logger->log('csrf token invalid for automation settings', 2, echoToWeb: true);
                     redirectToScriptsTab(getScriptsTabFromRequest());
@@ -3372,6 +3559,8 @@
                 $automationStore = new AutomationStore();
 
                 try {
+                    $profileDefaults = fetchAutomationProfilesFromFile();
+                    $validatedInventoryJson = validateAutomationInventoryJson((string)($_POST['switch_inventory_json'] ?? '{"switches": []}'), $profileDefaults);
                     $automationStore->saveSettings([
                         'ssh_host' => $_POST['ssh_host'] ?? '',
                         'ssh_port' => $_POST['ssh_port'] ?? 22,
@@ -3380,7 +3569,7 @@
                         'ssh_password' => $_POST['ssh_password'] ?? '',
                         'ssh_private_key' => $_POST['ssh_private_key'] ?? '',
                         'scripts_json' => $_POST['scripts_json'] ?? '{}',
-                        'switch_inventory_json' => $_POST['switch_inventory_json'] ?? '{"switches": []}'
+                        'switch_inventory_json' => $validatedInventoryJson
                     ]);
                     $logger->log('automation settings updated', 1, echoToWeb: true);
                     logAutomationChange($db_adapter, 'UPDATE', 'settings_save', [
@@ -3389,7 +3578,43 @@
                 } catch (\Exception $e) {
                     $logger->log('automation settings update failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
+            case 'automation_run_scheduler':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
 
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for manual scheduler run', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $schedulerOutput = [];
+                $schedulerExitCode = 1;
+                exec('php ' . escapeshellarg(__DIR__ . '/scheduler.php') . ' 2>&1', $schedulerOutput, $schedulerExitCode);
+
+                $outputPreview = implode("\n", array_slice($schedulerOutput, 0, 5));
+                $logger->log(
+                    'manual scheduler run finished: exit=' . $schedulerExitCode
+                        . ' lines=' . count($schedulerOutput)
+                        . ($outputPreview !== '' ? ' preview=' . $outputPreview : ''),
+                    $schedulerExitCode === 0 ? 1 : 2
+                );
+                $logger->log(
+                    $schedulerExitCode === 0
+                        ? 'Scheduler wurde manuell ausgefuehrt.'
+                        : 'Scheduler-Ausfuehrung fehlgeschlagen. Details stehen im Portflow-Log.',
+                    $schedulerExitCode === 0 ? 1 : 2,
+                    echoToWeb: true
+                );
+                logAutomationChange($db_adapter, 'UPDATE', 'manual_scheduler_run', [
+                    'exit_code' => $schedulerExitCode,
+                    'output_lines' => count($schedulerOutput)
+                ]);
                 redirectToScriptsTab(getScriptsTabFromRequest());
                 break;
             case 'automation_test_ssh':
@@ -4472,13 +4697,12 @@ switch ($site) {
             if ($roleCompare !== 0) {
                 return $roleCompare;
             }
+
             return strcmp((string)($a['resource'] ?? ''), (string)($b['resource'] ?? ''));
         });
 
-        if (!empty($results)) {
-            echo "<div class='text-xl font-bold pb-2'>Access Rights</div>";
-            echo "<p class='text-sm text-gray-600 pb-4'>Rechte direkt per Klick setzen: Read (4), Write (2), Execute (1).</p>";
-            echo "<div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+        if ($results) {
+            echo "<div class='text-xl font-bold pb-4'>Access Rights</div><div class='settings-table-wrap max-h-[32rem] overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
             echo "<th class='p-2'>Role</th>";
             echo "<th class='p-2'>Resource</th>";
@@ -4574,13 +4798,6 @@ HTML;
                     ajaxGet('?get=details&uuid=' + uuid, function(response) {
                         let formatted = JSON.stringify(response, null, 2);
                         document.getElementById('detailsContent').innerHTML = '<pre>' + formatted + '</pre>';
-                    });
-                
-                    document.getElementById('detailsPopup').classList.remove('hidden');
-                    document.getElementById('detailsContent').innerHTML = 'Details for ' + uuid;
-                }
-                function closeDetailsPopup() {
-                    document.getElementById('detailsPopup').classList.add('hidden');
                 }
                 function openEditPopup(uuid) {
                     ajaxGet('?get=details&uuid=' + uuid, function(response) {
@@ -5377,6 +5594,7 @@ HTML;
                 </details>
 
                 <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
+                    <button class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" formaction="?set=automation_run_scheduler">Scheduler jetzt ausfuehren</button>
                     <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
                 </div>
             </form>

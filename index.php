@@ -19,6 +19,10 @@
     $action = '?signup';
     $instead = '<a class="text-gray-500 underline" href="./">login instead</a>';
     $button = 'Sign Up';
+  } elseif (isset($_GET['reset_password'], $_GET['token'], $_GET['email'])) {
+    $action = '?reset_password=1&token=' . urlencode((string)$_GET['token']) . '&email=' . urlencode((string)$_GET['email']);
+    $instead = '<a class="text-gray-500 underline" href="./">login instead</a>';
+    $button = 'Set New Password';
   } elseif (isset($_GET['forgot_password'])) {
     $action = '?forgot_password';
     $instead = '<a class="text-gray-500 underline" href="./">login instead</a>';
@@ -29,9 +33,12 @@
     $button = 'Sign In';
   }
 
-  if (isset($_GET['code']) && isset($_GET['email'])){
+  if (isset($_GET['code']) && isset($_GET['email']) && !isset($_GET['reset_password'])){
     $auth->verify($_GET['code'], $_GET['email']);
   }
+
+  $isResetPasswordFlow = isset($_GET['reset_password'], $_GET['token'], $_GET['email']);
+  $isResetLinkValid = $isResetPasswordFlow ? $auth->isPasswordResetLinkValid((string)$_GET['token'], (string)$_GET['email']) : false;
 
   if (PORTFLOW_REGISTER === TRUE || PORTFLOW_FIRST_RUN === TRUE) {
     $signup = TRUE;
@@ -44,6 +51,8 @@
       $auth->signup();
     } elseif (isset($_GET['signin'])) {
       $auth->signin();
+    } elseif ($isResetPasswordFlow) {
+      $auth->reset_password((string)$_GET['token'], (string)$_GET['email']);
     } elseif (isset($_GET['forgot_password'])) {
       $auth->forgot_password();
     } else {
@@ -86,16 +95,40 @@
               <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254">
             </div>
           HTML;
+        } elseif (isset($_GET['forgot_password'])) {
+          echo <<<HTML
+            <div class="pb-6">
+              <label class="block mb-2" for="email">
+                E-Mail
+              </label>
+              <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254" required>
+            </div>
+          HTML;
         }
       ?>
-      <div class="pb-6">
-        <label class="block mb-2" for="username">
-          Username
-        </label>
-        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="username" name="username" min="2" max="255">
-      </div>
+      <?php if (!$isResetPasswordFlow) { ?>
+        <div class="pb-6">
+          <label class="block mb-2" for="username">
+            Username
+          </label>
+          <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="username" name="username" min="2" max="255" <?php echo isset($_GET['forgot_password']) ? 'required' : ''; ?>>
+        </div>
+      <?php } ?>
       <?php
-        if (!isset($_GET['forgot_password'])) {
+        if ($isResetPasswordFlow) {
+          $disabledAttr = $isResetLinkValid ? '' : ' disabled';
+          echo '<div class="pb-6">';
+          echo '<label class="block mb-2" for="password">New Password</label>';
+          echo '<input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="new password" name="password" min="8" max="128" required' . $disabledAttr . '>';
+          echo '</div>';
+          echo '<div class="pb-6">';
+          echo '<label class="block mb-2" for="password_confirm">Repeat Password</label>';
+          echo '<input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password_confirm" type="password" placeholder="repeat password" name="password_confirm" min="8" max="128" required' . $disabledAttr . '>';
+          echo '</div>';
+          if (!$isResetLinkValid) {
+            echo '<div class="pb-6 text-red-600">This password reset link is invalid or expired.</div>';
+          }
+        } elseif (!isset($_GET['forgot_password'])) {
           echo <<<HTML
             <div class="pb-6">
               <label class="block mb-2" for="password">
@@ -109,7 +142,7 @@
       ?>
       <div class="pt-6 flex justify-between items-center">
         <input type="hidden" name="csrf" value="<?php echo $auth->csrf(); ?>">
-        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="<?php echo $button; ?>">
+        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="<?php echo $button; ?>" <?php echo ($isResetPasswordFlow && !$isResetLinkValid) ? 'disabled' : ''; ?>>
         <?php if ($signup === TRUE) { echo $instead; } ?>
       </div>
     </form>

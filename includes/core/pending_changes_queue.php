@@ -326,6 +326,24 @@ function runAutomationSshCommandsFromQueue(
     $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
     $keyFile = null;
 
+    $knownHostsDir = dirname(__DIR__, 2) . '/data/automation';
+    if (!is_dir($knownHostsDir) && !mkdir($knownHostsDir, 0700, true) && !is_dir($knownHostsDir)) {
+        return [
+            'ok' => false,
+            'output' => 'Queue-Ausfuehrung fehlgeschlagen: Known-Hosts-Verzeichnis konnte nicht angelegt werden.'
+        ];
+    }
+
+    $knownHostsFile = $knownHostsDir . '/known_hosts';
+    if (!file_exists($knownHostsFile) && @touch($knownHostsFile) === false) {
+        return [
+            'ok' => false,
+            'output' => 'Queue-Ausfuehrung fehlgeschlagen: Known-Hosts-Datei konnte nicht angelegt werden.'
+        ];
+    }
+
+    @chmod($knownHostsFile, 0600);
+
     $commandFile = tempnam(sys_get_temp_dir(), 'portflow-queue-');
     if ($commandFile === false) {
         return [
@@ -347,7 +365,7 @@ function runAutomationSshCommandsFromQueue(
 
     file_put_contents($commandFile, implode("\n", $commandLines) . "\n");
 
-    $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8';
+    $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=' . escapeshellarg($knownHostsFile) . ' -o ConnectTimeout=8';
     if ($authMethod === 'password' && $password !== '') {
         $sshOptions .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
     } else {
@@ -392,7 +410,8 @@ function runAutomationSshCommandsFromQueue(
             ];
         }
 
-        $sshCommand = $sshpassPath . ' -p ' . escapeshellarg($password) . ' ' . $sshCommand;
+        putenv('SSHPASS=' . $password);
+        $sshCommand = $sshpassPath . ' -e ' . $sshCommand;
     }
 
     $fullCommand = $sshCommand;
@@ -404,6 +423,9 @@ function runAutomationSshCommandsFromQueue(
     $exitCode = 1;
     $startedAt = microtime(true);
     exec($fullCommand . ' 2>&1', $lines, $exitCode);
+    if ($authMethod === 'password' && $password !== '') {
+        putenv('SSHPASS');
+    }
     $durationSec = microtime(true) - $startedAt;
     @unlink($commandFile);
     if ($keyFile !== null) {
@@ -417,7 +439,7 @@ function runAutomationSshCommandsFromQueue(
     }
 
     $maskedCommand = ($authMethod === 'password' && $password !== '')
-        ? 'sshpass -p ******** ssh ...'
+        ? 'sshpass -e ssh ...'
         : trim((string)$fullCommand);
 
     $reportedCommands = buildQueueCommandStatusLines($commands, $lines, $exitCode);

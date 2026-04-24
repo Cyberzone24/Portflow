@@ -20,11 +20,15 @@ use Portflow\Core\Auth;
 
 $db_adapter = new DatabaseAdapter();
 $auth = new Auth();
+$canAutomationWrite = !empty($_SESSION['uuid'])
+    && $auth->checkResourceAccess($_SESSION['uuid'], 'automation', 'write');
 
 // --- POST: enqueue corrective change -----------------------------------
 $enqueueResult = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'corrective_enqueue') {
-    if (!$auth->csrf_check()) {
+    if (!$canAutomationWrite) {
+        $enqueueResult = ['ok' => false, 'message' => 'Keine Berechtigung fuer Automation-Queue-Aktionen.'];
+    } elseif (!$auth->csrf_check()) {
         $enqueueResult = ['ok' => false, 'message' => 'CSRF token invalid'];
     } else {
         $switchName = trim((string)($_POST['switch_name'] ?? ''));
@@ -395,7 +399,7 @@ if ($tab === 'topology') {
                             <?php endforeach; ?>
                         </td>
                         <td class="p-2 text-right">
-                            <?php if (in_array('oper-down', $flags, true) && !empty($row['if_name']) && !empty($row['last_run_switch'])): ?>
+                            <?php if ($canAutomationWrite && in_array('oper-down', $flags, true) && !empty($row['if_name']) && !empty($row['last_run_switch'])): ?>
                                 <form method="post" action="reports.php?tab=drift" class="inline">
                                     <input type="hidden" name="csrf" value="<?php echo rep_h($auth->csrf()); ?>">
                                     <input type="hidden" name="action" value="corrective_enqueue">

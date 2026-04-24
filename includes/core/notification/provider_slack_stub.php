@@ -10,6 +10,32 @@ class SlackStubProvider implements ProviderInterface {
         return 'slack';
     }
 
+    private function isValidWebhookUrl(string $webhook): bool {
+        $parts = parse_url(trim($webhook));
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower((string)($parts['host'] ?? ''));
+        $path = (string)($parts['path'] ?? '');
+
+        if ($scheme !== 'https') {
+            return false;
+        }
+        if (!in_array($host, ['hooks.slack.com', 'hooks.slack-gov.com'], true)) {
+            return false;
+        }
+        if (!preg_match('#^/services/[A-Za-z0-9/_-]+$#', $path)) {
+            return false;
+        }
+        if (isset($parts['user'], $parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function send(array $entry): array {
         if (!defined('NOTIFICATION_SLACK_ENABLED') || NOTIFICATION_SLACK_ENABLED !== true) {
             return ['ok' => false, 'error' => 'slack channel disabled'];
@@ -21,6 +47,9 @@ class SlackStubProvider implements ProviderInterface {
         $webhook = $recipientWebhook !== '' ? $recipientWebhook : $globalWebhook;
         if ($webhook === '') {
             return ['ok' => false, 'error' => 'slack webhook missing'];
+        }
+        if (!$this->isValidWebhookUrl($webhook)) {
+            return ['ok' => false, 'error' => 'slack webhook invalid'];
         }
 
         $title = trim((string)($entry['title'] ?? 'Benachrichtigung'));

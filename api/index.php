@@ -1,8 +1,8 @@
 <?php
 namespace Portflow\Core;
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
 error_reporting(E_ALL);
 
 // define APP_NAME (----------- Why tf is const not working??? -----------)
@@ -43,7 +43,11 @@ class API {
 
     private function initializeHeaders() {
         header("Content-Type: application/json");
-        header("Access-Control-Allow-Origin: *");
+        $allowedOrigin = $this->resolveAllowedOrigin();
+        if ($allowedOrigin !== null) {
+            header("Access-Control-Allow-Origin: " . $allowedOrigin);
+            header("Vary: Origin");
+        }
         header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE");
         header("Access-Control-Allow-Headers: Content-Type, Authorization");
     }
@@ -62,6 +66,136 @@ class API {
             'application/vnd.github.v3.patch'
         ];
         $this->allowedAcceptTypes = $this->allowedContentTypes;
+    }
+
+    private function resolveAllowedOrigin(): ?string
+    {
+        $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+        if ($origin === '') {
+            return null;
+        }
+
+        $configured = trim((string)(defined('PORTFLOW_HOSTNAME') ? PORTFLOW_HOSTNAME : ''));
+        if ($configured === '') {
+            return null;
+        }
+
+        $configuredParts = parse_url($configured);
+        $originParts = parse_url($origin);
+        if (!is_array($configuredParts) || !is_array($originParts)) {
+            return null;
+        }
+
+        $configuredScheme = strtolower((string)($configuredParts['scheme'] ?? ''));
+        $configuredHost = strtolower((string)($configuredParts['host'] ?? ''));
+        $configuredPort = (int)($configuredParts['port'] ?? ($configuredScheme === 'https' ? 443 : 80));
+
+        $originScheme = strtolower((string)($originParts['scheme'] ?? ''));
+        $originHost = strtolower((string)($originParts['host'] ?? ''));
+        $originPort = (int)($originParts['port'] ?? ($originScheme === 'https' ? 443 : 80));
+
+        if ($configuredScheme === $originScheme && $configuredHost === $originHost && $configuredPort === $originPort) {
+            return $origin;
+        }
+
+        return null;
+    }
+
+    private function respondServerError(\Throwable $exception, string $context): void
+    {
+        $this->logger->log($context . ': ' . $exception->getMessage(), 3);
+        http_response_code(500);
+        echo json_encode(['error' => 'Internal Server Error']);
+    }
+
+    private function quoteIdentifier(string $identifier): string
+    {
+        return '"' . str_replace('"', '""', $identifier) . '"';
+    }
+
+    private function getResourceColumns(string $resource): array
+    {
+        $rows = $this->dbAdapter->db_query(
+            'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name ORDER BY ordinal_position',
+            ['table_name' => $resource]
+        );
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    private function normalizeScalarFilterValue(mixed $value, string $dataType): mixed
+    {
+        if (is_array($value) || is_object($value)) {
+            throw new \InvalidArgumentException('Invalid filter value type.');
+        }
+
+        if ($dataType === 'boolean') {
+            $normalized = strtolower(trim((string)$value));
+            if (in_array($normalized, ['1', 'true', 't', 'yes', 'y'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'f', 'no', 'n'], true)) {
+                return false;
+            }
+            throw new \InvalidArgumentException('Invalid boolean filter value.');
+        }
+
+        if (in_array($dataType, ['smallint', 'integer', 'bigint'], true)) {
+            if (!is_numeric($value) || (string)(int)$value !== (string)$value && (string)(int)$value !== trim((string)$value)) {
+                throw new \InvalidArgumentException('Invalid integer filter value.');
+            }
+            return (int)$value;
+        }
+
+        if (in_array($dataType, ['real', 'double precision', 'numeric', 'float'], true)) {
+            if (!is_numeric($value)) {
+                throw new \InvalidArgumentException('Invalid numeric filter value.');
+            }
+            return (string)(0 + $value);
+        }
+
+        return (string)$value;
+    }
+
+    private function filterWritablePayload(string $resource, array $data): array
+    {
+        $columns = $this->getResourceColumns($resource);
+        $allowedKeys = array_flip(array_map(static function(array $column): string {
+            return (string)($column['column_name'] ?? '');
+        }, $columns));
+
+        $filtered = [];
+        foreach ($data as $key => $value) {
+            if (!is_string($key) || $key === '' || !isset($allowedKeys[$key])) {
+                throw new \InvalidArgumentException('Invalid column in payload: ' . (string)$key);
+            }
+            $filtered[$key] = $value;
+        }
+
+        if (empty($filtered)) {
+            throw new \InvalidArgumentException('No valid columns provided.');
+        }
+
+        return $filtered;
+    }
+
+    private function validateBaseTableForWrite(string $resource): void
+    {
+        $dbTables = json_decode(file_get_contents(__DIR__ . '/../includes/core/db_tables.json'), true);
+        $blacklist = ['access', 'api', 'users'];
+
+        if (!preg_match('/^[a-z_]+$/', $resource) || !is_array($dbTables) || !isset($dbTables[$resource]) || in_array($resource, $blacklist, true)) {
+            throw new \InvalidArgumentException('Invalid resource.');
+        }
+    }
+
+    private function assertReferenceExists(string $resource, string $uuid): void
+    {
+        $query = 'SELECT uuid FROM ' . $this->quoteIdentifier($resource) . ' WHERE uuid = :uuid LIMIT 1';
+        $rows = $this->dbAdapter->db_query($query, ['uuid' => $uuid]);
+        if (!is_array($rows) || empty($rows[0]['uuid'])) {
+            throw new \RuntimeException('Referenced object not found.');
+        }
     }
 
     private function extractBasicAuthCredentials(): array
@@ -371,27 +505,31 @@ class API {
             $data['users'] = $_SESSION['uuid'];
         }
         try {
-            $query = "INSERT INTO $resource (" . implode(', ', array_keys($data)) . ") VALUES (:" . implode(', :', array_keys($data)) . ") RETURNING *";
+            $this->validateBaseTableForWrite((string)$resource);
+            $data = $this->filterWritablePayload((string)$resource, (array)$data);
+            $quotedColumns = array_map(fn($key) => $this->quoteIdentifier((string)$key), array_keys($data));
+            $query = 'INSERT INTO ' . $this->quoteIdentifier((string)$resource)
+                . ' (' . implode(', ', $quotedColumns) . ') VALUES (:' . implode(', :', array_keys($data)) . ') RETURNING *';
             $results = $this->dbAdapter->db_query($query, $data);
             http_response_code(200);
             echo json_encode($results);
+        } catch (\InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Bad Request', 'message' => $e->getMessage()]);
         } catch (\Exception $e) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+            $this->respondServerError($e, 'API POST failed');
         }
     }
 
     private function get($resource, $data = NULL) {
         try {
             // Explicit ?limit= in the query string wins over the per-user cookie default.
-            $limit = $data['limit'] ?? $_COOKIE['table_limit'] ?? 100;
-            $page = $data['page'] ?? 1;
+            $limit = max(1, min(500, (int)($data['limit'] ?? $_COOKIE['table_limit'] ?? 100)));
+            $page = max(1, (int)($data['page'] ?? 1));
             $offset = ($page - 1) * $limit;
 
             // Resolve available columns for the target table/view and ignore unknown filter keys.
-            $columns = $this->dbAdapter->db_query(
-                "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '$resource'"
-            );
+            $columns = $this->getResourceColumns((string)$resource);
             $validColumns = array_map(static function($column) {
                 return $column['column_name'];
             }, $columns);
@@ -405,6 +543,8 @@ class API {
 
             // Initialisiere Bedingungsliste
             $conditions = [];
+            $params = [];
+            $paramIndex = 0;
 
             // Überprüfe auf Suchparameter
             if (isset($data['search']) && !empty($data['search'])) {
@@ -414,13 +554,18 @@ class API {
                 // Bedingung für die Suchabfrage erstellen
                 $searchConditions = [];
                 foreach ($textColumns as $column) {
+                    $paramKey = 'search_' . $paramIndex++;
+                    $params[$paramKey] = '%' . (string)$data['search'] . '%';
+                    $columnSql = $this->quoteIdentifier((string)$column['column_name']);
                     if ($column['data_type'] === 'inet') {
-                        $searchConditions[] = "{$column['column_name']}::text ILIKE '%{$data['search']}%'";
+                        $searchConditions[] = $columnSql . '::text ILIKE :' . $paramKey;
                     } else {
-                        $searchConditions[] = "{$column['column_name']} ILIKE '%{$data['search']}%'";
+                        $searchConditions[] = $columnSql . ' ILIKE :' . $paramKey;
                     }
                 }
-                $conditions[] = '(' . implode(' OR ', $searchConditions) . ')';
+                if (!empty($searchConditions)) {
+                    $conditions[] = '(' . implode(' OR ', $searchConditions) . ')';
+                }
             }
 
             // Überprüfe auf zusätzliche WHERE-Parameter
@@ -445,35 +590,26 @@ class API {
                         $isNumericType = in_array($dataType, ['smallint', 'integer', 'bigint', 'real', 'double precision', 'numeric'], true);
                         $isBooleanType = $dataType === 'boolean';
 
-                        $encodedValues = [];
+                        $inPlaceholders = [];
                         foreach ($rawValues as $rawValue) {
-                            if ($isNumericType) {
-                                if (!is_numeric($rawValue)) {
-                                    continue;
-                                }
-                                $encodedValues[] = (string)(0 + $rawValue);
+                            if ($isNumericType && !is_numeric($rawValue)) {
                                 continue;
                             }
 
-                            if ($isBooleanType) {
-                                $normalized = strtolower($rawValue);
-                                if (in_array($normalized, ['1', 'true', 't', 'yes', 'y'], true)) {
-                                    $encodedValues[] = 'TRUE';
-                                } elseif (in_array($normalized, ['0', 'false', 'f', 'no', 'n'], true)) {
-                                    $encodedValues[] = 'FALSE';
-                                }
+                            if ($isBooleanType && !in_array(strtolower($rawValue), ['1', 'true', 't', 'yes', 'y', '0', 'false', 'f', 'no', 'n'], true)) {
                                 continue;
                             }
 
-                            $escaped = str_replace("'", "''", $rawValue);
-                            $encodedValues[] = "'{$escaped}'";
+                            $paramKey = 'in_' . $paramIndex++;
+                            $params[$paramKey] = $this->normalizeScalarFilterValue($rawValue, $dataType);
+                            $inPlaceholders[] = ':' . $paramKey;
                         }
 
-                        if (empty($encodedValues)) {
+                        if (empty($inPlaceholders)) {
                             continue;
                         }
 
-                        $conditions[] = "$column IN (" . implode(', ', $encodedValues) . ")";
+                        $conditions[] = $this->quoteIdentifier($column) . ' IN (' . implode(', ', $inPlaceholders) . ')';
                         continue;
                     }
 
@@ -484,13 +620,17 @@ class API {
                             continue;
                         }
                         $operator = ($matches[2] === 'Min') ? '>' : '<';
-                        $conditions[] = "$column $operator '{$value}'";
+                        $paramKey = 'cmp_' . $paramIndex++;
+                        $params[$paramKey] = $this->normalizeScalarFilterValue($value, $columnTypeMap[$column] ?? 'text');
+                        $conditions[] = $this->quoteIdentifier($column) . ' ' . $operator . ' :' . $paramKey;
                     } else {
                         if (!isset($validColumnSet[$key])) {
                             continue;
                         }
                         // Standardgleichheitsbedingung
-                        $conditions[] = "$key = '{$value}'";
+                        $paramKey = 'eq_' . $paramIndex++;
+                        $params[$paramKey] = $this->normalizeScalarFilterValue($value, $columnTypeMap[$key] ?? 'text');
+                        $conditions[] = $this->quoteIdentifier($key) . ' = :' . $paramKey;
                     }
                 }
             }
@@ -507,15 +647,20 @@ class API {
                 $sortCol = $data['sort'];
                 $dirRaw = strtolower((string)($data['dir'] ?? 'asc'));
                 $sortDir = ($dirRaw === 'desc') ? 'DESC' : 'ASC';
-                $orderClause = "ORDER BY \"$sortCol\" $sortDir NULLS LAST";
+                $orderClause = 'ORDER BY ' . $this->quoteIdentifier((string)$sortCol) . ' ' . $sortDir . ' NULLS LAST';
             }
 
             // Erstelle die Abfragen
-            $query = "SELECT * FROM $resource $whereClause $orderClause LIMIT $limit OFFSET $offset";
-            $queryTotal = "SELECT COUNT(*) FROM $resource $whereClause";
+            $resourceSql = $this->quoteIdentifier((string)$resource);
+            $query = 'SELECT * FROM ' . $resourceSql . ' ' . $whereClause . ' ' . $orderClause . ' LIMIT :limit OFFSET :offset';
+            $queryTotal = 'SELECT COUNT(*) AS count FROM ' . $resourceSql . ' ' . $whereClause;
 
-            $results = $this->dbAdapter->db_query($query);
-            $totalResults = $this->dbAdapter->db_query($queryTotal);
+            $queryParams = $params;
+            $queryParams['limit'] = $limit;
+            $queryParams['offset'] = $offset;
+
+            $results = $this->dbAdapter->db_query($query, $queryParams);
+            $totalResults = $this->dbAdapter->db_query($queryTotal, $params);
 
             $response = [
                 'pageInfo' => [
@@ -528,41 +673,51 @@ class API {
 
             http_response_code(200);
             echo json_encode($response);
+        } catch (\InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Bad Request', 'message' => $e->getMessage()]);
         } catch (\Exception $e) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+            $this->respondServerError($e, 'API GET failed');
         }
     }    
 
     private function put($resource, $uuid, $data) {
         try {
-            $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
-                return $key . ' = :' . $key;
-            }, array_keys($data))) . " WHERE uuid = :uuid RETURNING *";
+            $this->validateBaseTableForWrite((string)$resource);
+            $data = $this->filterWritablePayload((string)$resource, (array)$data);
+            $query = 'UPDATE ' . $this->quoteIdentifier((string)$resource) . ' SET ' . implode(', ', array_map(function($key) {
+                return $this->quoteIdentifier((string)$key) . ' = :' . $key;
+            }, array_keys($data))) . ' WHERE uuid = :uuid RETURNING *';
             $params = $data;
             $params['uuid'] = $uuid;
             $results = $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
+        } catch (\InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Bad Request', 'message' => $e->getMessage()]);
         } catch (\Exception $e) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+            $this->respondServerError($e, 'API PUT failed');
         }
     }
 
     private function patch($resource, $uuid, $data) {
         try {
-            $query = "UPDATE $resource SET " . implode(', ', array_map(function($key) {
-                return $key . ' = :' . $key;
-            }, array_keys($data))) . " WHERE uuid = :uuid RETURNING *";
+            $this->validateBaseTableForWrite((string)$resource);
+            $data = $this->filterWritablePayload((string)$resource, (array)$data);
+            $query = 'UPDATE ' . $this->quoteIdentifier((string)$resource) . ' SET ' . implode(', ', array_map(function($key) {
+                return $this->quoteIdentifier((string)$key) . ' = :' . $key;
+            }, array_keys($data))) . ' WHERE uuid = :uuid RETURNING *';
             $params = $data;
             $params['uuid'] = $uuid;
             $results = $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($results);
+        } catch (\InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Bad Request', 'message' => $e->getMessage()]);
         } catch (\Exception $e) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+            $this->respondServerError($e, 'API PATCH failed');
         }
     }
 
@@ -625,21 +780,24 @@ class API {
     private function delete($resource, $uuid) {
         try {
             // First fetch the record before deletion
-            $fetchQuery = "SELECT * FROM $resource WHERE uuid = :uuid";
+            $this->validateBaseTableForWrite((string)$resource);
+            $fetchQuery = 'SELECT * FROM ' . $this->quoteIdentifier((string)$resource) . ' WHERE uuid = :uuid';
             $fetchResults = $this->dbAdapter->db_query($fetchQuery, ['uuid' => $uuid]);
             
             $this->cleanupConnectionsForDevicePorts(
                 $this->collectImpactedDevicePortUuids((string)$resource, (string)$uuid)
             );
 
-            $query = "DELETE FROM $resource WHERE uuid = :uuid";
+            $query = 'DELETE FROM ' . $this->quoteIdentifier((string)$resource) . ' WHERE uuid = :uuid';
             $params['uuid'] = $uuid;
             $this->dbAdapter->db_query($query, $params);
             http_response_code(200);
             echo json_encode($fetchResults);
+        } catch (\InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Bad Request', 'message' => $e->getMessage()]);
         } catch (\Exception $e) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Internal Server Error', 'details' => $e->getMessage()]);
+            $this->respondServerError($e, 'API DELETE failed');
         }
     }
 
@@ -652,9 +810,11 @@ class API {
         }
 
         $file = $_FILES['file'];
-        $reference_table = $_POST['reference_table'] ?? '';
+        $reference_table = trim((string)($_POST['reference_table'] ?? ''));
         $reference_uuid = $_POST['reference_uuid'] ?? '';
         $description = $_POST['description'] ?? '';
+
+        $this->requireAuthenticatedSession('Portflow Upload');
 
         // Validate inputs
         if (!$reference_table || !$reference_uuid) {
@@ -670,10 +830,24 @@ class API {
             return;
         }
 
-        // Sanitize table name
-        if (!preg_match('/^[a-z0-9_]+$/i', $reference_table)) {
+        try {
+            $this->validateBaseTableForWrite($reference_table);
+            if (!$this->checkAccessRights($reference_table)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+                return;
+            }
+            $this->assertReferenceExists($reference_table, (string)$reference_uuid);
+        } catch (\InvalidArgumentException $e) {
             http_response_code(400);
-            echo json_encode(['error' => 'Invalid table name']);
+            echo json_encode(['error' => 'Bad Request', 'message' => $e->getMessage()]);
+            return;
+        } catch (\RuntimeException $e) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Not Found']);
+            return;
+        } catch (\Throwable $e) {
+            $this->respondServerError($e, 'Upload authorization failed');
             return;
         }
 
@@ -711,7 +885,16 @@ class API {
 
         // Generate safe filename
         $original_name = basename($file['name']);
-        $ext = pathinfo($original_name, PATHINFO_EXTENSION);
+        $mimeExtensions = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
+            'text/plain' => 'txt',
+            'text/csv' => 'csv'
+        ];
+        $ext = $mimeExtensions[$file_type] ?? strtolower((string)pathinfo($original_name, PATHINFO_EXTENSION));
         $safe_filename = bin2hex(random_bytes(16)) . '.' . $ext;
         $target_path = $ref_dir . '/' . $safe_filename;
 

@@ -4,6 +4,9 @@
     if (isset($_GET['signout'])) {
         // destroy session
         if (session_status() == PHP_SESSION_NONE) {
+            if (function_exists('portflow_apply_session_cookie_settings')) {
+                portflow_apply_session_cookie_settings();
+            }
             session_start();
         }
         $_SESSION['loggedin'] = FALSE;

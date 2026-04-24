@@ -7,6 +7,30 @@ error_reporting(E_ALL);
 // Set application name
 const APP_NAME = 'Portflow';
 
+$rootEnvPath = __DIR__ . '/.env';
+if (file_exists($rootEnvPath)) {
+    include_once __DIR__ . '/includes/core/config.php';
+}
+
+if (session_status() === PHP_SESSION_NONE) {
+    $cookieParams = session_get_cookie_params();
+    session_set_cookie_params([
+        'lifetime' => $cookieParams['lifetime'],
+        'path' => $cookieParams['path'],
+        'domain' => $cookieParams['domain'],
+        'secure' => defined('PORTFLOW_SECURE') ? PORTFLOW_SECURE : false,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
+    session_start();
+}
+
+if (defined('PORTFLOW_FIRST_RUN') && PORTFLOW_FIRST_RUN === false) {
+    http_response_code(403);
+    echo 'Setup disabled.';
+    exit;
+}
+
 // Import Logger class
 include_once __DIR__ . '/includes/core/logger.php';
 use Portflow\Core\Logger;
@@ -161,7 +185,14 @@ function displayForm($step) {
             }
             echo '</td></tr>';
 
-            $currentDirOwner = posix_getpwuid(fileowner(getcwd()))['name'];
+            $currentDirOwner = 'unknown';
+            $ownerId = @fileowner(getcwd());
+            if ($ownerId !== false && function_exists('posix_getpwuid')) {
+                $ownerInfo = posix_getpwuid($ownerId);
+                if (is_array($ownerInfo) && isset($ownerInfo['name'])) {
+                    $currentDirOwner = (string)$ownerInfo['name'];
+                }
+            }
             echo '<tr><td class="p-4 border border-slate-500">Current Directory Owner</td><td class="p-4 border border-slate-500">';
             if ($currentDirOwner == 'www-data') {
                 echo 'www-data';
@@ -394,7 +425,7 @@ function displayForm($step) {
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_bind_password'>LDAP Bind Password</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_bind_password' name='ldap_bind_password' placeholder='password'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='ldap_bind_password' name='ldap_bind_password' placeholder='password'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_trust'>LDAP Trust</label>
@@ -422,7 +453,7 @@ function displayForm($step) {
                 <div class='pb-6'>
                     <label class='block mb-2' for='automation_secret'>Automation Secret</label>
                     <p class='text-lg'>Please set a long random value as automation secret. This secret is used to authenticate API requests from the automation module.</p>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='automation_secret' name='automation_secret' placeholder='change-this-to-a-long-random-value' required>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='automation_secret' name='automation_secret' placeholder='change-this-to-a-long-random-value' required>
                 </div>
                 <input type='hidden' name='step' value='5'>
                 <div class='pt-6 flex justify-between items-center'>
@@ -494,15 +525,24 @@ if (isset($_SESSION['step'])) {
     } elseif ($step === 4) {
         // Server time
         if (isset($_POST['server_time'])) {
-            $server_time = filter_var($_POST['server_time'], FILTER_SANITIZE_SPECIAL_CHARS);
-            $output = [];
-            $return_var = 0;
-            exec("date -s '$server_time'", $output, $return_var);
-            if ($return_var !== 0) {
-                $logger->log('Failed to set server time: ' . implode("\n", $output), 3);
-                echo "<p class='error'>Failed to set server time. Please check the logs.</p>";
+            $serverTimeRaw = trim((string)$_POST['server_time']);
+            $serverTime = \DateTimeImmutable::createFromFormat('Y-m-d\\TH:i', $serverTimeRaw);
+            $serverTimeErrors = \DateTimeImmutable::getLastErrors();
+
+            if (!$serverTime || (($serverTimeErrors['warning_count'] ?? 0) > 0) || (($serverTimeErrors['error_count'] ?? 0) > 0)) {
+                $logger->log('Failed to set server time: invalid format', 3);
+                echo "<p class='error'>Failed to set server time. Invalid format.</p>";
             } else {
-                $logger->log('Server time set to ' . $server_time, 1);
+                $server_time = $serverTime->format('Y-m-d H:i:s');
+                $output = [];
+                $return_var = 0;
+                exec('date -s ' . escapeshellarg($server_time), $output, $return_var);
+                if ($return_var !== 0) {
+                    $logger->log('Failed to set server time: ' . implode("\n", $output), 3);
+                    echo "<p class='error'>Failed to set server time. Please check the logs.</p>";
+                } else {
+                    $logger->log('Server time set to ' . $server_time, 1);
+                }
             }
         }
     } elseif ($step === 5) {

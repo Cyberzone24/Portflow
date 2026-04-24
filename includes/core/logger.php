@@ -41,9 +41,23 @@ class Logger {
         $this->logLevel = defined('LOG_LEVEL') ? LOG_LEVEL : $logLevel;
     }
 
+    private function sanitizeMessage($msg): string {
+        $message = (string)$msg;
+        $message = str_replace(["\r", "\n", "\0"], ' ', $message);
+        $message = preg_replace('/\s+/', ' ', $message);
+        $message = trim((string)$message);
+
+        if ($message === '') {
+            return '[empty message]';
+        }
+
+        return mb_substr($message, 0, 2000);
+    }
+
     public function log($msg, $level = 1, $echoToWeb = false) {
         if ($this->logLevel <= $level) {
             $logDate = date('Y-m-d H:i:s');
+            $safeMessage = $this->sanitizeMessage($msg);
 
             if (!array_key_exists($level, $this->logLevels)) {
                 $level = 4;
@@ -60,9 +74,9 @@ class Logger {
                 $lineNumber = $caller['line'];
                 $fileName = basename($caller['file']);
 
-                $formattedMsg = "[$lvl] - [$logDate] - [$fileName - $functionName ($lineNumber)] | $msg";
+                $formattedMsg = "[$lvl] - [$logDate] - [$fileName - $functionName ($lineNumber)] | $safeMessage";
             } else {
-                $formattedMsg = "[$lvl] - [$logDate] | $msg";
+                $formattedMsg = "[$lvl] - [$logDate] | $safeMessage";
             }
 
             // Nachricht in die Konsole schreiben
@@ -72,7 +86,13 @@ class Logger {
             file_put_contents($this->logFile, "$formattedMsg\n", FILE_APPEND);
             if ($echoToWeb) {
                 $cookieName = 'alert_' . $level . '_' . time();
-                setcookie($cookieName, $msg, time() + 60, "/");
+                setcookie($cookieName, $safeMessage, [
+                    'expires' => time() + 60,
+                    'path' => '/',
+                    'secure' => defined('PORTFLOW_SECURE') ? PORTFLOW_SECURE : false,
+                    'httponly' => true,
+                    'samesite' => 'Strict'
+                ]);
             }
         }
     }

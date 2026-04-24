@@ -14,9 +14,29 @@ namespace Portflow\Core;
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+$origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+$configuredHost = trim((string)(defined('PORTFLOW_HOSTNAME') ? PORTFLOW_HOSTNAME : ''));
+if ($origin !== '' && $configuredHost !== '') {
+    $originParts = parse_url($origin);
+    $configuredParts = parse_url($configuredHost);
+    if (is_array($originParts) && is_array($configuredParts)) {
+        $originScheme = strtolower((string)($originParts['scheme'] ?? ''));
+        $originHost = strtolower((string)($originParts['host'] ?? ''));
+        $originPort = (int)($originParts['port'] ?? ($originScheme === 'https' ? 443 : 80));
+
+        $configuredScheme = strtolower((string)($configuredParts['scheme'] ?? ''));
+        $configuredHostName = strtolower((string)($configuredParts['host'] ?? ''));
+        $configuredPort = (int)($configuredParts['port'] ?? ($configuredScheme === 'https' ? 443 : 80));
+
+        if ($originScheme === $configuredScheme && $originHost === $configuredHostName && $originPort === $configuredPort) {
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Vary: Origin');
+        }
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);

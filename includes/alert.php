@@ -1,8 +1,12 @@
 <?php
+function portflowAlertEscape(string $value): string {
+    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
 // Check if alert cookie exists
 $alertCookieExists = false;
 foreach ($_COOKIE as $name => $value) {
-    if (strpos($name, 'alert') === 0) {
+    if (strpos($name, 'alert_') === 0) {
         $alertCookieExists = true;
         break;
     }
@@ -17,9 +21,10 @@ if ($alertCookieExists) {
 
     // Iterate through alert cookies
     foreach ($_COOKIE as $name => $value) {
-        if (strpos($name, 'alert') === 0) {
+        if (strpos($name, 'alert_') === 0) {
             $level = explode('_', $name)[1];
             $bgColor = '';
+            $escapedValue = portflowAlertEscape((string)$value);
 
             // Set background color based on alert level
             switch ($level) {
@@ -43,7 +48,7 @@ if ($alertCookieExists) {
             // Display alert div
             echo <<<HTML
             <div class='w-full my-2 rounded-3xl shadow-lg $bgColor bg-opacity-80 text-white text-center py-2 relative group' onclick='this.remove()'>
-                $value
+                $escapedValue
                 <span class='h-full flex items-center justify-center rounded-3xl $bgColor text-white text-center left-1/2 transform -translate-x-1/2 absolute top-0 py-2 group w-full opacity-0 group-hover:opacity-100 transition duration-200 ease-in-out'>
                     Click to remove
                 </span>
@@ -52,7 +57,13 @@ if ($alertCookieExists) {
 
             // Remove and delete the alert cookie
             unset($_COOKIE[$name]);
-            setcookie($name, '', time() - 3600, '/');
+            setcookie($name, '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'secure' => defined('PORTFLOW_SECURE') ? PORTFLOW_SECURE : false,
+                'httponly' => true,
+                'samesite' => 'Strict'
+            ]);
         }
     }
 

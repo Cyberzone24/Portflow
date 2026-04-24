@@ -48,12 +48,14 @@ class Auth {
     private $ldap_binduser_dn;
     private $activation_code;
     private $pendingWebAuthIssue;
+    private $password_confirm;
 
     public function __construct() {
         // define post variables
         $this->csrf = $_POST['csrf'] ?? NULL;
         $this->username = $_POST['username'] ?? NULL;
         $this->password = $_POST['password'] ?? NULL;
+        $this->password_confirm = $_POST['password_confirm'] ?? NULL;
         $this->email = $_POST['email'] ?? NULL;
         $this->role = $_POST['role'] ?? NULL;
 
@@ -71,6 +73,261 @@ class Auth {
             }
         } catch (\Throwable $e) {
             $this->logger->log('targeted notification enqueue failed: ' . $e->getMessage(), 0);
+        }
+    }
+
+    private function decodeSettings($settings): array {
+        if (is_array($settings)) {
+            return $settings;
+        }
+
+        if (!is_string($settings) || trim($settings) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($settings, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function encodeSettings(array $settings): string {
+        return json_encode($settings, JSON_UNESCAPED_SLASHES);
+    }
+
+    private function normalizeEnvValue(string $value): string {
+        $normalized = trim($value);
+        if ($normalized === '') {
+            return '';
+        }
+
+        return preg_replace('/[\r\n]+/', ' ', $normalized) ?? $normalized;
+    }
+
+    private function writeRootEnvValues(array $updates): array {
+        $envPath = dirname(__DIR__, 2) . '/.env';
+        if (!file_exists($envPath)) {
+            return ['ok' => false, 'message' => '.env wurde nicht gefunden.'];
+        }
+        if (!is_readable($envPath) || !is_writable($envPath)) {
+            return ['ok' => false, 'message' => '.env ist nicht lesbar oder nicht schreibbar.'];
+        }
+
+        $content = file_get_contents($envPath);
+        if (!is_string($content)) {
+            return ['ok' => false, 'message' => '.env konnte nicht gelesen werden.'];
+        }
+
+        $lines = preg_split('/\R/', $content);
+        if (!is_array($lines)) {
+            $lines = [];
+        }
+
+        $normalizedUpdates = [];
+        foreach ($updates as $key => $value) {
+            $normalizedKey = strtoupper(trim((string)$key));
+            if ($normalizedKey === '') {
+                continue;
+            }
+            $normalizedUpdates[$normalizedKey] = $this->normalizeEnvValue((string)$value);
+        }
+
+        if (empty($normalizedUpdates)) {
+            return ['ok' => false, 'message' => 'Keine gueltigen Einstellungen zum Speichern uebergeben.'];
+        }
+
+        $found = [];
+        foreach ($lines as $idx => $line) {
+            if (!is_string($line)) {
+                continue;
+            }
+            if (preg_match('/^\s*([A-Z0-9_]+)\s*=/', $line, $matches) === 1) {
+                $lineKey = strtoupper((string)$matches[1]);
+                if (array_key_exists($lineKey, $normalizedUpdates)) {
+                    $lines[$idx] = $lineKey . '=' . $normalizedUpdates[$lineKey];
+                    $found[$lineKey] = true;
+                }
+            }
+        }
+
+        foreach ($normalizedUpdates as $lineKey => $lineValue) {
+            if (!isset($found[$lineKey])) {
+                $lines[] = $lineKey . '=' . $lineValue;
+            }
+        }
+
+        $newContent = implode(PHP_EOL, $lines) . PHP_EOL;
+        $tempPath = $envPath . '.tmp';
+        $backupPath = $envPath . '.bak.' . date('YmdHis');
+
+        if (@copy($envPath, $backupPath) === false) {
+            return ['ok' => false, 'message' => '.env Backup konnte nicht erstellt werden.'];
+        }
+
+        if (file_put_contents($tempPath, $newContent, LOCK_EX) === false) {
+            return ['ok' => false, 'message' => 'Temporare .env Datei konnte nicht geschrieben werden.'];
+        }
+
+        if (!@rename($tempPath, $envPath)) {
+            @unlink($tempPath);
+            return ['ok' => false, 'message' => '.env konnte nicht atomar ersetzt werden.'];
+        }
+
+        return ['ok' => true, 'message' => 'Einstellungen wurden gespeichert.'];
+    }
+
+    private function escapeLdapFilterValue(string $value): string {
+        if (function_exists('ldap_escape')) {
+            return (string)ldap_escape($value, '', LDAP_ESCAPE_FILTER);
+        }
+
+        return strtr($value, [
+            '\\' => '\\5c',
+            '*' => '\\2a',
+            '(' => '\\28',
+            ')' => '\\29',
+            "\x00" => '\\00'
+        ]);
+    }
+
+    private function clearPasswordResetFromSettings(array $settings): array {
+        if (isset($settings['password_reset'])) {
+            unset($settings['password_reset']);
+        }
+
+        return $settings;
+    }
+    private const LOGIN_ATTEMPT_LIMIT = 3;
+    private const LOGIN_COOLDOWN_SECONDS = 900;
+
+    private function validateForgotPasswordRequest(): void {
+        if (mb_strlen((string)$this->username) > 255 || mb_strlen((string)$this->username) < 2) {
+            $this->logger->log('username length not correct', 2);
+            throw new \InvalidArgumentException('username length not correct');
+        }
+        if (!isset($this->username, $this->email)) {
+            $this->logger->log('username or email not set', 2);
+            throw new \InvalidArgumentException('username or email not set');
+        }
+        if (empty($this->username) || empty($this->email)) {
+            $this->logger->log('username or email empty', 2);
+            throw new \InvalidArgumentException('username or email empty');
+        }
+        if (!filter_var($this->email, FILTER_VALIDATE_EMAIL)) {
+            $this->logger->log('email not valid', 2);
+            throw new \InvalidArgumentException('email not valid');
+        }
+    }
+
+    private function validatePasswordResetSubmission(string $token, string $email): void {
+        if ($token === '' || $email === '') {
+            throw new \InvalidArgumentException('password reset token or e-mail missing');
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException('email not valid');
+        }
+        if (!isset($this->password, $this->password_confirm)) {
+            throw new \InvalidArgumentException('password not set');
+        }
+        if ($this->password === '' || $this->password_confirm === '') {
+            throw new \InvalidArgumentException('password empty');
+        }
+        if (mb_strlen((string)$this->password) > 128 || mb_strlen((string)$this->password) < 8) {
+            throw new \InvalidArgumentException('password length not correct');
+        }
+        if (!hash_equals((string)$this->password, (string)$this->password_confirm)) {
+            throw new \InvalidArgumentException('password confirmation does not match');
+        }
+    }
+
+    private function findLocalUserForPasswordResetRequest(): ?array {
+        $query = "SELECT uuid, username, email, settings FROM users WHERE username = :username AND email = :email AND login_provider = :login_provider AND activation_code = :activation_code LIMIT 1";
+        $rows = $this->db_adapter->db_query($query, [
+            'username' => $this->username,
+            'email' => $this->email,
+            'login_provider' => 'local',
+            'activation_code' => 'activated'
+        ]);
+
+        return !empty($rows) ? $rows[0] : null;
+    }
+
+    private function findLocalUserByResetEmail(string $email): ?array {
+        $query = "SELECT uuid, username, email, settings, activation_code FROM users WHERE email = :email AND login_provider = :login_provider LIMIT 1";
+        $rows = $this->db_adapter->db_query($query, ['email' => $email, 'login_provider' => 'local']);
+        return !empty($rows) ? $rows[0] : null;
+    }
+
+    private function persistPasswordResetRequest(array $userRow, string $token): bool {
+        $settings = $this->decodeSettings($userRow['settings'] ?? null);
+        $settings['password_reset'] = [
+            'token_hash' => hash('sha256', $token),
+            'expires_at' => gmdate('c', time() + 3600),
+            'requested_at' => gmdate('c')
+        ];
+
+        $query = "UPDATE users SET settings = :settings, changed = NOW() WHERE uuid = :uuid";
+        $result = $this->db_adapter->db_query($query, [
+            'settings' => $this->encodeSettings($settings),
+            'uuid' => $userRow['uuid']
+        ]);
+
+        return $result !== false;
+    }
+
+    private function consumePasswordResetRequest(array $userRow): void {
+        $settings = $this->decodeSettings($userRow['settings'] ?? null);
+        $settings = $this->clearPasswordResetFromSettings($settings);
+        $passwordHash = password_hash((string)$this->password, PASSWORD_DEFAULT);
+
+        $query = "UPDATE users SET password = :password, settings = :settings, activation_code = :activation_code, login_attempts = :login_attempts, changed = NOW() WHERE uuid = :uuid";
+        $this->db_adapter->db_query($query, [
+            'password' => $passwordHash,
+            'settings' => $this->encodeSettings($settings),
+            'activation_code' => 'activated',
+            'login_attempts' => null,
+            'uuid' => $userRow['uuid']
+        ]);
+    }
+
+    private function isPasswordResetTokenValid(array $userRow, string $token): bool {
+        $settings = $this->decodeSettings($userRow['settings'] ?? null);
+        $resetState = $settings['password_reset'] ?? null;
+        if (!is_array($resetState)) {
+            return false;
+        }
+
+        $tokenHash = (string)($resetState['token_hash'] ?? '');
+        $expiresAt = (string)($resetState['expires_at'] ?? '');
+        if ($tokenHash === '' || $expiresAt === '') {
+            return false;
+        }
+
+        if (!hash_equals($tokenHash, hash('sha256', $token))) {
+            return false;
+        }
+
+        $expiryTimestamp = strtotime($expiresAt);
+        if ($expiryTimestamp === false || $expiryTimestamp < time()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function isPasswordResetLinkValid(string $token, string $email): bool {
+        if ($token === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        try {
+            $userRow = $this->findLocalUserByResetEmail($email);
+            if ($userRow === null) {
+                return false;
+            }
+
+            return $this->isPasswordResetTokenValid($userRow, $token);
+        } catch (\Throwable $e) {
+            $this->logger->log('password reset link validation failed: ' . $e->getMessage(), 0);
+            return false;
         }
     }
 
@@ -187,6 +444,19 @@ class Auth {
     private function establishAuthenticatedSession(string $provider): void
     {
         if (session_status() === PHP_SESSION_NONE) {
+            if (function_exists('portflow_apply_session_cookie_settings')) {
+                \portflow_apply_session_cookie_settings();
+            } else {
+                $cookieParams = session_get_cookie_params();
+                session_set_cookie_params([
+                    'lifetime' => $cookieParams['lifetime'],
+                    'path' => $cookieParams['path'],
+                    'domain' => $cookieParams['domain'],
+                    'secure' => defined('PORTFLOW_SECURE') ? PORTFLOW_SECURE : false,
+                    'httponly' => true,
+                    'samesite' => 'Strict'
+                ]);
+            }
             @session_start();
         }
         @session_regenerate_id(true);
@@ -323,14 +593,7 @@ class Auth {
                 throw new \InvalidArgumentException('email not valid');
             }
         } elseif ($usage == 'forgot_password') {
-            if (!isset($this->username)) {
-                $this->logger->log('username not set', 2);
-                throw new \InvalidArgumentException('username not set');
-            }
-            if (empty($this->username)) {
-                $this->logger->log('username empty', 2);
-                throw new \InvalidArgumentException('username empty');
-            }
+            $this->validateForgotPasswordRequest();
         } else {
             $this->logger->log('invalid usage of local_signon function', 3);
             throw new \Exception('invalid usage of local_signon function');
@@ -409,13 +672,42 @@ class Auth {
         }
     }
 
+    private function canAttemptLogin($loginAttempts, $lastLoginAttempt): bool {
+        $attempts = (int)($loginAttempts ?? 0);
+        if ($attempts <= self::LOGIN_ATTEMPT_LIMIT) {
+            return true;
+        }
+
+        $lastAttemptTs = is_string($lastLoginAttempt) ? strtotime($lastLoginAttempt) : false;
+        if ($lastAttemptTs === false) {
+            return true;
+        }
+
+        return (time() - $lastAttemptTs) >= self::LOGIN_COOLDOWN_SECONDS;
+    }
+
+    private function resetLoginAttempts(string $uuid): void {
+        $this->db_adapter->db_query(
+            "UPDATE users SET login_attempts = :login_attempts WHERE uuid = :uuid",
+            ['login_attempts' => null, 'uuid' => $uuid]
+        );
+    }
+
+    private function recordFailedLoginAttempt(string $uuid, int $nextAttempts): bool {
+        $result = $this->db_adapter->db_query(
+            "UPDATE users SET last_login_attempt = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid",
+            ['login_attempts' => $nextAttempts, 'ip_address' => $this->ip(), 'uuid' => $uuid]
+        );
+
+        return !empty($result);
+    }
+
     private function local_signin(bool $headless = false) {
         try {
             if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
                 die("the database table 'users' doesn't exist. please run the init script.");
             }
 
-            // check post data
             if ($headless) {
                 if (!isset($this->username, $this->password) || $this->username === '' || $this->password === '') {
                     throw new \Exception('username or password empty');
@@ -423,127 +715,98 @@ class Auth {
             } else {
                 $this->local_signon('signin');
             }
-        
-            // check if user exists
-            $query = "SELECT uuid, password, email, settings, login_attempts FROM users WHERE username = :username AND activation_code = :activation_code";
-            
-            // execute query
+
+            $query = "SELECT uuid, password, email, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND activation_code = :activation_code";
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'activation_code' => 'activated']);
-            # for testing
-            # $result = $this->db_adapter->db_query($query, ['username' => $this->username]);
             $result = !empty($result) ? $result[0] : null;
             $this->logger->log('checking if user exists and account is activated');
 
-            if (!empty($result)) {
-                $this->logger->log('user exists and account is activated', 1);
+            if (empty($result)) {
+                return false;
+            }
 
-                $this->uuid = $result['uuid'];
-                $this->password_db = $result['password'];
-                $this->settings = $result['settings'];
-                $this->login_attempts = $result['login_attempts'];
+            $this->logger->log('user exists and account is activated', 1);
 
-                // check if login attempts exceeded
-                if ($this->login_attempts <= 3) {
+            $this->uuid = $result['uuid'];
+            $this->password_db = $result['password'];
+            $this->settings = $result['settings'];
+            $this->login_attempts = $result['login_attempts'];
 
-                    // check if password is correct
-                    if (password_verify($this->password, $this->password_db)) {
+            if (!$this->canAttemptLogin($this->login_attempts, $result['last_login_attempt'] ?? null)) {
+                $this->logger->log('login cooldown active', 2);
+                $this->notifyUsers(
+                    [$this->uuid],
+                    'login_failed',
+                    'minimal',
+                    'Fehlgeschlagener Login',
+                    "Loginversuch blockiert (Cooldown aktiv) fuer Benutzer '{$this->username}'.",
+                    ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
+                );
+                throw new \Exception('login attempts exceeded');
+            }
 
-                        // create session
-                        $this->establishAuthenticatedSession('local');
+            if ((int)($this->login_attempts ?? 0) > self::LOGIN_ATTEMPT_LIMIT) {
+                $this->resetLoginAttempts((string)$this->uuid);
+                $this->login_attempts = null;
+            }
 
-                        // update database
-                        $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
+            if (!password_verify($this->password, $this->password_db)) {
+                $nextAttempts = (int)($this->login_attempts ?? 0) + 1;
+                $result = $this->recordFailedLoginAttempt((string)$this->uuid, $nextAttempts);
+                $this->logger->log('updating database');
 
-                        // execute query
-                        $result = $this->db_adapter->db_query($query, ['login_attempts' => NULL, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
-
-                        if (!empty($result)) {
-                            $this->logger->log("user '$this->username' logged in. database updated", 1);
-                            $this->notifyUsers(
-                                [$this->uuid],
-                                'login_success',
-                                'all',
-                                'Erfolgreicher Login',
-                                "Erfolgreicher Login fuer Benutzer '{$this->username}'.",
-                                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
-                            );
-                            if (!$headless) {
-                                $this->redirectAfterSignin();
-                            }
-                        } else {
-                            // database could not update
-                            $this->logger->log("user logged in, but database couldn't update", 3);
-                            throw new \Exception("user logged in, but database couldn't update");
-                        }
-                        return true;
-                    } else {
-                        // incorrect password -> update database
-                        $query = "UPDATE users SET last_login_attempt = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
-
-                        // execute query
-                        $result = $this->db_adapter->db_query($query, ['login_attempts' => $this->login_attempts + 1, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
-                        $this->logger->log('updating database');
-
-                        if (!empty($result)) {
-                            $this->logger->log('incorrect password', 1);
-                            $this->notifyUsers(
-                                [$this->uuid],
-                                'login_failed',
-                                'minimal',
-                                'Fehlgeschlagener Login',
-                                "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (lokal).",
-                                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
-                            );
-                            throw new \Exception('incorrect password');
-                        } else {
-                            // database couldn't update
-                            $this->logger->log("incorrect password is. database couldn't update", 3);
-                            throw new \Exception("incorrect password is. database couldn't update");
-                        }
-                    }
-
-                } else {
-                    // update database
-                    $query = "UPDATE users SET activation_code = :activation_code, last_login_attempt = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
-
-                    // execute query
-                    $result = $this->db_adapter->db_query($query, ['activation_code' => $this->random_string(10), 'login_attempts' => $this->login_attempts + 1, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
-                    $this->logger->log('updating database');
-
-                    if (!empty($result)) {
-                        $this->logger->log('login attempts exceeded', 2);
-                        $this->notifyUsers(
-                            [$this->uuid],
-                            'login_failed',
-                            'minimal',
-                            'Fehlgeschlagener Login',
-                            "Loginversuch blockiert (zu viele Fehlversuche) fuer Benutzer '{$this->username}'.",
-                            ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
-                        );
-                        throw new \Exception('login attempts exceeded');
-                    } else {
-                        // database couldn't update
-                        $this->logger->log("login attempts exceeded. database couldn't update");
-                        throw new \Exception("login attempts exceeded. database couldn't update");
-                    }
+                if (!empty($result)) {
+                    $this->logger->log('incorrect password', 1);
+                    $this->notifyUsers(
+                        [$this->uuid],
+                        'login_failed',
+                        'minimal',
+                        'Fehlgeschlagener Login',
+                        "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (lokal).",
+                        ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
+                    );
+                    throw new \Exception('incorrect password');
                 }
 
+                $this->logger->log("incorrect password is. database couldn't update", 3);
+                throw new \Exception("incorrect password is. database couldn't update");
             }
+
+            $this->establishAuthenticatedSession('local');
+            $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
+            $result = $this->db_adapter->db_query($query, ['login_attempts' => null, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+
+            if (empty($result)) {
+                $this->logger->log("user logged in, but database couldn't update", 3);
+                throw new \Exception("user logged in, but database couldn't update");
+            }
+
+            $this->logger->log("user '$this->username' logged in. database updated", 1);
+            $this->notifyUsers(
+                [$this->uuid],
+                'login_success',
+                'all',
+                'Erfolgreicher Login',
+                "Erfolgreicher Login fuer Benutzer '{$this->username}'.",
+                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'local']
+            );
+            if (!$headless) {
+                $this->redirectAfterSignin();
+            }
+
+            return true;
         } catch (\Exception $e) {
-            // Log the exception message with ERROR level
             $this->logger->log($e->getMessage(), 3);
             if (!$headless) {
                 $this->rememberWebAuthIssue($e->getMessage(), $this->resolveWebAuthIssueLevel($e), $e instanceof \InvalidArgumentException);
             }
             return false;
-            // Here you can handle the exception as needed, for example:
-            // - Redirect the user to an error page
-            // - Show a specific error message to the user
-            // Make sure to not directly output the Exception message if it contains sensitive information
         }
     }
 
     private function ldap_signin(bool $headless = false) {
+        $ldap_connection = null;
+
         try {
             if ($headless) {
                 if (!isset($this->username, $this->password) || $this->username === '' || $this->password === '') {
@@ -553,15 +816,13 @@ class Auth {
                 $this->single_signon();
             }
 
-            // LDAP parameters
             $this->ldap_server = LDAP_SERVER;
             $this->ldap_port = LDAP_PORT;
             $this->ldap_basedn = LDAP_BASEDN;
             $this->ldap_userdn = LDAP_USERDN;
             $ldap_configFilter = LDAP_FILTER;
-            $this->ldap_binduser_dn = "uid=" . $this->username . "," . $this->ldap_userdn . "," . $this->ldap_basedn;
+            $this->ldap_binduser_dn = 'uid=' . $this->username . ',' . $this->ldap_userdn . ',' . $this->ldap_basedn;
 
-            // Connect to LDAP server
             $ldap_connection = @ldap_connect($this->ldap_server, $this->ldap_port);
             if (!$ldap_connection) {
                 throw new \Exception("ldap_signin no connection to '$this->ldap_server'");
@@ -570,12 +831,10 @@ class Auth {
                 throw new \Exception('Password field cannot be empty');
             }
 
-            // Set LDAP options
             ldap_set_option($ldap_connection, LDAP_OPT_PROTOCOL_VERSION, 3);
             ldap_set_option($ldap_connection, LDAP_OPT_REFERRALS, 0);
             ldap_set_option($ldap_connection, LDAP_OPT_NETWORK_TIMEOUT, 10);
 
-            // Bind to LDAP server
             if (defined('LDAP_BIND') && LDAP_BIND) {
                 $ldap_bind = @ldap_bind($ldap_connection, LDAP_BIND_USER, LDAP_BIND_PASSWORD);
                 $this->logger->log('trying to bind with ' . LDAP_BIND_USER, 0);
@@ -587,199 +846,159 @@ class Auth {
                 throw new \Exception('bind failed');
             }
 
-            // Search for user
-            $filter = "(&(|(sAMAccountName=$this->username)(uid=$this->username))$ldap_configFilter)";  # filtering for ldap attributes
-            $attributes = array("displayname", "mail", "samaccountname", "title", "telephoneNumber", "initials", "physicalDeliveryOfficeName", "department", "accountExpires", "lastLogonTimestamp", "memberOf"); # get these ldap attributes
+            $escapedUsername = $this->escapeLdapFilterValue((string)$this->username);
+            $filter = "(&(|(sAMAccountName=$escapedUsername)(uid=$escapedUsername))$ldap_configFilter)";
+            $attributes = ['displayname', 'mail', 'samaccountname', 'title', 'telephoneNumber', 'initials', 'physicalDeliveryOfficeName', 'department', 'accountExpires', 'lastLogonTimestamp', 'memberOf'];
             $res_id = ldap_search($ldap_connection, $this->ldap_basedn, $filter, $attributes);
             if (!$res_id) {
                 throw new \Exception('no user with ldap filter: \'' . $filter . '\' found');
             }
 
-            // Get user entries
             $user_entries = ldap_get_entries($ldap_connection, $res_id);
-            
-            #var_dump($user_entries);
+            $this->logger->log("user entrys count: '" . $user_entries['count'] . "'", 0);
 
-            $this->logger->log("user entrys count: '" . $user_entries["count"] . "'", 0);
-
-            if ($user_entries["count"] == 1) {
-                $this->logger->log("user '$this->username' matched with filter: '" . $filter . "'", 0);
-
-                # Get User dn  
-                if (isset($user_entries[0]["dn"])) {
-                    // Zugriff auf den 'dn' Wert des aktuellen Eintrags
-                    $this->ldap_found_user_dn = $user_entries[0]["dn"]; // Direkter Zugriff auf den 'dn' Wert
-                    
-                    # Attempt to bind with user DN and provided password to verify credentials
-                    $this->logger->log("trying to bind with: " . $this->ldap_found_user_dn, 0);
-                    if (@ldap_bind($ldap_connection, $this->ldap_found_user_dn, $this->password)) {
-                        // If the bind is successful, the user's credentials are valid
-                        $this->logger->log("password verification successful", 0);
-
-                        // get user email from ldap
-                        $this->email = $user_entries[0]["mail"][0] ?? NULL;
-
-                        // check if user exists
-                        $query = "SELECT uuid, email, activation_code, settings, login_attempts FROM users WHERE username = :username AND login_provider = :login_provider";
-            
-                        // execute query
-                        $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
-                        $result = !empty($result) ? $result[0] : null;
-                        $this->logger->log('checking if user exists in database');
-
-                        if (!empty($result)) {
-                            $this->logger->log('user exists in database', 1);
-
-                            $this->uuid = $result['uuid'];
-                            $this->email = $result['email'];
-                            $this->password_db = $result['password'];
-                            $this->activation_code = $result['activation_code'] ?? NULL;
-                            $this->settings = $result['settings'];
-                            $this->login_attempts = $result['login_attempts'];
-
-                            if ($this->login_attempts <= 3 && $this->email !== NULL) {
-                                // update database
-                                $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
-
-                                // execute query
-                                $result = $this->db_adapter->db_query($query, ['login_attempts' => NULL, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
-                            } else {
-                                // update database
-                                $query = "UPDATE users SET activation_code = :activation_code, last_login_attempt = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
-
-                                // execute query
-                                $result = $this->db_adapter->db_query($query, ['activation_code' => $this->random_string(10), 'login_attempts' => $this->login_attempts + 1, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
-                            }
-                        } else {
-                            $this->logger->log('user does not exist in database', 1);
-
-                            // get ldap role uuid
-                            $query = "SELECT uuid FROM role WHERE caption = :caption";
-                            $params = ['caption' => 'ldap'];
-                            $result = $this->db_adapter->db_query($query, $params);
-
-                            if (!empty($result)) {
-
-                                // create user account
-                                $query = "INSERT INTO users (role, login_provider, username, email, activation_code, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :email, :activation_code, :settings, :ip_address, :created, :changed) RETURNING uuid"; 
-
-                                // prepare vars for query
-                                $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : "en-EN";
-                                $settings = [
-                                    'language' => $language,
-                                    'appearance' => [
-                                        'theme' => 'light',
-                                        'font_family' => 'jetbrains',
-                                        'font_size' => 'normal'
-                                    ]
-                                ];
-
-                                LDAP_TRUST ? $this->activation_code = 'activated' : $this->activation_code = $this->random_string(10);
-
-                                // execute query
-                                $params = [
-                                    'role' => $result[0]['uuid'],
-                                    'login_provider' => 'ldap',
-                                    'username' => $this->username,
-                                    'email' => $this->email,
-                                    'activation_code' => $this->activation_code,
-                                    'settings' => json_encode($settings),
-                                    'ip_address' => $this->ip(),
-                                    'created' => 'NOW()',
-                                    'changed' => 'NOW()'
-                                ];
-                                $result = $this->db_adapter->db_query($query, $params);
-                                $this->uuid = $result[0]['uuid'];
-                                $this->logger->log('creating user account in database');
-                                $this->settings = $params['settings'];
-
-                            } else {
-                                $this->logger->log('ldap role does not exist', 3);
-                                throw new \Exception('ldap role does not exist');
-                            }
-                        }
-
-                        // Check if the user is activated if LDAP_TRUST is TRUE
-                        if (LDAP_TRUST === TRUE && $this->activation_code !== 'activated') {
-                            $this->logger->log("user '$this->username' not activated", 2);
-                            throw new \Exception("user '$this->username' not activated");
-                        } elseif (LDAP_TRUST === FALSE && $this->activation_code !== 'activated') {
-                            $this->logger->log("user '$this->username' not activated", 2);
-                            throw new \Exception("user '$this->username' not activated");
-                        } elseif ($this->activation_code == 'deactivated') {
-                            $this->logger->log("user '$this->username' not activated", 2);
-                            throw new \Exception("user '$this->username' not activated");
-                        }
-
-                        // create session
-                        $this->establishAuthenticatedSession('ldap');
-
-                        if (!$headless) {
-                            $this->redirectAfterSignin();
-                        }
-                        $this->notifyUsers(
-                            [$this->uuid],
-                            'login_success',
-                            'all',
-                            'Erfolgreicher Login',
-                            "Erfolgreicher Login fuer Benutzer '{$this->username}' (LDAP).",
-                            ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
-                        );
-                        $this->logger->log("user '$this->username' logged in", 1);
-                        return true;
-
-                    } else {
-                        // If the bind fails, the user's credentials are invalid
-                        $this->logger->log('password verification failed', 2);
-                        if (!empty($this->uuid)) {
-                            $this->notifyUsers(
-                                [$this->uuid],
-                                'login_failed',
-                                'minimal',
-                                'Fehlgeschlagener Login',
-                                "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
-                                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
-                            );
-                        } else {
-                            $resolvedUuid = $this->resolveActivatedUserUuidByUsername((string)$this->username);
-                            if ($resolvedUuid !== null) {
-                                $this->notifyUsers(
-                                    [$resolvedUuid],
-                                    'login_failed',
-                                    'minimal',
-                                    'Fehlgeschlagener Login',
-                                    "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
-                                    ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
-                                );
-                            } else {
-                                $this->logger->log("skipped login_failed notification: no activated recipient found for '{$this->username}'", 1);
-                            }
-                        }
-                        throw new \Exception('password verification failed');
-                    }
-
-                } else {
-                    $this->logger->log("user_dn not found", 3);
-                }
-                
-            
-            } else {
+            if ($user_entries['count'] != 1) {
                 $this->logger->log("no entrys found for user: '$this->username' with filter: " . $filter, 0);
+                return false;
             }
-            
 
+            $this->logger->log("user '$this->username' matched with filter: '" . $filter . "'", 0);
+            if (!isset($user_entries[0]['dn'])) {
+                $this->logger->log('user_dn not found', 3);
+                return false;
+            }
 
+            $this->ldap_found_user_dn = $user_entries[0]['dn'];
+            $this->logger->log('trying to bind with: ' . $this->ldap_found_user_dn, 0);
+            if (!@ldap_bind($ldap_connection, $this->ldap_found_user_dn, $this->password)) {
+                $this->logger->log('password verification failed', 2);
+                $resolvedUuid = $this->resolveActivatedUserUuidByUsername((string)$this->username);
+                if ($resolvedUuid !== null) {
+                    $this->recordFailedLoginAttempt($resolvedUuid, 1);
+                    $this->notifyUsers(
+                        [$resolvedUuid],
+                        'login_failed',
+                        'minimal',
+                        'Fehlgeschlagener Login',
+                        "Fehlgeschlagener Login fuer Benutzer '{$this->username}' (LDAP Passwortpruefung).",
+                        ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+                    );
+                }
+                throw new \Exception('password verification failed');
+            }
 
+            $this->logger->log('password verification successful', 0);
+            $this->email = $user_entries[0]['mail'][0] ?? null;
+
+            $query = "SELECT uuid, email, activation_code, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND login_provider = :login_provider";
+            $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
+            $result = !empty($result) ? $result[0] : null;
+            $this->logger->log('checking if user exists in database');
+
+            if (!empty($result)) {
+                $this->logger->log('user exists in database', 1);
+
+                $this->uuid = $result['uuid'];
+                $this->email = $result['email'];
+                $this->activation_code = $result['activation_code'] ?? null;
+                $this->settings = $result['settings'];
+                $this->login_attempts = $result['login_attempts'];
+
+                if (!$this->canAttemptLogin($this->login_attempts, $result['last_login_attempt'] ?? null)) {
+                    $this->logger->log('login cooldown active', 2);
+                    $this->notifyUsers(
+                        [$this->uuid],
+                        'login_failed',
+                        'minimal',
+                        'Fehlgeschlagener Login',
+                        "Loginversuch blockiert (Cooldown aktiv) fuer Benutzer '{$this->username}'.",
+                        ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+                    );
+                    throw new \Exception('login attempts exceeded');
+                }
+
+                if ((int)($this->login_attempts ?? 0) > self::LOGIN_ATTEMPT_LIMIT) {
+                    $this->resetLoginAttempts((string)$this->uuid);
+                    $this->login_attempts = null;
+                }
+
+                $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
+                $result = $this->db_adapter->db_query($query, ['login_attempts' => null, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+            } else {
+                $this->logger->log('user does not exist in database', 1);
+
+                $query = "SELECT uuid FROM role WHERE caption = :caption";
+                $params = ['caption' => 'ldap'];
+                $result = $this->db_adapter->db_query($query, $params);
+
+                if (empty($result)) {
+                    $this->logger->log('ldap role does not exist', 3);
+                    throw new \Exception('ldap role does not exist');
+                }
+
+                $query = "INSERT INTO users (role, login_provider, username, email, activation_code, settings, ip_address, created, changed) VALUES (:role, :login_provider, :username, :email, :activation_code, :settings, :ip_address, :created, :changed) RETURNING uuid";
+                $language = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE'])[0] : 'en-EN';
+                $settings = [
+                    'language' => $language,
+                    'appearance' => [
+                        'theme' => 'light',
+                        'font_family' => 'jetbrains',
+                        'font_size' => 'normal'
+                    ]
+                ];
+
+                LDAP_TRUST ? $this->activation_code = 'activated' : $this->activation_code = $this->random_string(10);
+
+                $params = [
+                    'role' => $result[0]['uuid'],
+                    'login_provider' => 'ldap',
+                    'username' => $this->username,
+                    'email' => $this->email,
+                    'activation_code' => $this->activation_code,
+                    'settings' => json_encode($settings),
+                    'ip_address' => $this->ip(),
+                    'created' => 'NOW()',
+                    'changed' => 'NOW()'
+                ];
+                $result = $this->db_adapter->db_query($query, $params);
+                $this->uuid = $result[0]['uuid'];
+                $this->logger->log('creating user account in database');
+                $this->settings = $params['settings'];
+            }
+
+            if (LDAP_TRUST === TRUE && $this->activation_code !== 'activated') {
+                $this->logger->log("user '$this->username' not activated", 2);
+                throw new \Exception("user '$this->username' not activated");
+            } elseif (LDAP_TRUST === FALSE && $this->activation_code !== 'activated') {
+                $this->logger->log("user '$this->username' not activated", 2);
+                throw new \Exception("user '$this->username' not activated");
+            } elseif ($this->activation_code == 'deactivated') {
+                $this->logger->log("user '$this->username' not activated", 2);
+                throw new \Exception("user '$this->username' not activated");
+            }
+
+            $this->establishAuthenticatedSession('ldap');
+            if (!$headless) {
+                $this->redirectAfterSignin();
+            }
+            $this->notifyUsers(
+                [$this->uuid],
+                'login_success',
+                'all',
+                'Erfolgreicher Login',
+                "Erfolgreicher Login fuer Benutzer '{$this->username}' (LDAP).",
+                ['username' => $this->username, 'ip' => $this->ip(), 'provider' => 'ldap']
+            );
+            $this->logger->log("user '$this->username' logged in", 1);
+
+            return true;
         } catch (\Exception $e) {
-            // Log the exception message with ERROR level
             $this->logger->log($e->getMessage(), 3);
             if (!$headless) {
                 $this->rememberWebAuthIssue($e->getMessage(), $this->resolveWebAuthIssueLevel($e), $e instanceof \InvalidArgumentException);
             }
             return false;
         } finally {
-            // Dieser Block wird ausgeführt, egal ob eine Ausnahme aufgetreten ist oder nicht.
-            // Schließen Sie hier die LDAP-Verbindung
             if (isset($ldap_connection)) {
                 @ldap_close($ldap_connection);
             }
@@ -800,58 +1019,56 @@ class Auth {
             // check post data
             $this->local_signon('forgot_password');
 
-            // check if user exists
-            $query = "SELECT uuid, email FROM users WHERE username = :username AND login_provider = :login_provider";
-            
-            // execute query
-            $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'local']);
-            $result = !empty($result) ? $result[0] : null;
-            $this->logger->log('checking if user with username exists');
+            $userRow = $this->findLocalUserForPasswordResetRequest();
+            $this->logger->log('checking if local user with username and e-mail exists');
 
-            if (!empty($result)) {
-                $this->logger->log('user with username exists', 1);
-
-                $this->uuid = $result['uuid'];
-                $this->email = $result['email'];
-
-                // create activation code
-                $activation_code = $this->random_string(10);
-
-                // create new random password hash
-                $this->password = $this->random_string(16);
-                $this->password_db = password_hash($this->password, PASSWORD_DEFAULT);
-
-                // update database
-                $query = "UPDATE users SET password = :password, activation_code = :activation_code WHERE uuid = :uuid";
-
-                // execute query
-                $result = $this->db_adapter->db_query($query, ['password' => $this->password_db, 'activation_code' => $activation_code, 'uuid' => $this->uuid]);
-
-                if (!empty($result)) {
-                    $this->logger->log("activation code and new password set in database", 1);
-                
-                    // prepare vars for email
-                    $activate_link = PORTFLOW_HOSTNAME . "?code="  . $activation_code . "&email=" . $this->email;
-                    $mail_to = ['email' => $this->email, 'username' => $this->username];
-
-                    // send email with activation code
-                    $subject = "Password reset for " . APP_NAME;
-                    $body = 'Reactivate your Account here:  <a href="' . $activate_link . '">Activate</a>';
-                    $body .= "<br><br>Your new password is: <b>" . $this->password . "</b><br>Please change your password after logging in.";
-                    $this->mail->send($mail_to, $subject, $body);
-
-                    $this->logger->log('email with activation code and new password sent to user', 1, echoToWeb: true);
-                    return true;
-                } else {
-                    // database could not update
-                    $this->logger->log("activation code and new password couldn't set in database", 3);
-                    throw new \Exception("activation code and new password couldn't set in database");
+            if ($userRow !== null) {
+                $token = bin2hex(random_bytes(32));
+                if (!$this->persistPasswordResetRequest($userRow, $token)) {
+                    throw new \RuntimeException('password reset request could not be stored');
                 }
-            } else {
-                // user with username doesn't exist
-                $this->logger->log('user with this username does not exist or uses a different login provider', 2);
-                throw new \Exception('user with this username does not exist or uses a different login provider');
+
+                $resetLink = PORTFLOW_HOSTNAME . '?reset_password=1&token=' . urlencode($token) . '&email=' . urlencode((string)$userRow['email']);
+                $mailTo = ['email' => $userRow['email'], 'username' => $userRow['username']];
+                $subject = 'Portflow: Reset your password';
+                $body = 'Use the following link to set a new password: <a href="' . $resetLink . '">Reset password</a>';
+                $body .= '<br><br>This link is valid for 60 minutes.';
+                $body .= '<br>If you did not request a password reset, you can ignore this e-mail.';
+                $this->mail->send($mailTo, $subject, $body);
+                $this->logger->log('password reset link sent to local user', 1);
             }
+
+            $this->logger->log('If the provided username and e-mail are valid, a password reset link has been sent.', 1, echoToWeb: true);
+            return true;
+        } catch (\Exception $e) {
+            $this->logWebAuthException($e);
+            return false;
+        }
+    }
+
+    public function reset_password(string $token, string $email): bool {
+        try {
+            if ($this->csrf_check()) {
+                $this->logger->log('CSRF token correct', 1);
+            } else {
+                throw new \InvalidArgumentException('CSRF token not correct');
+            }
+
+            if (!$this->db_adapter->checkDatabaseAndTableExistence('users')) {
+                die("the database table 'users' doesn't exist. please run the init script.");
+            }
+
+            $this->validatePasswordResetSubmission($token, $email);
+
+            $userRow = $this->findLocalUserByResetEmail($email);
+            if ($userRow === null || !$this->isPasswordResetTokenValid($userRow, $token)) {
+                throw new \InvalidArgumentException('Password reset link invalid or expired');
+            }
+
+            $this->consumePasswordResetRequest($userRow);
+            $this->logger->log('Password has been reset successfully. You can now sign in with your new password.', 1, echoToWeb: true);
+            header('Location: ' . PORTFLOW_HOSTNAME);
+            return true;
         } catch (\Exception $e) {
             $this->logWebAuthException($e);
             return false;
@@ -932,82 +1149,12 @@ class Auth {
                 $result = $this->db_adapter->db_query($query, $params);
                 $this->logger->log('allowing automation access for admin role', 0);
 
-                // set FIRST_RUN to FALSE
-                configWriteEnvValues(['FIRST_RUN' => 'FALSE']);
-    function configWriteEnvValues(array $updates): array {
-        $envPath = __DIR__ . '/.env';
-        if (!file_exists($envPath)) {
-            return ['ok' => false, 'message' => '.env wurde nicht gefunden.'];
-        }
-        if (!is_readable($envPath) || !is_writable($envPath)) {
-            return ['ok' => false, 'message' => '.env ist nicht lesbar oder nicht schreibbar.'];
-        }
-
-        $content = file_get_contents($envPath);
-        if (!is_string($content)) {
-            return ['ok' => false, 'message' => '.env konnte nicht gelesen werden.'];
-        }
-
-        $lines = preg_split('/\R/', $content);
-        if (!is_array($lines)) {
-            $lines = [];
-        }
-
-        $normalizedUpdates = [];
-        foreach ($updates as $key => $value) {
-            $normalizedKey = strtoupper(trim((string)$key));
-            if ($normalizedKey === '') {
-                continue;
-            }
-            $normalizedUpdates[$normalizedKey] = configNormalizeEnvValue((string)$value);
-        }
-
-        if (empty($normalizedUpdates)) {
-            return ['ok' => false, 'message' => 'Keine gueltigen Einstellungen zum Speichern uebergeben.'];
-        }
-
-        $found = [];
-        foreach ($lines as $idx => $line) {
-            if (!is_string($line)) {
-                continue;
-            }
-            if (preg_match('/^\s*([A-Z0-9_]+)\s*=/', $line, $matches) === 1) {
-                $lineKey = strtoupper((string)$matches[1]);
-                if (array_key_exists($lineKey, $normalizedUpdates)) {
-                    $lines[$idx] = $lineKey . '=' . $normalizedUpdates[$lineKey];
-                    $found[$lineKey] = true;
+                $envWriteResult = $this->writeRootEnvValues(['PORTFLOW_FIRST_RUN' => 'false']);
+                if (!$envWriteResult['ok']) {
+                    $this->logger->log('failed to update PORTFLOW_FIRST_RUN: ' . $envWriteResult['message'], 3);
+                } else {
+                    $this->logger->log('setting PORTFLOW_FIRST_RUN to FALSE', 0);
                 }
-            }
-        }
-
-        foreach ($normalizedUpdates as $lineKey => $lineValue) {
-            if (!isset($found[$lineKey])) {
-                $lines[] = $lineKey . '=' . $lineValue;
-            }
-        }
-
-        $newContent = implode(PHP_EOL, $lines) . PHP_EOL;
-        $tempPath = $envPath . '.tmp';
-        $backupPath = $envPath . '.bak.' . date('YmdHis');
-
-        if (@copy($envPath, $backupPath) === false) {
-            return ['ok' => false, 'message' => '.env Backup konnte nicht erstellt werden.'];
-        }
-
-        if (file_put_contents($tempPath, $newContent, LOCK_EX) === false) {
-            return ['ok' => false, 'message' => 'Temporare .env Datei konnte nicht geschrieben werden.'];
-        }
-
-        if (!@rename($tempPath, $envPath)) {
-            @unlink($tempPath);
-            return ['ok' => false, 'message' => '.env konnte nicht atomar ersetzt werden.'];
-        }
-
-        return ['ok' => true, 'message' => 'Einstellungen wurden gespeichert.'];
-    }
-
-
-                $this->logger->log('setting PORTFLOW_FIRST_RUN to FALSE', 0);
             } else {
                 // get user role uuid
                 $query = "SELECT uuid FROM role WHERE caption = :caption";
