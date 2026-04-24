@@ -139,9 +139,6 @@
                     <div class="flex min-w-0 flex-nowrap items-center gap-2.5">
                         <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="searchTable(event)">
                             <input type="text" name="search" placeholder="<?php echo $lang['search']; ?> ..." class="min-w-0 flex-1 rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-                            <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white shadow-md hover:bg-blue-700">
-                                <button type="submit" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="search"></i></button>
-                            </div>
                         </form>
                         <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white shadow-md hover:bg-green-700">
                             <button form="" onclick="openNewEntry()" class="new_entry_button inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="plus"></i></button>
