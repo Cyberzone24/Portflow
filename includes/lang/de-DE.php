@@ -591,6 +591,29 @@ if (isset($_GET['nav'])) {
         $lang['columns_reset'] = 'Auf Standard zurücksetzen';
         $lang['columns_save_failed'] = 'Speichern fehlgeschlagen';
         $lang['columns_not_available'] = 'Spaltenkonfiguration nicht verfügbar.';
+        $lang['transfer_csv'] = 'CSV Import/Export';
+        $lang['transfer_hint'] = 'Akzeptierte und erforderliche Felder für die aktuelle Ansicht.';
+        $lang['transfer_field'] = 'Feld';
+        $lang['transfer_label'] = 'Bezeichnung';
+        $lang['transfer_required'] = 'Pflicht';
+        $lang['transfer_type'] = 'Typ';
+        $lang['transfer_notes'] = 'Hinweise';
+        $lang['transfer_sample_title'] = 'Sample-Datei';
+        $lang['transfer_download_sample'] = 'Sample-CSV herunterladen';
+        $lang['transfer_sample_ready'] = 'Sample-CSV heruntergeladen.';
+        $lang['transfer_export_title'] = 'Export';
+        $lang['transfer_export_csv'] = 'CSV exportieren';
+        $lang['transfer_export_ready'] = 'CSV-Export heruntergeladen.';
+        $lang['transfer_import_title'] = 'Import';
+        $lang['transfer_choose_file'] = 'CSV-Datei auswählen';
+        $lang['transfer_no_file'] = 'Keine Datei ausgewählt';
+        $lang['transfer_import_csv'] = 'CSV importieren';
+        $lang['transfer_not_available'] = 'Import/Export ist für diese Ansicht nicht verfügbar.';
+        $lang['transfer_import_empty'] = 'Die CSV-Datei ist leer.';
+        $lang['transfer_import_unknown'] = 'Unbekannte CSV-Spalten';
+        $lang['transfer_import_missing_required'] = 'Fehlende Pflichtspalten';
+        $lang['transfer_import_progress'] = 'Importiere Zeile';
+        $lang['transfer_import_done'] = 'Import abgeschlossen';
 
         return $lang;
     }

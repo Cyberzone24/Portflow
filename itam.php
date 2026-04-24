@@ -137,7 +137,7 @@
             <div class="mb-4 grid flex-shrink-0 gap-3">
                 <div class="block">
                     <div class="flex min-w-0 flex-nowrap items-center gap-2.5">
-                        <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="searchTable(event)">
+                        <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="return searchTable();">
                             <input type="text" name="search" placeholder="<?php echo $lang['search']; ?> ..." class="min-w-0 flex-1 rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
                         </form>
                         <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white shadow-md hover:bg-green-700">
@@ -145,6 +145,9 @@
                         </div>
                         <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-500 text-white shadow-md hover:bg-slate-700" title="<?php echo $lang['columns_customize'] ?? 'Spalten anpassen'; ?>">
                             <button type="button" onclick="openColumnPicker()" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="columns-3"></i></button>
+                        </div>
+                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-sky-600 text-white shadow-md hover:bg-sky-700" title="<?php echo $lang['transfer_csv'] ?? 'CSV Import/Export'; ?>">
+                            <button type="button" onclick="openTransferDialog()" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="file-up"></i></button>
                         </div>
                     </div>
                 </div>
@@ -239,6 +242,77 @@
                     <div id="itamProgressBar" class="h-full w-0 rounded-full bg-gradient-to-r from-blue-600 to-sky-400 transition-[width] duration-200 ease-out"></div>
                 </div>
                 <div id="itamProgressCount" class="text-[0.95rem] text-slate-600">0 / 0</div>
+            </div>
+        </div>
+
+        <div id="itamTransferModal" class="absolute inset-0 z-40 hidden items-center justify-center bg-slate-900/55 p-4">
+            <div class="grid max-h-full w-full max-w-6xl gap-4 overflow-hidden rounded-2xl border border-slate-300 bg-white p-4 shadow-2xl lg:grid-cols-[minmax(0,1.5fr)_minmax(20rem,0.9fr)]">
+                <div class="grid min-h-0 gap-3 overflow-hidden">
+                    <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-3">
+                        <div>
+                            <div id="itamTransferTitle" class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_csv'] ?? 'CSV Import/Export'; ?></div>
+                            <div id="itamTransferSubtitle" class="mt-1 text-sm text-slate-500"><?php echo $lang['transfer_hint'] ?? 'Accepted and required fields for the current view.'; ?></div>
+                        </div>
+                        <button type="button" class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-500 text-white hover:bg-slate-700" onclick="closeTransferDialog()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="min-h-0 overflow-auto rounded-xl border border-slate-200">
+                        <table class="w-full min-w-full table-auto text-left text-sm text-slate-700">
+                            <thead class="sticky top-0 bg-slate-100 text-slate-900">
+                                <tr>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_field'] ?? 'Field'; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_label'] ?? 'Label'; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_required'] ?? 'Required'; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_type'] ?? 'Type'; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_notes'] ?? 'Notes'; ?></th>
+                                </tr>
+                            </thead>
+                            <tbody id="itamTransferPreviewBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="grid gap-4 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="grid gap-2">
+                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_sample_title'] ?? 'Sample file'; ?></div>
+                        <button type="button" class="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow hover:bg-slate-100" onclick="downloadTransferSample()">
+                            <?php echo $lang['transfer_download_sample'] ?? 'Download sample CSV'; ?>
+                        </button>
+                    </div>
+                    <div class="grid gap-2">
+                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_export_title'] ?? 'Export'; ?></div>
+                        <button type="button" class="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="exportCurrentTableCsv()">
+                            <?php echo $lang['transfer_export_csv'] ?? 'Export CSV'; ?>
+                        </button>
+                    </div>
+                    <div class="grid gap-2">
+                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_import_title'] ?? 'Import'; ?></div>
+                        <input type="file" id="itamTransferFile" accept=".csv,text/csv" class="hidden" onchange="handleTransferFileSelected(this)">
+                        <label for="itamTransferFile" class="cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-5 text-center text-sm text-slate-700 transition hover:border-sky-500 hover:bg-sky-50">
+                            <div class="mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-700"><i data-lucide="file-up"></i></div>
+                            <div><?php echo $lang['transfer_choose_file'] ?? 'Choose CSV file'; ?></div>
+                            <div id="itamTransferFileName" class="mt-1 text-xs text-slate-500"><?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?></div>
+                        </label>
+                        <button type="button" id="itamTransferImportBtn" class="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300" onclick="importTransferCsv()" disabled>
+                            <?php echo $lang['transfer_import_csv'] ?? 'Import CSV'; ?>
+                        </button>
+                    </div>
+                    <div id="itamTransferStatus" class="hidden rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="itamTransferDuplicateModal" class="absolute inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
+            <div class="grid w-full max-w-xl gap-4 rounded-2xl border border-slate-300 bg-white p-5 shadow-2xl">
+                <div class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_duplicate_title'] ?? 'Gleichnamiger Eintrag gefunden'; ?></div>
+                <div id="itamTransferDuplicateCopy" class="text-sm text-slate-600"></div>
+                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" id="itamTransferDuplicateRemember" class="rounded border-slate-300">
+                    <span><?php echo $lang['transfer_duplicate_apply_all'] ?? 'Entscheidung fuer weitere gleiche Treffer merken'; ?></span>
+                </label>
+                <div class="flex flex-wrap justify-end gap-2">
+                    <button type="button" id="itamTransferDuplicateKeep" class="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"><?php echo $lang['transfer_duplicate_keep'] ?? 'Alten Eintrag behalten'; ?></button>
+                    <button type="button" id="itamTransferDuplicateReplace" class="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"><?php echo $lang['transfer_duplicate_replace'] ?? 'Alten Eintrag ueberschreiben'; ?></button>
+                    <button type="button" id="itamTransferDuplicateCreate" class="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><?php echo $lang['transfer_duplicate_create'] ?? 'Zusaetzlichen Eintrag erstellen'; ?></button>
+                </div>
             </div>
         </div>
 
@@ -391,9 +465,11 @@ let currentNavConfig = {};
 let currentDetailsRowData = null;
 let currentEditingJournalUuid = null;
 let currentEditingMetadataUuid = null;
+let itamFormsConfigCache = null;
+let currentTransferFile = null;
 
-function searchTable(event) {
-    event.preventDefault();
+function searchTable() {
+    return false;
 }
 
 // Generate form
@@ -772,6 +848,416 @@ let itamFormState = {
     uuids: {}
 };
 
+async function getItamFormsConfig() {
+    if (itamFormsConfigCache) {
+        return itamFormsConfigCache;
+    }
+
+    const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/forms.json');
+    if (!response.ok) {
+        throw new Error('forms.json could not be loaded');
+    }
+
+    itamFormsConfigCache = await response.json();
+    return itamFormsConfigCache;
+}
+
+function getItamFormConfig(configData, table) {
+    return configData && configData.forms ? configData.forms[table] : null;
+}
+
+function getItamImportSchema(formConfig) {
+    if (!formConfig || !Array.isArray(formConfig.postOrder)) {
+        return [];
+    }
+
+    const seen = new Set();
+    const schema = [];
+    formConfig.postOrder.forEach(step => {
+        (step.fields || []).forEach(fieldName => {
+            if (seen.has(fieldName)) {
+                return;
+            }
+            seen.add(fieldName);
+            const fieldConfig = formConfig.fields[fieldName] || {};
+            schema.push({
+                name: fieldName,
+                label: fieldConfig.label || fieldName,
+                type: fieldConfig.type || 'text',
+                required: !!fieldConfig.required,
+                resource: fieldConfig.resource || '',
+                options: Array.isArray(fieldConfig.options) ? fieldConfig.options : [],
+                sourceTable: step.table || ''
+            });
+        });
+    });
+
+    return schema;
+}
+
+function getImportFieldNote(schemaField) {
+    if (!schemaField) {
+        return '';
+    }
+
+    if (schemaField.type === 'searchDropdown') {
+        return `UUID (${schemaField.resource || 'referenced table'})`;
+    }
+    if (schemaField.type === 'dropdown') {
+        return schemaField.options.map(option => option.value).join(', ');
+    }
+    if (schemaField.type === 'boolean') {
+        return 'true / false';
+    }
+    if (schemaField.type === 'number') {
+        return 'numeric';
+    }
+    if (schemaField.type === 'textarea') {
+        return 'text or JSON';
+    }
+
+    return '';
+}
+
+function getSampleValueForSchemaField(schemaField) {
+    if (!schemaField) {
+        return '';
+    }
+
+    if (schemaField.type === 'dropdown') {
+        const firstUsable = schemaField.options.find(option => String(option.value || '').trim() !== '' && option.value !== '--');
+        return firstUsable ? String(firstUsable.value) : '';
+    }
+    if (schemaField.type === 'boolean') {
+        return schemaField.required ? 'false' : '';
+    }
+    if (schemaField.type === 'number') {
+        return schemaField.required ? '1' : '';
+    }
+    if (schemaField.type === 'searchDropdown') {
+        return schemaField.required ? '<uuid>' : '';
+    }
+    if (schemaField.name === 'caption') {
+        return 'Example';
+    }
+    if (schemaField.name === 'status') {
+        return '0';
+    }
+
+    return schemaField.required ? `example_${schemaField.name}` : '';
+}
+
+function escapeCsvValue(value) {
+    const normalized = value == null ? '' : String(value);
+    if (/[\"\r\n;]/.test(normalized)) {
+        return '"' + normalized.replace(/"/g, '""') + '"';
+    }
+    return normalized;
+}
+
+function buildCsvText(headers, rows) {
+    const lines = [];
+    lines.push(headers.map(escapeCsvValue).join(';'));
+    rows.forEach(row => {
+        lines.push(headers.map(header => escapeCsvValue(row[header] ?? '')).join(';'));
+    });
+    return lines.join('\r\n');
+}
+
+function downloadTextFile(filename, content, mimeType = 'text/plain;charset=utf-8;') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function parseCsvText(rawText) {
+    const text = String(rawText || '').replace(/^\uFEFF/, '');
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        const next = text[index + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                field += '"';
+                index += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (!inQuotes && char === ';') {
+            row.push(field);
+            field = '';
+            continue;
+        }
+
+        if (!inQuotes && (char === '\n' || char === '\r')) {
+            if (char === '\r' && next === '\n') {
+                index += 1;
+            }
+            row.push(field);
+            rows.push(row);
+            row = [];
+            field = '';
+            continue;
+        }
+
+        field += char;
+    }
+
+    if (field !== '' || row.length > 0) {
+        row.push(field);
+        rows.push(row);
+    }
+
+    return rows;
+}
+
+function parseBooleanValue(value) {
+    if (value === true || value === false) {
+        return value;
+    }
+
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === '') {
+        return null;
+    }
+    if (['1', 'true', 't', 'yes', 'y', 'on'].includes(normalized)) {
+        return true;
+    }
+    if (['0', 'false', 'f', 'no', 'n', 'off'].includes(normalized)) {
+        return false;
+    }
+
+    throw new Error(`Invalid boolean value: ${value}`);
+}
+
+function normalizeCsvRecord(rawRecord, schema) {
+    const normalized = {};
+
+    schema.forEach(field => {
+        const rawValue = Object.prototype.hasOwnProperty.call(rawRecord, field.name) ? rawRecord[field.name] : undefined;
+        const value = rawValue == null ? '' : String(rawValue).trim();
+
+        if (value === '') {
+            if (field.required) {
+                throw new Error(`Missing required field: ${field.name}`);
+            }
+            normalized[field.name] = null;
+            return;
+        }
+
+        if (field.type === 'boolean') {
+            normalized[field.name] = parseBooleanValue(value);
+            return;
+        }
+
+        if (field.type === 'number') {
+            const parsed = Number(value);
+            if (Number.isNaN(parsed)) {
+                throw new Error(`Invalid number in field ${field.name}: ${value}`);
+            }
+            normalized[field.name] = parsed;
+            return;
+        }
+
+        if (field.type === 'dropdown' && field.options.length > 0) {
+            const allowed = new Set(field.options.map(option => String(option.value)));
+            if (!allowed.has(value)) {
+                throw new Error(`Invalid option in field ${field.name}: ${value}`);
+            }
+        }
+
+        if (field.type === 'searchDropdown' && !isValidPostgresUuid(value)) {
+            throw new Error(`Field ${field.name} expects a UUID: ${value}`);
+        }
+
+        normalized[field.name] = value;
+    });
+
+    return normalized;
+}
+
+function formatExportValue(value, type) {
+    if (value == null) {
+        return '';
+    }
+    if (type === 'boolean') {
+        return isTruthyTemplateValue(value) ? 'true' : 'false';
+    }
+    if (typeof value === 'object') {
+        return JSON.stringify(value);
+    }
+    return String(value);
+}
+
+function mapRowToImportRecord(detailsTableName, formConfig, rowData, schema) {
+    const record = {};
+    schema.forEach(field => {
+        const value = getRowFieldValueForForm(rowData, detailsTableName, field.sourceTable, field.name);
+        record[field.name] = formatExportValue(value, field.type);
+    });
+    return record;
+}
+
+function setTransferStatus(message, tone = 'info') {
+    const status = document.getElementById('itamTransferStatus');
+    if (!status) {
+        return;
+    }
+
+    const toneClasses = {
+        info: 'border-slate-200 bg-white text-slate-700',
+        success: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+        error: 'border-rose-300 bg-rose-50 text-rose-800'
+    };
+
+    status.className = `rounded-xl border p-3 text-sm ${toneClasses[tone] || toneClasses.info}`;
+    status.textContent = message;
+    status.classList.remove('hidden');
+}
+
+function resetTransferStatus() {
+    const status = document.getElementById('itamTransferStatus');
+    if (!status) {
+        return;
+    }
+    status.textContent = '';
+    status.classList.add('hidden');
+}
+
+function normalizeDuplicateCaption(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function buildCaptionDuplicateEntry(caption, uuids = {}, rowData = null) {
+    return {
+        caption: String(caption || '').trim(),
+        uuids: { ...(uuids || {}) },
+        rowData: rowData || null
+    };
+}
+
+async function fetchAllRowsForTable(table, extraParams = {}) {
+    const limit = 1000;
+    let page = 1;
+    let totalPages = 1;
+    const allRows = [];
+
+    while (page <= totalPages) {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('page', String(page));
+        Object.entries(extraParams || {}).forEach(([key, value]) => {
+            if (value !== null && value !== undefined && value !== '') {
+                params.set(key, String(value));
+            }
+        });
+
+        const response = await fetch(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}?${params.toString()}`);
+        if (!response.ok) {
+            throw new Error(`Duplicate check failed (${response.status})`);
+        }
+
+        const payload = await response.json();
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const pageInfo = payload.pageInfo || {};
+        const totalResults = Math.max(parseInt(pageInfo.totalResults || items.length, 10), items.length);
+        totalPages = Math.max(1, Math.ceil(totalResults / limit));
+        allRows.push(...items);
+        page += 1;
+    }
+
+    return allRows;
+}
+
+function buildCaptionDuplicateIndex(rows, formConfig, detailsTableName) {
+    const index = new Map();
+    const postOrder = Array.isArray(formConfig && formConfig.postOrder) ? formConfig.postOrder : [];
+
+    (rows || []).forEach((row) => {
+        const caption = getRowFieldValueForForm(row, detailsTableName, 'metadata', 'caption');
+        const normalized = normalizeDuplicateCaption(caption);
+        if (!normalized) {
+            return;
+        }
+
+        const entry = buildCaptionDuplicateEntry(caption, mapEditUuidsFromRow(row, postOrder, detailsTableName), row);
+        const bucket = index.get(normalized) || [];
+        bucket.push(entry);
+        index.set(normalized, bucket);
+    });
+
+    return index;
+}
+
+function updateCaptionDuplicateIndex(index, caption, entry, mode = 'append') {
+    const normalized = normalizeDuplicateCaption(caption);
+    if (!normalized || !index) {
+        return;
+    }
+
+    const bucket = index.get(normalized) || [];
+    if (mode === 'replace-first' && bucket.length > 0) {
+        bucket[0] = entry;
+        index.set(normalized, bucket);
+        return;
+    }
+
+    bucket.push(entry);
+    index.set(normalized, bucket);
+}
+
+function askDuplicateCaptionAction(caption, matchCount = 1) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('itamTransferDuplicateModal');
+        const copy = document.getElementById('itamTransferDuplicateCopy');
+        const remember = document.getElementById('itamTransferDuplicateRemember');
+        const keepButton = document.getElementById('itamTransferDuplicateKeep');
+        const replaceButton = document.getElementById('itamTransferDuplicateReplace');
+        const createButton = document.getElementById('itamTransferDuplicateCreate');
+
+        if (!modal || !copy || !remember || !keepButton || !replaceButton || !createButton) {
+            resolve({ action: 'keep', remember: false });
+            return;
+        }
+
+        copy.textContent = `<?php echo $lang['transfer_duplicate_copy'] ?? 'Es gibt bereits einen Eintrag mit dieser Caption'; ?>: "${caption}"${matchCount > 1 ? ` (${matchCount} Treffer)` : ''}`;
+        remember.checked = false;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        const finish = (action) => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            keepButton.removeEventListener('click', onKeep);
+            replaceButton.removeEventListener('click', onReplace);
+            createButton.removeEventListener('click', onCreate);
+            resolve({ action, remember: !!remember.checked });
+        };
+
+        const onKeep = () => finish('keep');
+        const onReplace = () => finish('replace');
+        const onCreate = () => finish('create');
+
+        keepButton.addEventListener('click', onKeep);
+        replaceButton.addEventListener('click', onReplace);
+        createButton.addEventListener('click', onCreate);
+    });
+}
+
 function getCurrentBaseTableName(tableName) {
     return String(tableName || '').replace(/_details$/, '').replace(/_join_.+$/, '');
 }
@@ -991,21 +1477,18 @@ function parseJsonObjectOrDefault(rawValue, fallback = {}) {
         attempts.push(htmlDecoded);
     }
 
-    // DB/legacy tolerant parsing:
-    // 1) single quotes -> double quotes
-    // 2) quote bare object keys: {x:1} => {"x":1}
-    // 3) remove trailing commas
-    // 4) convert => to : (legacy map style)
-    const normalized = htmlDecoded
-        .replace(/=>/g, ':')
+    const tolerant = htmlDecoded
         .replace(/'/g, '"')
         .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3')
         .replace(/,\s*([}\]])/g, '$1');
-    if (normalized !== htmlDecoded) {
-        attempts.push(normalized);
+    if (tolerant !== htmlDecoded) {
+        attempts.push(tolerant);
     }
 
     for (const candidate of attempts) {
+        if (!candidate) {
+            continue;
+        }
         try {
             const parsed = JSON.parse(candidate);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -1016,213 +1499,344 @@ function parseJsonObjectOrDefault(rawValue, fallback = {}) {
         }
     }
 
-    console.warn('JSON parse failed, fallback used:', { rawValue });
-
     return { ...fallback };
 }
 
-function getNumericOrDefault(value, fallback = 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function normalizeSpecificationObject(rawValue) {
-    if (!rawValue) {
-        return {};
-    }
-
-    const parsed = parseJsonObjectOrDefault(rawValue, {});
-    if (Object.keys(parsed).length > 0) {
-        return parsed;
-    }
-
-    const lines = String(rawValue || '')
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
-
-    if (lines.length === 0) {
-        return {};
-    }
-
-    const result = {};
-    lines.forEach((line, index) => {
-        const kvMatch = line.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
-        if (kvMatch) {
-            const key = kvMatch[1].trim();
-            const val = kvMatch[2].trim();
-            if (key) {
-                result[key] = val;
-            }
-        } else {
-            result[`note_${index + 1}`] = line;
-        }
-    });
-
-    return result;
+    return parseJsonObjectOrDefault(rawValue, {});
 }
 
-function serializeSpecificationObject(specObj) {
-    const sanitized = {};
-    Object.entries(specObj || {}).forEach(([key, value]) => {
-        const normalizedKey = String(key || '').trim();
-        if (!normalizedKey) {
+function serializeSpecificationObject(specification) {
+    const normalized = specification && typeof specification === 'object' && !Array.isArray(specification)
+        ? specification
+        : {};
+
+    const cleaned = {};
+    Object.entries(normalized).forEach(([key, value]) => {
+        const cleanKey = String(key || '').trim();
+        if (!cleanKey) {
             return;
         }
-        const normalizedValue = value == null ? '' : String(value).trim();
-        if (normalizedValue === '') {
+
+        if (value === null || value === undefined) {
             return;
         }
-        sanitized[normalizedKey] = normalizedValue;
+
+        const cleanValue = typeof value === 'string' ? value.trim() : String(value);
+        if (cleanValue === '') {
+            return;
+        }
+
+        cleaned[cleanKey] = cleanValue;
     });
 
-    return Object.keys(sanitized).length > 0
-        ? JSON.stringify(sanitized)
-        : '';
+    return Object.keys(cleaned).length ? JSON.stringify(cleaned) : '';
 }
 
 function setupSpecificationEditors(container) {
-    if (!container) {
-        return;
-    }
+    const root = container || document;
+    const fields = Array.from(root.querySelectorAll('textarea[name="specification"], input[name="specification"]'));
 
-    const specTextareas = Array.from(container.querySelectorAll('textarea[name="specification"]'));
-    const predefinedSpecKeys = [
-        'powerConsumptionW',
-        'powerOutputW',
-        'powerOutputVA',
-        'phases',
-        'switchingBackplaneGbps',
-        'throughputGbps',
-        'cpuModel',
-        'ramGB',
-        'storageTB',
-        'psuCount',
-        'efficiencyClass'
-    ];
-
-    specTextareas.forEach((textarea) => {
-        if (!textarea || textarea.dataset.specEditorInitialized === '1') {
+    fields.forEach((field) => {
+        const wrapper = field.closest('.pb-6') || field.parentElement;
+        if (!wrapper || wrapper.querySelector('.itam-specification-preview')) {
             return;
         }
 
-        textarea.dataset.specEditorInitialized = '1';
-        textarea.classList.add('hidden');
+        const preview = document.createElement('div');
+        preview.className = 'itam-specification-preview mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3';
 
-        const host = document.createElement('div');
-        host.className = 'rounded-xl border border-slate-300 bg-slate-50 p-3';
-        host.innerHTML = `
-            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Specification (Erweiterte Tabelle)</div>
-            <div class="spec-grid grid gap-2"></div>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-                <button type="button" class="spec-add-row rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Zeile hinzufügen</button>
-                <select class="spec-key-preset rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700">
-                    <option value="">Vorgefertigten Schlüssel wählen ...</option>
-                    ${predefinedSpecKeys.map((key) => `<option value="${key}">${key}</option>`).join('')}
-                </select>
-                <button type="button" class="spec-add-preset rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">Schlüssel einfügen</button>
-            </div>
-        `;
+        const title = document.createElement('div');
+        title.className = 'mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500';
+        title.textContent = 'Specification Preview';
 
-        textarea.parentNode.appendChild(host);
+        const body = document.createElement('div');
+        body.className = 'text-xs text-slate-700';
 
-        const grid = host.querySelector('.spec-grid');
-        const addButton = host.querySelector('.spec-add-row');
-        const presetSelect = host.querySelector('.spec-key-preset');
-        const addPresetButton = host.querySelector('.spec-add-preset');
-        let isInternalWrite = false;
+        preview.appendChild(title);
+        preview.appendChild(body);
+        wrapper.appendChild(preview);
 
-        const writeBack = () => {
-            const specObj = {};
-            host.querySelectorAll('.spec-row').forEach((row) => {
-                const keyInput = row.querySelector('.spec-key');
-                const valInput = row.querySelector('.spec-value');
-                const key = String(keyInput?.value || '').trim();
-                const val = String(valInput?.value || '').trim();
-                if (!key || !val) {
-                    return;
-                }
-                specObj[key] = val;
-            });
+        const renderPreview = () => {
+            const parsed = normalizeSpecificationObject(field.value || '');
+            const entries = Object.entries(parsed).filter(([key, value]) => String(key || '').trim() && String(value || '').trim());
 
-            isInternalWrite = true;
-            textarea.value = serializeSpecificationObject(specObj);
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            textarea.dispatchEvent(new Event('change', { bubbles: true }));
-            isInternalWrite = false;
-        };
-
-        const createRow = (key = '', value = '') => {
-            const row = document.createElement('div');
-            row.className = 'spec-row grid gap-2 sm:grid-cols-[minmax(120px,1fr)_minmax(160px,2fr)_auto]';
-            row.innerHTML = `
-                <input type="text" class="spec-key rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" placeholder="Schlüssel (z.B. powerConsumptionW)">
-                <input type="text" class="spec-value rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" placeholder="Wert (z.B. 450)">
-                <button type="button" class="spec-remove h-9 rounded-lg border border-red-200 bg-red-50 px-2 text-xs font-semibold text-red-700 hover:bg-red-100">Entfernen</button>
-            `;
-
-            const keyInput = row.querySelector('.spec-key');
-            const valueInput = row.querySelector('.spec-value');
-            const removeButton = row.querySelector('.spec-remove');
-
-            keyInput.value = key;
-            valueInput.value = value;
-
-            keyInput.addEventListener('input', writeBack);
-            valueInput.addEventListener('input', writeBack);
-            removeButton.addEventListener('click', () => {
-                row.remove();
-                writeBack();
-            });
-
-            grid.appendChild(row);
-            return row;
-        };
-
-        const renderFromTextarea = () => {
-            if (isInternalWrite) {
-                return;
-            }
-            grid.innerHTML = '';
-            const specObj = normalizeSpecificationObject(textarea.value);
-            const entries = Object.entries(specObj);
             if (entries.length === 0) {
-                createRow('', '');
+                const plain = String(field.value || '').trim();
+                body.innerHTML = plain
+                    ? '<div class="whitespace-pre-wrap text-slate-600">' + escapeHtml(plain) + '</div>'
+                    : '<div class="text-slate-400">Keine strukturierten Werte erkannt.</div>';
                 return;
             }
-            entries.forEach(([key, value]) => createRow(String(key || ''), String(value || '')));
+
+            const rows = entries.map(([key, value]) => {
+                return '<tr>'
+                    + '<th class="border-b border-slate-200 px-2 py-1 text-left font-semibold text-slate-600">' + escapeHtml(key) + '</th>'
+                    + '<td class="border-b border-slate-200 px-2 py-1 text-left text-slate-900">' + escapeHtml(value) + '</td>'
+                    + '</tr>';
+            }).join('');
+
+            body.innerHTML = '<div class="overflow-auto"><table class="w-full border-collapse"><tbody>' + rows + '</tbody></table></div>';
         };
 
-        addButton.addEventListener('click', () => {
-            const row = createRow('', '');
-            row.querySelector('.spec-key')?.focus();
-        });
-
-        addPresetButton.addEventListener('click', () => {
-            const selectedKey = String(presetSelect?.value || '').trim();
-            if (!selectedKey) {
-                return;
-            }
-
-            const existingRow = Array.from(host.querySelectorAll('.spec-row')).find((row) => {
-                const keyInput = row.querySelector('.spec-key');
-                return String(keyInput?.value || '').trim() === selectedKey;
-            });
-
-            if (existingRow) {
-                existingRow.querySelector('.spec-value')?.focus();
-                return;
-            }
-
-            const row = createRow(selectedKey, '');
-            writeBack();
-            row.querySelector('.spec-value')?.focus();
-        });
-
-        textarea.addEventListener('input', renderFromTextarea);
-        textarea.addEventListener('change', renderFromTextarea);
-        renderFromTextarea();
+        field.addEventListener('input', renderPreview);
+        field.addEventListener('change', renderPreview);
+        renderPreview();
     });
+}
+
+function collectRecordFromForms(formConfig, editMode) {
+    const record = {};
+    const schema = getItamImportSchema(formConfig);
+
+    schema.forEach(field => {
+        const input = document.querySelector(`form [name="${field.name}"]`);
+        if (!input) {
+            return;
+        }
+
+        if (field.type === 'boolean') {
+            record[field.name] = input.checked;
+            return;
+        }
+
+        const rawValue = input.value;
+        if (rawValue === null || rawValue === undefined) {
+            record[field.name] = null;
+            return;
+        }
+
+        const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+        if (value === '') {
+            record[field.name] = null;
+            return;
+        }
+
+        if (field.type === 'number') {
+            const parsed = Number(value);
+            record[field.name] = Number.isNaN(parsed) ? null : parsed;
+            return;
+        }
+
+        record[field.name] = value;
+    });
+
+    if (editMode) {
+        schema.filter(field => field.type === 'boolean').forEach(field => {
+            if (!Object.prototype.hasOwnProperty.call(record, field.name)) {
+                record[field.name] = false;
+            }
+        });
+    }
+
+    return record;
+}
+
+function buildPostDataFromRecord(record, postConfig, formConfig, editMode = false) {
+    const postData = {};
+    const fieldList = Array.isArray(postConfig.fields) ? postConfig.fields : [];
+
+    fieldList.forEach((fieldName) => {
+        const fieldConfig = (formConfig.fields && formConfig.fields[fieldName]) ? formConfig.fields[fieldName] : {};
+        if (!Object.prototype.hasOwnProperty.call(record, fieldName)) {
+            return;
+        }
+
+        const value = record[fieldName];
+
+        if (fieldConfig.type === 'boolean') {
+            if (value === true || value === false) {
+                if (value || editMode) {
+                    postData[fieldName] = value;
+                }
+            }
+            return;
+        }
+
+        if (value === null || value === undefined || value === '') {
+            postData[fieldName] = null;
+            return;
+        }
+
+        if (fieldConfig.type === 'number') {
+            const parsed = Number(value);
+            postData[fieldName] = Number.isNaN(parsed) ? null : parsed;
+            return;
+        }
+
+        postData[fieldName] = value;
+    });
+
+    return postData;
+}
+
+async function submitItamRecord(table, record, options = {}) {
+    const responseUuids = {};
+    const configData = await getItamFormsConfig();
+    const formConfig = getItamFormConfig(configData, table);
+    if (!formConfig || !Array.isArray(formConfig.postOrder)) {
+        throw new Error(`No form configuration for ${table}`);
+    }
+
+    const postOrder = formConfig.postOrder;
+    const editMode = !!options.editMode;
+    const existingUuids = options.uuids || {};
+    let autoPortConfig = null;
+
+    function injectUuids(postData, postConfig) {
+        if (postConfig.useMetadataUUID && responseUuids.metadata) {
+            postData.metadata = responseUuids.metadata;
+        }
+        if (postConfig.useIpUUID && responseUuids.device_port_ip) {
+            postData.device_port_ip = responseUuids.device_port_ip;
+        }
+    }
+
+    function hasMeaningfulPostData(postData) {
+        return Object.entries(postData || {}).some(([key, value]) => {
+            if (key === 'uuid') {
+                return false;
+            }
+            if (value === null || value === undefined) {
+                return false;
+            }
+            if (value === false) {
+                return false;
+            }
+            return String(value).trim() !== '';
+        });
+    }
+
+    function extractUuidFromApiPayload(payload, rawBody = '') {
+        if (!payload) {
+            const rawMatch = String(rawBody || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+            return rawMatch ? String(rawMatch[0]) : '';
+        }
+
+        if (Array.isArray(payload) && payload[0] && payload[0].uuid) {
+            return String(payload[0].uuid);
+        }
+
+        if (payload.uuid) {
+            return String(payload.uuid);
+        }
+
+        if (Array.isArray(payload.items) && payload.items[0] && payload.items[0].uuid) {
+            return String(payload.items[0].uuid);
+        }
+
+        const rawMatch = String(rawBody || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        if (rawMatch) {
+            return String(rawMatch[0]);
+        }
+
+        return '';
+    }
+
+    for (const postConfig of postOrder) {
+        const postData = buildPostDataFromRecord(record, postConfig, formConfig, editMode);
+
+        if (postConfig.table === 'device') {
+            const parsedItemGroup = String(postData.item_group || '').trim();
+
+            if (parsedItemGroup && !isValidPostgresUuid(parsedItemGroup)) {
+                throw new Error('Item Group muss eine gueltige UUID sein.');
+            }
+
+            postData.item_group = parsedItemGroup || null;
+
+            const isTemplateDevice = isTruthyTemplateValue(postData.template);
+            let portLayoutConfig = null;
+            const sizeObj = parseJsonObjectOrDefault(postData.size || '{}', {});
+            if (sizeObj && sizeObj.portLayout) {
+                portLayoutConfig = sizeObj.portLayout;
+            }
+
+            if (portLayoutConfig && Array.isArray(portLayoutConfig.groups) && portLayoutConfig.groups.length > 0) {
+                autoPortConfig = { groups: portLayoutConfig.groups };
+            } else {
+                autoPortConfig = { groups: [] };
+            }
+
+            if (isTemplateDevice) {
+                autoPortConfig = { groups: [] };
+            }
+        }
+
+        injectUuids(postData, postConfig);
+
+        const targetUuid = editMode ? (existingUuids[postConfig.table] || '') : '';
+        let httpMethod = editMode ? 'PATCH' : 'POST';
+        let apiUrl = editMode
+            ? `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/${targetUuid}`
+            : `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/`;
+        const isOptionalRelationTable = postConfig.table === 'device_port_ip';
+        const hasPayloadValues = hasMeaningfulPostData(postData);
+
+        if (editMode && !targetUuid) {
+            if (isOptionalRelationTable && !hasPayloadValues) {
+                responseUuids[postConfig.table] = '';
+                continue;
+            }
+            httpMethod = 'POST';
+            apiUrl = `<?php echo PORTFLOW_HOSTNAME; ?>/api/${postConfig.table}/`;
+            console.warn(`Keine UUID fuer ${postConfig.table} gefunden, lege Datensatz neu an.`);
+        }
+
+        const response = await fetch(apiUrl, {
+            method: httpMethod,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postData)
+        });
+
+        let data = null;
+        let rawBody = '';
+        try {
+            rawBody = await response.text();
+            data = rawBody ? JSON.parse(rawBody) : null;
+        } catch (error) {
+            data = null;
+        }
+
+        if (!response.ok) {
+            throw new Error(`API ${postConfig.table} failed (${response.status}): ${rawBody || 'no response body'}`);
+        }
+
+        const responseUuid = extractUuidFromApiPayload(data, rawBody);
+        const usesPatchUpdate = editMode && !!targetUuid && httpMethod === 'PATCH';
+        const effectiveUuid = usesPatchUpdate ? String(targetUuid) : responseUuid;
+
+        if (!effectiveUuid) {
+            if (isOptionalRelationTable) {
+                console.warn(`Kein UUID aus ${postConfig.table}-Response ermittelbar. Schritt wird als optional behandelt.`, {
+                    table: postConfig.table,
+                    method: httpMethod,
+                    apiUrl,
+                    postData,
+                    rawBody
+                });
+                responseUuids[postConfig.table] = '';
+                continue;
+            }
+            throw new Error(`API ${postConfig.table} returned no UUID.`);
+        }
+
+        responseUuids[postConfig.table] = effectiveUuid;
+        if (postConfig.table === 'metadata') responseUuids.metadata = effectiveUuid;
+        if (postConfig.table === 'device_port_ip') responseUuids.device_port_ip = effectiveUuid;
+
+        if (!editMode && postConfig.table === 'device' && autoPortConfig && autoPortConfig.groups && autoPortConfig.groups.length > 0) {
+            const totalPorts = computeAllPortPositions(autoPortConfig.groups).length;
+            setProgressOverlayState(true);
+            updateProgressOverlay('Auto-Ports werden erstellt ...', 0, totalPorts);
+
+            await createAutoPortsForDevice(effectiveUuid, autoPortConfig.groups, (progress) => {
+                updateProgressOverlay(progress.label || 'Auto-Ports werden erstellt ...', progress.current || 0, progress.total || totalPorts);
+            });
+        }
+    }
+
+    return { responseUuids };
 }
 
 function createMaskNumberInput(id, labelText, defaultValue = 0, step = '1') {
@@ -1244,6 +1858,15 @@ function createMaskNumberInput(id, labelText, defaultValue = 0, step = '1') {
     wrapper.appendChild(label);
     wrapper.appendChild(input);
     return { wrapper, input };
+}
+
+function getNumericOrDefault(value, fallback = 0) {
+    if (value === null || value === undefined || value === '') {
+        return fallback;
+    }
+
+    const parsed = Number(String(value).replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function createMaskGroup(title) {
@@ -3685,6 +4308,236 @@ async function submitForms(table) {
     loadTable(table);
 }
 
+function resolveCurrentTableLabel() {
+    const navItem = document.querySelector(`#itam_nav [data-table="${currentTable}"], #itam_nav_mobile [data-table="${currentTable}"]`);
+    if (navItem) {
+        const label = navItem.querySelector('.itam-nav-label');
+        if (label && label.textContent) {
+            return label.textContent.trim();
+        }
+        if (navItem.textContent) {
+            return navItem.textContent.trim();
+        }
+    }
+    return currentTable;
+}
+
+async function openTransferDialog() {
+    try {
+        const configData = await getItamFormsConfig();
+        const formConfig = getItamFormConfig(configData, currentTable);
+        if (!formConfig) {
+            alert('<?php echo $lang['transfer_not_available'] ?? 'Import/Export is not available for this view.'; ?>');
+            return;
+        }
+
+        const schema = getItamImportSchema(formConfig);
+        const body = document.getElementById('itamTransferPreviewBody');
+        const title = document.getElementById('itamTransferTitle');
+        const subtitle = document.getElementById('itamTransferSubtitle');
+        if (!body || !title || !subtitle) {
+            return;
+        }
+
+        title.textContent = `${resolveCurrentTableLabel()} - <?php echo $lang['transfer_csv'] ?? 'CSV Import/Export'; ?>`;
+        subtitle.textContent = '<?php echo $lang['transfer_hint'] ?? 'Accepted and required fields for the current view.'; ?>';
+        body.innerHTML = '';
+
+        schema.forEach(field => {
+            const row = document.createElement('tr');
+            row.className = 'border-t border-slate-200 align-top';
+            row.innerHTML = `
+                <td class="p-2 font-mono text-xs text-slate-900">${escapeHtml(field.name)}</td>
+                <td class="p-2">${escapeHtml(field.label)}</td>
+                <td class="p-2">${field.required ? '<?php echo $lang['yes'] ?? 'Ja'; ?>' : '<?php echo $lang['no'] ?? 'Nein'; ?>'}</td>
+                <td class="p-2">${escapeHtml(field.type)}</td>
+                <td class="p-2 text-xs text-slate-500">${escapeHtml(getImportFieldNote(field))}</td>
+            `;
+            body.appendChild(row);
+        });
+
+        currentTransferFile = null;
+        const fileInput = document.getElementById('itamTransferFile');
+        const fileName = document.getElementById('itamTransferFileName');
+        const importBtn = document.getElementById('itamTransferImportBtn');
+        if (fileInput) fileInput.value = '';
+        if (fileName) fileName.textContent = '<?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?>';
+        if (importBtn) importBtn.disabled = true;
+        resetTransferStatus();
+
+        const modal = document.getElementById('itamTransferModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons({ nodes: [document.getElementById('itamTransferModal')] });
+        }
+    } catch (error) {
+        console.error('Transfer dialog could not be opened', error);
+        alert('<?php echo $lang['transfer_not_available'] ?? 'Import/Export is not available for this view.'; ?>');
+    }
+}
+
+function closeTransferDialog() {
+    const modal = document.getElementById('itamTransferModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+function handleTransferFileSelected(inputEl) {
+    currentTransferFile = inputEl && inputEl.files ? inputEl.files[0] : null;
+    const fileName = document.getElementById('itamTransferFileName');
+    const importBtn = document.getElementById('itamTransferImportBtn');
+    if (fileName) {
+        fileName.textContent = currentTransferFile ? `${currentTransferFile.name} (${Math.round(currentTransferFile.size / 1024)} KB)` : '<?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?>';
+    }
+    if (importBtn) {
+        importBtn.disabled = !currentTransferFile;
+    }
+}
+
+async function downloadTransferSample() {
+    try {
+        const configData = await getItamFormsConfig();
+        const formConfig = getItamFormConfig(configData, currentTable);
+        if (!formConfig) {
+            throw new Error('No form config for current table');
+        }
+
+        const schema = getItamImportSchema(formConfig);
+        const headers = schema.map(field => field.name);
+        const sampleRow = {};
+        schema.forEach(field => {
+            sampleRow[field.name] = getSampleValueForSchemaField(field);
+        });
+
+        const csv = buildCsvText(headers, [sampleRow]);
+        downloadTextFile(`${currentTable}-sample.csv`, csv, 'text/csv;charset=utf-8;');
+        setTransferStatus('<?php echo $lang['transfer_sample_ready'] ?? 'Sample CSV downloaded.'; ?>', 'success');
+    } catch (error) {
+        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed'] ?? 'Saving failed'; ?>', 'error');
+    }
+}
+
+async function exportCurrentTableCsv() {
+    try {
+        const configData = await getItamFormsConfig();
+        const formConfig = getItamFormConfig(configData, currentTable);
+        if (!formConfig) {
+            throw new Error('No form config for current table');
+        }
+
+        const schema = getItamImportSchema(formConfig);
+        const headers = schema.map(field => field.name);
+        const pageInfo = (window.__pfTablePageInfo && window.__pfTablePageInfo[currentTable]) || {};
+        const totalResults = Math.max(parseInt(pageInfo.totalResults || 0, 10), 0);
+        const searchEl = document.querySelector('#searchForm input[name="search"]');
+        const params = new URLSearchParams();
+        if (searchEl && searchEl.value) {
+            params.set('search', searchEl.value);
+        }
+        if (totalResults > 0) {
+            params.set('limit', String(totalResults));
+        }
+        const sort = getTableSort(currentTable);
+        if (sort && sort.col && sort.dir) {
+            params.set('sort', sort.col);
+            params.set('dir', sort.dir);
+        }
+
+        let rows = (window.__pfTableRows && window.__pfTableRows[currentTable]) || [];
+        if (totalResults > rows.length) {
+            const response = await fetch(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${currentTable}?${params.toString()}`);
+            if (!response.ok) {
+                throw new Error(`Export fetch failed (${response.status})`);
+            }
+            const payload = await response.json();
+            rows = Array.isArray(payload.items) ? payload.items : rows;
+        }
+
+        const csvRows = rows.map(row => mapRowToImportRecord(currentTable, formConfig, row, schema));
+        const csv = buildCsvText(headers, csvRows);
+        downloadTextFile(`${currentTable}-export.csv`, csv, 'text/csv;charset=utf-8;');
+        setTransferStatus('<?php echo $lang['transfer_export_ready'] ?? 'CSV export downloaded.'; ?>', 'success');
+    } catch (error) {
+        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed'] ?? 'Saving failed'; ?>', 'error');
+    }
+}
+
+async function importTransferCsv() {
+    if (!currentTransferFile) {
+        setTransferStatus('<?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?>', 'error');
+        return;
+    }
+
+    const importButton = document.getElementById('itamTransferImportBtn');
+    if (importButton) {
+        importButton.disabled = true;
+    }
+
+    let imported = 0;
+    try {
+        const configData = await getItamFormsConfig();
+        const formConfig = getItamFormConfig(configData, currentTable);
+        if (!formConfig) {
+            throw new Error('No form config for current table');
+        }
+
+        const schema = getItamImportSchema(formConfig);
+        const acceptedFields = new Set(schema.map(field => field.name));
+        const csvText = await currentTransferFile.text();
+        const parsedRows = parseCsvText(csvText);
+        if (!Array.isArray(parsedRows) || parsedRows.length === 0) {
+            throw new Error('<?php echo $lang['transfer_import_empty'] ?? 'The CSV file is empty.'; ?>');
+        }
+
+        const headers = (parsedRows[0] || []).map(header => String(header || '').trim()).filter(Boolean);
+        const unknownHeaders = headers.filter(header => !acceptedFields.has(header));
+        if (unknownHeaders.length > 0) {
+            throw new Error(`<?php echo $lang['transfer_import_unknown'] ?? 'Unknown CSV columns'; ?>: ${unknownHeaders.join(', ')}`);
+        }
+
+        const missingRequired = schema.filter(field => field.required && !headers.includes(field.name));
+        if (missingRequired.length > 0) {
+            throw new Error(`<?php echo $lang['transfer_import_missing_required'] ?? 'Missing required columns'; ?>: ${missingRequired.map(field => field.name).join(', ')}`);
+        }
+
+        const rawRecords = parsedRows.slice(1).map(values => {
+            const record = {};
+            headers.forEach((header, index) => {
+                record[header] = values[index] ?? '';
+            });
+            return record;
+        }).filter(record => Object.values(record).some(value => String(value || '').trim() !== ''));
+
+        if (rawRecords.length === 0) {
+            throw new Error('<?php echo $lang['transfer_import_empty'] ?? 'The CSV file is empty.'; ?>');
+        }
+
+        for (let index = 0; index < rawRecords.length; index += 1) {
+            setTransferStatus(`<?php echo $lang['transfer_import_progress'] ?? 'Import row'; ?> ${index + 1} / ${rawRecords.length}`);
+            const record = normalizeCsvRecord(rawRecords[index], schema);
+            await submitItamRecord(currentTable, record, { editMode: false, uuids: {} });
+            setProgressOverlayState(false);
+            imported += 1;
+        }
+
+        setTransferStatus(`<?php echo $lang['transfer_import_done'] ?? 'Import completed'; ?>: ${imported}`, 'success');
+        const searchEl = document.querySelector('#searchForm input[name="search"]');
+        loadTable(currentTable, searchEl ? searchEl.value : '');
+    } catch (error) {
+        setProgressOverlayState(false);
+        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed'] ?? 'Saving failed'; ?>', 'error');
+    } finally {
+        if (importButton) {
+            importButton.disabled = !currentTransferFile;
+        }
+    }
+}
+
 // General helper functions
 function ajaxGet(url, successCallback, errorCallback) {
     $.ajax({
@@ -3794,6 +4647,10 @@ function loadTable(table = 'location_details', search = '', limit = null, page =
         const query = params.toString() ? ('?' + params.toString()) : '';
 
         ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
+            window.__pfTablePageInfo = window.__pfTablePageInfo || {};
+            window.__pfTablePageInfo[table] = data.pageInfo || {};
+            window.__pfTableRows = window.__pfTableRows || {};
+            window.__pfTableRows[table] = Array.isArray(data.items) ? data.items : [];
             $('#count').text('<?php echo $lang['datasets']; ?>: ' + parseInt(data.pageInfo.totalResults));
             displayTable(columns, userColumns, data.items);
             generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);

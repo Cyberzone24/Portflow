@@ -53,6 +53,10 @@ class Record:
     server_link: str | None
 
 
+def _serialize_payload(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
 def _row_to_record(row: sqlite3.Row) -> Record:
     return Record(
         id=row["id"],
@@ -73,9 +77,46 @@ def enqueue(payload: dict) -> int:
     with _connect() as con:
         cur = con.execute(
             "INSERT INTO records (captured_at, payload) VALUES (?, ?)",
-            (captured_at, json.dumps(payload, ensure_ascii=False)),
+            (captured_at, _serialize_payload(payload)),
         )
         return int(cur.lastrowid)
+
+
+def get_record(record_id: int) -> Record | None:
+    with _connect() as con:
+        row = con.execute("SELECT * FROM records WHERE id = ?", (record_id,)).fetchone()
+        return _row_to_record(row) if row else None
+
+
+def update_payload(record_id: int, payload: dict, *, status: str | None = None) -> None:
+    captured_at = payload.get("lldp", {}).get("captured_at") or datetime.now(
+        timezone.utc
+    ).isoformat(timespec="seconds")
+    with _connect() as con:
+        if status is None:
+            con.execute(
+                "UPDATE records SET captured_at = ?, payload = ? WHERE id = ?",
+                (captured_at, _serialize_payload(payload), record_id),
+            )
+        else:
+            con.execute(
+                "UPDATE records SET captured_at = ?, payload = ?, status = ?, last_error = NULL, synced_at = NULL, server_link = NULL WHERE id = ?",
+                (captured_at, _serialize_payload(payload), status, record_id),
+            )
+
+
+def reset_record(record_id: int) -> None:
+    with _connect() as con:
+        con.execute(
+            "UPDATE records SET status = 'pending', last_error = NULL, synced_at = NULL, server_link = NULL WHERE id = ?",
+            (record_id,),
+        )
+
+
+def delete_record(record_id: int) -> bool:
+    with _connect() as con:
+        cur = con.execute("DELETE FROM records WHERE id = ?", (record_id,))
+        return (cur.rowcount or 0) > 0
 
 
 def list_records(status: str | None = None) -> list[Record]:

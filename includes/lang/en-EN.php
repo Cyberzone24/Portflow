@@ -413,6 +413,29 @@ if (isset($_GET['nav'])) {
         $lang['columns_reset'] = 'Reset to default';
         $lang['columns_save_failed'] = 'Saving failed';
         $lang['columns_not_available'] = 'Column configuration not available.';
+        $lang['transfer_csv'] = 'CSV import/export';
+        $lang['transfer_hint'] = 'Accepted and required fields for the current view.';
+        $lang['transfer_field'] = 'Field';
+        $lang['transfer_label'] = 'Label';
+        $lang['transfer_required'] = 'Required';
+        $lang['transfer_type'] = 'Type';
+        $lang['transfer_notes'] = 'Notes';
+        $lang['transfer_sample_title'] = 'Sample file';
+        $lang['transfer_download_sample'] = 'Download sample CSV';
+        $lang['transfer_sample_ready'] = 'Sample CSV downloaded.';
+        $lang['transfer_export_title'] = 'Export';
+        $lang['transfer_export_csv'] = 'Export CSV';
+        $lang['transfer_export_ready'] = 'CSV export downloaded.';
+        $lang['transfer_import_title'] = 'Import';
+        $lang['transfer_choose_file'] = 'Choose CSV file';
+        $lang['transfer_no_file'] = 'No file selected';
+        $lang['transfer_import_csv'] = 'Import CSV';
+        $lang['transfer_not_available'] = 'Import/export is not available for this view.';
+        $lang['transfer_import_empty'] = 'The CSV file is empty.';
+        $lang['transfer_import_unknown'] = 'Unknown CSV columns';
+        $lang['transfer_import_missing_required'] = 'Missing required columns';
+        $lang['transfer_import_progress'] = 'Import row';
+        $lang['transfer_import_done'] = 'Import completed';
 
         return $lang;
     }

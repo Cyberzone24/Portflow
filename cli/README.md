@@ -1,10 +1,10 @@
 # Portflow CLI (`pfcli`)
 
-Lightweight on-site tool for mapping office wall outlets to their upstream
-switch ports. Plug a laptop into the outlet, listen for one LLDP frame from
-the switch, type the outlet label, optionally note which device normally
-lives there — done. Records are buffered locally and synced to the Portflow
-server when the laptop is back inside the corporate firewall.
+Lightweight on-site tool for mapping office wall outlets in a room. Plug a
+laptop into the outlet, listen for one LLDP frame from the switch, enter the
+room and outlet label, optionally note the office end device, and sync later.
+Records are buffered locally and can be reviewed, edited, or deleted before
+they are pushed to the Portflow server.
 
 ```
 laptop ──[LLDP]── switch                    Portflow server
@@ -84,14 +84,14 @@ sudo setcap cap_net_raw,cap_net_admin=eip "$(readlink -f "$(which python3)")"
 pfcli login --url http://portflow.local/Portflow-DEV --user marius
 
 # 2) on site, plug into outlet, run capture
-pfcli record --iface eth0 --outlet 1.4/I.18
-# ...prompts for the "expected device" if you didn't pass --expected-device
+pfcli record --iface eth0 --room 9.440 --outlet 1.4/I.18
+# ...prompts for the office end device if you want to store it
 
 # Want to capture many in a row without server contact?
-#   pfcli record --iface eth0 --outlet 1.OG-12-A
-#   pfcli record --iface eth0 --outlet 1.OG-12-B
-#   pfcli record --iface eth0 --outlet 1.OG-12-C
-# Each is queued in SQLite at the OS data dir.
+#   pfcli record --iface eth0 --room 9.440 --outlet 1.OG-12-A
+#   pfcli record --iface eth0 --room 9.440 --outlet 1.OG-12-B
+#   pfcli record --iface eth0 --room 9.440 --outlet 1.OG-12-C
+# Each record stays editable in SQLite until sync.
 
 # 3) at end of day, back on the corp network:
 pfcli sync
@@ -100,6 +100,9 @@ pfcli sync
 pfcli status            # config + queue summary
 pfcli list              # all records
 pfcli list --status failed
+pfcli show 12           # inspect one local record in detail
+pfcli edit 12           # fix room / outlet / office device before retrying sync
+pfcli delete 12         # remove a wrong local record
 pfcli purge             # remove already-synced records
 ```
 
@@ -108,13 +111,49 @@ pfcli purge             # remove already-synced records
 ```bash
 pfcli record \
     --iface eth0 \
-    --outlet 1.OG-12-A \
-    --expected-device PC-OFFICE-12 \
-    --expected-type computer \
-    --expected-mac aa:bb:cc:dd:ee:ff \
-    --comment "rolled out 2026-04-23" \
+   --room 9.440 \
+   --outlet 1.4/G.15 \
+   --expected-device Drucker \
+   --expected-type printer \
     --sync
 ```
+
+### Recording flow
+
+`pfcli record` now behaves as follows:
+
+1. Captures one LLDP neighbour on the selected interface.
+2. Requires a room via `--room` or prompt input.
+3. Requires an outlet label via `--outlet` or prompt input.
+4. A single office port such as `1.4/G.15` is automatically normalised to the
+   shared wall outlet `1.4/G.15-16`, so ports `15` and `16` land on the same
+   `net_outlet` device.
+5. If the outlet is entered directly as a two-port wall plate such as
+   `1.4/G.15-16`, the CLI expands both concrete outlet ports and asks which one
+   was just recorded.
+6. If you choose to store an office device, the CLI asks for the device type
+   first and then proposes the German short type label, such as `Drucker` or
+   `Notebook`, as the default device name.
+7. Before starting LLDP capture, the CLI asks whether an LLDP scan should be run at all. This avoids waiting for the timeout on deliberately empty ports.
+8. If LLDP data is available, sync also resolves the upstream switch and creates the patchpanel-to-switch link alongside the patchpanel-to-room-outlet link.
+9. The record is queued locally. There is no extra sync prompt after capture.
+
+### Local editing and failed syncs
+
+- Failed sync records stay in the local queue and can be corrected with `pfcli edit <id>`.
+- `pfcli show <id>` prints the stored room, outlet, recorded port, reserved sister port, and office device.
+- If LLDP was skipped, the switch and switch-port fields remain empty in the local record and in `pfcli list`.
+- `pfcli delete <id>` removes wrong local entries.
+- Editing a record resets it to `pending`, so `pfcli sync` will retry it.
+
+### Outlet and overwrite semantics
+
+- The synced CLI data is treated as the authoritative source.
+- If an existing physical switch-side, room-side, or expected office-device connection conflicts with the recorded data, the server replaces only the incompatible leg during sync and preserves the allowed second leg on passthrough ports.
+- If the network outlet does not exist yet, the server creates it directly in the given room.
+- Network outlets are modelled as one two-port device. A single office-port input such as `1.4/G.15` is normalised to `1.4/G.15-16`; both outlet ports are created on that single device, but only the actually recorded port is connected immediately.
+- Patchpanel ports are modelled with two simultaneous connections: one toward the room outlet and one toward the switch.
+- Office end devices are created or updated with one network port and linked to the recorded outlet port as an active current connection. The expected columns are kept in sync with that same link.
 
 ## Server side
 
@@ -123,26 +162,27 @@ The CLI talks to two endpoints:
 | Method | URL                       | Purpose                                                                 |
 |-------:|---------------------------|-------------------------------------------------------------------------|
 | GET    | `/api/?table=device`      | Auth ping (HTTP Basic against the existing user account)                |
-| POST   | `/api/cli/record_link`    | Upsert patchpanel↔switch connection + optional expected end-device      |
+| POST   | `/api/cli/record_link`    | Upsert patchpanel↔room-outlet, optional patchpanel↔switch, and office-device links |
 
 Authentication is HTTP Basic, validated against the `users` table (same
 `password_hash` that the web UI uses). No new account or token is required.
 
-`/api/cli/record_link` resolves:
+`/api/cli/record_link` resolves or creates:
 
-1. **Patchpanel port** by `outlet_caption` (matches against `device_port`
-   captions; if only the `net_outlet` matches, walks the existing
-   net_outlet↔patchpanel connection).
-2. **Switch device** by `lldp.sys_name`, `lldp.mgmt_address`, then
-   `lldp.chassis_id` (MAC).
-3. **Switch port** by `lldp.port_id` / `lldp.port_desc` against the device's
-   port captions.
+1. **Patchpanel port** by `recorded_outlet_port` or `outlet_caption`.
+2. **Switch port** from the optional LLDP block; if LLDP was captured, the
+   server resolves the switch and creates or updates the patchpanel-to-switch link.
+3. **Room outlet** in the room given via `room`; if it does not exist yet, the
+   server creates one paired `net_outlet` device and the required outlet ports, then creates or updates the patchpanel-to-outlet link.
+4. **Office end device** from `expected_device`, if present, with exactly one
+   network port linked as the current office-side connection. The same link is
+   mirrored into the expected columns so current and expected stay aligned.
 
-If the switch or its port cannot be matched the call returns 404 — the CLI
-keeps the record in `failed` state so you can resolve naming and re-sync.
+If a room or patchpanel port cannot be matched the call returns 404 and the
+CLI keeps the record in `failed` state so you can correct it locally and retry.
 
-A pre-existing different connection on either side returns 409. Re-run with
-`pfcli record … --force` to overwrite.
+Conflicting older switch-side, room-side, or office-device entries are replaced
+leg-wise by default, because the captured CLI data is considered newer.
 
 ## File locations
 
