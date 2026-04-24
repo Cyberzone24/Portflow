@@ -436,6 +436,13 @@ if (isset($_GET['nav'])) {
         $lang['transfer_import_missing_required'] = 'Missing required columns';
         $lang['transfer_import_progress'] = 'Import row';
         $lang['transfer_import_done'] = 'Import completed';
+        $lang['transfer_import_skipped'] = 'skipped';
+        $lang['transfer_duplicate_title'] = 'Duplicate caption found';
+        $lang['transfer_duplicate_copy'] = 'An entry with this caption already exists';
+        $lang['transfer_duplicate_apply_all'] = 'Remember decision for this caption';
+        $lang['transfer_duplicate_keep'] = 'Keep existing entry';
+        $lang['transfer_duplicate_replace'] = 'Overwrite existing entry';
+        $lang['transfer_duplicate_create'] = 'Create additional new entry';
 
         return $lang;
     }

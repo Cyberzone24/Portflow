@@ -300,7 +300,7 @@
             </div>
         </div>
 
-        <div id="itamTransferDuplicateModal" class="absolute inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
+        <div id="itamTransferDuplicateModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
             <div class="grid w-full max-w-xl gap-4 rounded-2xl border border-slate-300 bg-white p-5 shadow-2xl">
                 <div class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_duplicate_title'] ?? 'Gleichnamiger Eintrag gefunden'; ?></div>
                 <div id="itamTransferDuplicateCopy" class="text-sm text-slate-600"></div>
@@ -4479,6 +4479,7 @@ async function importTransferCsv() {
     }
 
     let imported = 0;
+    let skipped = 0;
     try {
         const configData = await getItamFormsConfig();
         const formConfig = getItamFormConfig(configData, currentTable);
@@ -4517,15 +4518,54 @@ async function importTransferCsv() {
             throw new Error('<?php echo $lang['transfer_import_empty'] ?? 'The CSV file is empty.'; ?>');
         }
 
+        const existingRows = await fetchAllRowsForTable(currentTable);
+        const duplicateIndex = buildCaptionDuplicateIndex(existingRows, formConfig, currentTable);
+        const rememberedDuplicateActions = {};
+
         for (let index = 0; index < rawRecords.length; index += 1) {
             setTransferStatus(`<?php echo $lang['transfer_import_progress'] ?? 'Import row'; ?> ${index + 1} / ${rawRecords.length}`);
             const record = normalizeCsvRecord(rawRecords[index], schema);
-            await submitItamRecord(currentTable, record, { editMode: false, uuids: {} });
+            const caption = String(record.caption || '').trim();
+            const normalizedCaption = normalizeDuplicateCaption(caption);
+            const matches = normalizedCaption ? (duplicateIndex.get(normalizedCaption) || []) : [];
+
+            let action = 'create';
+            if (matches.length > 0) {
+                if (rememberedDuplicateActions[normalizedCaption]) {
+                    action = rememberedDuplicateActions[normalizedCaption];
+                } else {
+                    const choice = await askDuplicateCaptionAction(caption, matches.length);
+                    action = choice.action;
+                    if (choice.remember) {
+                        rememberedDuplicateActions[normalizedCaption] = action;
+                    }
+                }
+            }
+
+            if (action === 'keep') {
+                skipped += 1;
+                continue;
+            }
+
+            const submitResult = await submitItamRecord(currentTable, record, {
+                editMode: action === 'replace' && matches.length > 0,
+                uuids: action === 'replace' && matches.length > 0 ? (matches[0].uuids || {}) : {}
+            });
+
+            if (normalizedCaption) {
+                const entry = buildCaptionDuplicateEntry(caption, submitResult.responseUuids || {}, null);
+                if (action === 'replace' && matches.length > 0) {
+                    updateCaptionDuplicateIndex(duplicateIndex, caption, entry, 'replace-first');
+                } else {
+                    updateCaptionDuplicateIndex(duplicateIndex, caption, entry, 'append');
+                }
+            }
+
             setProgressOverlayState(false);
             imported += 1;
         }
 
-        setTransferStatus(`<?php echo $lang['transfer_import_done'] ?? 'Import completed'; ?>: ${imported}`, 'success');
+        setTransferStatus(`<?php echo $lang['transfer_import_done'] ?? 'Import completed'; ?>: ${imported}${skipped > 0 ? ` | <?php echo $lang['transfer_import_skipped'] ?? 'übersprungen'; ?>: ${skipped}` : ''}`, 'success');
         const searchEl = document.querySelector('#searchForm input[name="search"]');
         loadTable(currentTable, searchEl ? searchEl.value : '');
     } catch (error) {

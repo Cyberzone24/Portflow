@@ -614,6 +614,13 @@ if (isset($_GET['nav'])) {
         $lang['transfer_import_missing_required'] = 'Fehlende Pflichtspalten';
         $lang['transfer_import_progress'] = 'Importiere Zeile';
         $lang['transfer_import_done'] = 'Import abgeschlossen';
+        $lang['transfer_import_skipped'] = 'übersprungen';
+        $lang['transfer_duplicate_title'] = 'Gleichnamiger Eintrag gefunden';
+        $lang['transfer_duplicate_copy'] = 'Es gibt bereits einen Eintrag mit dieser Caption';
+        $lang['transfer_duplicate_apply_all'] = 'Entscheidung fuer diese Caption merken';
+        $lang['transfer_duplicate_keep'] = 'Alten Eintrag behalten';
+        $lang['transfer_duplicate_replace'] = 'Alten Eintrag ueberschreiben';
+        $lang['transfer_duplicate_create'] = 'Zusaetzlichen Eintrag erstellen';
 
         return $lang;
     }
