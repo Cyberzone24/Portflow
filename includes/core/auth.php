@@ -357,18 +357,27 @@ class Auth {
     }
 
     public function csrf($token = NULL) {    
-        // Create CSRF token
-        if ($token == NULL) {
-            // Current timestamp
-            $timestamp = time();
-            // Generate random bytes
-            $randomBytes = random_bytes(32);
-            // Combine timestamp and random bytes
-            $token = bin2hex($randomBytes) . ':' . $timestamp;
-            // Store token in session
-            $_SESSION['csrf'] = $token;
-            return $token;
+        if ($token !== NULL) {
+            $_SESSION['csrf'] = (string)$token;
+            return (string)$token;
         }
+
+        if (isset($_SESSION['csrf']) && is_string($_SESSION['csrf']) && strpos($_SESSION['csrf'], ':') !== false) {
+            [$sessionTokenValue, $sessionTokenTimestamp] = explode(':', $_SESSION['csrf'], 2);
+            if ($sessionTokenValue !== ''
+                && ctype_xdigit($sessionTokenValue)
+                && ctype_digit($sessionTokenTimestamp)
+                && (time() - (int)$sessionTokenTimestamp) <= 300) {
+                return $_SESSION['csrf'];
+            }
+        }
+
+        $timestamp = time();
+        $randomBytes = random_bytes(32);
+        $token = bin2hex($randomBytes) . ':' . $timestamp;
+        $_SESSION['csrf'] = $token;
+
+        return $token;
     }
 
     public function csrf_check() {

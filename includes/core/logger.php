@@ -54,6 +54,44 @@ class Logger {
         return mb_substr($message, 0, 2000);
     }
 
+    private function storeSessionAlert(string $alertName, string $message, int $level): void {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return;
+        }
+
+        if (!isset($_SESSION['portflow_alerts']) || !is_array($_SESSION['portflow_alerts'])) {
+            $_SESSION['portflow_alerts'] = [];
+        }
+
+        $_SESSION['portflow_alerts'][$alertName] = [
+            'level' => $level,
+            'message' => $message,
+        ];
+    }
+
+    private function emitWebAlert(string $message, int $level): void {
+        try {
+            $suffix = bin2hex(random_bytes(4));
+        } catch (\Throwable $e) {
+            $suffix = dechex(mt_rand());
+        }
+
+        $alertName = 'alert_' . $level . '_' . time() . '_' . $suffix;
+
+        if (headers_sent()) {
+            $this->storeSessionAlert($alertName, $message, $level);
+            return;
+        }
+
+        setcookie($alertName, $message, [
+            'expires' => time() + 60,
+            'path' => '/',
+            'secure' => defined('PORTFLOW_SECURE') ? PORTFLOW_SECURE : false,
+            'httponly' => true,
+            'samesite' => 'Strict'
+        ]);
+    }
+
     public function log($msg, $level = 1, $echoToWeb = false) {
         if ($this->logLevel <= $level) {
             $logDate = date('Y-m-d H:i:s');
@@ -85,14 +123,7 @@ class Logger {
             // Nachricht in die Datei schreiben
             file_put_contents($this->logFile, "$formattedMsg\n", FILE_APPEND);
             if ($echoToWeb) {
-                $cookieName = 'alert_' . $level . '_' . time();
-                setcookie($cookieName, $safeMessage, [
-                    'expires' => time() + 60,
-                    'path' => '/',
-                    'secure' => defined('PORTFLOW_SECURE') ? PORTFLOW_SECURE : false,
-                    'httponly' => true,
-                    'samesite' => 'Strict'
-                ]);
+                $this->emitWebAlert($safeMessage, (int)$level);
             }
         }
     }
