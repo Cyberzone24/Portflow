@@ -151,6 +151,7 @@
                         </div>
                     </div>
                 </div>
+                <div id="tableFilterBar" class="hidden"></div>
                 <div class="grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
                     <div class="inline-flex flex-wrap items-center gap-4">
                         <p id="count"></p>
@@ -467,6 +468,7 @@ let currentEditingJournalUuid = null;
 let currentEditingMetadataUuid = null;
 let itamFormsConfigCache = null;
 let currentTransferFile = null;
+let currentTable = 'location_details';
 
 function searchTable() {
     return false;
@@ -864,6 +866,370 @@ async function getItamFormsConfig() {
 
 function getItamFormConfig(configData, table) {
     return configData && configData.forms ? configData.forms[table] : null;
+}
+
+function getCurrentSearchTerm() {
+    const searchEl = document.querySelector('#searchForm input[name="search"]');
+    return searchEl ? String(searchEl.value || '').trim() : '';
+}
+
+function getItamTableFilterDefinitions(formConfig) {
+    if (!formConfig || !Array.isArray(formConfig.filters)) {
+        return [];
+    }
+
+    return formConfig.filters.map((rawFilter, index) => {
+        const filter = rawFilter && typeof rawFilter === 'object' ? rawFilter : {};
+        const fieldName = String(filter.field || filter.name || '').trim();
+        const baseField = fieldName !== '' && formConfig.fields && typeof formConfig.fields === 'object'
+            ? (formConfig.fields[fieldName] || {})
+            : {};
+        const operator = String(filter.operator || 'eq').trim().toLowerCase();
+        const name = String(filter.name || fieldName || `filter_${index}`).trim();
+        const column = String(filter.column || '').trim();
+        const type = String(filter.type || baseField.type || (operator === 'range' ? 'number' : 'text')).trim();
+        const label = String(filter.label || baseField.label || name).trim();
+        const placeholder = String(filter.placeholder || '').trim();
+        const options = Array.isArray(filter.options)
+            ? filter.options
+            : (Array.isArray(baseField.options) ? baseField.options : []);
+        const multiple = Boolean(filter.multiple) || operator === 'in';
+
+        if (name === '' || !['eq', 'in', 'range', 'search'].includes(operator)) {
+            return null;
+        }
+        if (operator !== 'search' && column === '') {
+            return null;
+        }
+
+        return {
+            name,
+            field: fieldName,
+            label,
+            column,
+            operator,
+            type,
+            placeholder,
+            options,
+            multiple,
+        };
+    }).filter(Boolean);
+}
+
+function getTableFilters(table) {
+    if (!window.__pfTableFilters) {
+        try {
+            const raw = sessionStorage.getItem('pf_table_filters');
+            window.__pfTableFilters = raw ? (JSON.parse(raw) || {}) : {};
+        } catch (e) {
+            window.__pfTableFilters = {};
+        }
+    }
+
+    return window.__pfTableFilters[table] || {};
+}
+
+function setTableFilters(table, filters) {
+    if (!window.__pfTableFilters) {
+        window.__pfTableFilters = {};
+    }
+
+    const nextFilters = filters && typeof filters === 'object' ? filters : {};
+    if (Object.keys(nextFilters).length > 0) {
+        window.__pfTableFilters[table] = nextFilters;
+    } else {
+        delete window.__pfTableFilters[table];
+    }
+
+    try {
+        sessionStorage.setItem('pf_table_filters', JSON.stringify(window.__pfTableFilters));
+    } catch (e) {}
+}
+
+function hasActiveTableFilters(filterDefinitions, filterState) {
+    return filterDefinitions.some(def => {
+        const currentValue = filterState ? filterState[def.name] : null;
+        if (def.operator === 'range') {
+            return Boolean(currentValue && (String(currentValue.min || '').trim() !== '' || String(currentValue.max || '').trim() !== ''));
+        }
+        if (Array.isArray(currentValue)) {
+            return currentValue.length > 0;
+        }
+        return String(currentValue || '').trim() !== '';
+    });
+}
+
+function buildCurrentTableFilterState(filterDefinitions) {
+    const nextState = {};
+
+    filterDefinitions.forEach(def => {
+        if (def.operator === 'range') {
+            const minEl = document.querySelector(`[name="filter_${def.name}_min"]`);
+            const maxEl = document.querySelector(`[name="filter_${def.name}_max"]`);
+            const minValue = minEl ? String(minEl.value || '').trim() : '';
+            const maxValue = maxEl ? String(maxEl.value || '').trim() : '';
+            if (minValue !== '' || maxValue !== '') {
+                nextState[def.name] = { min: minValue, max: maxValue };
+            }
+            return;
+        }
+
+        const el = document.querySelector(`[name="filter_${def.name}"]`);
+        if (!el) {
+            return;
+        }
+
+        if (def.multiple && el instanceof HTMLSelectElement) {
+            const values = Array.from(el.selectedOptions)
+                .map(option => String(option.value || '').trim())
+                .filter(Boolean);
+            if (values.length > 0) {
+                nextState[def.name] = values;
+            }
+            return;
+        }
+
+        const value = String(el.value || '').trim();
+        if (value !== '') {
+            nextState[def.name] = value;
+        }
+    });
+
+    return nextState;
+}
+
+function appendTableFiltersToParams(params, filterDefinitions, filterState) {
+    filterDefinitions.forEach(def => {
+        const currentValue = filterState ? filterState[def.name] : null;
+        if (currentValue === null || currentValue === undefined) {
+            return;
+        }
+
+        if (def.operator === 'range') {
+            const minValue = String((currentValue && currentValue.min) || '').trim();
+            const maxValue = String((currentValue && currentValue.max) || '').trim();
+            if (minValue !== '') {
+                params.set(def.column + 'Min', minValue);
+            }
+            if (maxValue !== '') {
+                params.set(def.column + 'Max', maxValue);
+            }
+            return;
+        }
+
+        if (Array.isArray(currentValue)) {
+            const values = currentValue.map(value => String(value || '').trim()).filter(Boolean);
+            if (values.length === 0) {
+                return;
+            }
+            params.set(def.operator === 'in' ? (def.column + 'In') : def.column, values.join(','));
+            return;
+        }
+
+        const scalarValue = String(currentValue || '').trim();
+        if (scalarValue === '') {
+            return;
+        }
+
+        if (def.operator === 'search') {
+            params.set('search', scalarValue);
+            return;
+        }
+
+        params.set(def.operator === 'in' ? (def.column + 'In') : def.column, scalarValue);
+    });
+}
+
+function buildTableQueryParams(table, options = {}) {
+    const params = new URLSearchParams();
+    const search = options.search !== undefined ? String(options.search || '').trim() : '';
+    const limit = options.limit !== undefined ? options.limit : null;
+    const page = options.page !== undefined ? options.page : 1;
+    const formConfig = options.formConfig || (itamFormsConfigCache ? getItamFormConfig(itamFormsConfigCache, table) : null);
+    const filterDefinitions = getItamTableFilterDefinitions(formConfig);
+    const filterState = options.filters || getTableFilters(table);
+
+    if (search !== '') {
+        params.set('search', search);
+    }
+    appendTableFiltersToParams(params, filterDefinitions, filterState);
+    if (limit) {
+        params.set('limit', String(limit));
+    }
+    if (page && page > 1) {
+        params.set('page', String(page));
+    }
+
+    const sort = getTableSort(table);
+    if (sort && sort.col && sort.dir) {
+        params.set('sort', sort.col);
+        params.set('dir', sort.dir);
+    }
+
+    return params;
+}
+
+function createFilterControl(def, filterState) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex min-w-[11rem] flex-col gap-1';
+
+    const label = document.createElement('label');
+    label.className = 'text-xs font-semibold uppercase tracking-wide text-slate-500';
+    label.textContent = def.label;
+    wrapper.appendChild(label);
+
+    if (def.operator === 'range') {
+        const rangeWrap = document.createElement('div');
+        rangeWrap.className = 'grid min-w-[14rem] grid-cols-2 gap-2';
+        const rangeValue = filterState && typeof filterState[def.name] === 'object' ? filterState[def.name] : {};
+
+        ['min', 'max'].forEach(bound => {
+            const input = document.createElement('input');
+            input.type = def.type === 'number' ? 'number' : 'text';
+            input.name = `filter_${def.name}_${bound}`;
+            input.value = String(rangeValue[bound] || '');
+            input.placeholder = bound === 'min' ? 'Min' : 'Max';
+            input.className = 'rounded-full border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400';
+            input.addEventListener('change', () => applyCurrentTableFilters());
+            rangeWrap.appendChild(input);
+        });
+
+        wrapper.appendChild(rangeWrap);
+        return wrapper;
+    }
+
+    let control;
+    if (def.type === 'dropdown' || def.type === 'boolean' || def.multiple) {
+        control = document.createElement('select');
+        control.name = `filter_${def.name}`;
+        control.className = 'rounded-full border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400';
+        if (def.multiple) {
+            control.multiple = true;
+            control.className = 'min-h-[7.5rem] rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400';
+        }
+
+        const currentValues = Array.isArray(filterState && filterState[def.name])
+            ? filterState[def.name].map(value => String(value || ''))
+            : [String((filterState && filterState[def.name]) || '')];
+
+        if (!def.multiple) {
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = 'Alle';
+            control.appendChild(emptyOption);
+        }
+
+        const options = def.type === 'boolean'
+            ? [
+                { value: 'true', label: 'Ja' },
+                { value: 'false', label: 'Nein' }
+            ]
+            : def.options;
+
+        options.forEach(option => {
+            const value = String((option && option.value) || '').trim();
+            if (value === '' || value === '--') {
+                return;
+            }
+            const optionEl = document.createElement('option');
+            optionEl.value = value;
+            optionEl.textContent = String((option && option.label) || value);
+            optionEl.selected = currentValues.includes(value);
+            control.appendChild(optionEl);
+        });
+
+        control.addEventListener('change', () => applyCurrentTableFilters());
+    } else {
+        control = document.createElement('input');
+        control.type = def.type === 'number' ? 'number' : 'text';
+        control.name = `filter_${def.name}`;
+        control.value = String((filterState && filterState[def.name]) || '');
+        control.placeholder = def.placeholder || def.label;
+        control.className = 'rounded-full border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400';
+        control.addEventListener('change', () => applyCurrentTableFilters());
+        control.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyCurrentTableFilters();
+            }
+        });
+    }
+
+    wrapper.appendChild(control);
+    return wrapper;
+}
+
+function renderTableFilters(table, formConfig) {
+    const host = document.getElementById('tableFilterBar');
+    if (!host) {
+        return;
+    }
+
+    host.innerHTML = '';
+    const filterDefinitions = getItamTableFilterDefinitions(formConfig);
+    if (filterDefinitions.length === 0) {
+        host.classList.add('hidden');
+        return;
+    }
+
+    const filterState = getTableFilters(table);
+    const shell = document.createElement('div');
+    shell.className = 'rounded-2xl border border-slate-300 bg-white p-3 shadow-sm';
+
+    const header = document.createElement('div');
+    header.className = 'mb-3 flex flex-wrap items-center justify-between gap-3';
+    header.innerHTML = '<div class="text-sm font-semibold text-slate-900">Filter</div><div class="text-xs text-slate-500">Tabellenspezifische Filter aus forms.json</div>';
+    shell.appendChild(header);
+
+    const form = document.createElement('form');
+    form.id = 'tableFilterForm';
+    form.className = 'flex flex-wrap items-end gap-3';
+    form.addEventListener('submit', event => {
+        event.preventDefault();
+        applyCurrentTableFilters();
+    });
+
+    filterDefinitions.forEach(def => {
+        form.appendChild(createFilterControl(def, filterState));
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'ml-auto flex items-center gap-2';
+
+    const applyButton = document.createElement('button');
+    applyButton.type = 'submit';
+    applyButton.className = 'rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700';
+    applyButton.textContent = 'Anwenden';
+    actions.appendChild(applyButton);
+
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.className = 'rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300';
+    resetButton.textContent = 'Reset';
+    resetButton.disabled = !hasActiveTableFilters(filterDefinitions, filterState);
+    resetButton.addEventListener('click', () => resetCurrentTableFilters());
+    actions.appendChild(resetButton);
+
+    form.appendChild(actions);
+    shell.appendChild(form);
+    host.appendChild(shell);
+    host.classList.remove('hidden');
+}
+
+function applyCurrentTableFilters() {
+    if (!itamFormsConfigCache) {
+        return;
+    }
+
+    const formConfig = getItamFormConfig(itamFormsConfigCache, currentTable);
+    const filterDefinitions = getItamTableFilterDefinitions(formConfig);
+    setTableFilters(currentTable, buildCurrentTableFilterState(filterDefinitions));
+    loadTable(currentTable, getCurrentSearchTerm(), null, 1);
+}
+
+function resetCurrentTableFilters() {
+    setTableFilters(currentTable, {});
+    loadTable(currentTable, getCurrentSearchTerm(), null, 1);
 }
 
 function getItamImportSchema(formConfig) {
@@ -4434,19 +4800,12 @@ async function exportCurrentTableCsv() {
         const headers = schema.map(field => field.name);
         const pageInfo = (window.__pfTablePageInfo && window.__pfTablePageInfo[currentTable]) || {};
         const totalResults = Math.max(parseInt(pageInfo.totalResults || 0, 10), 0);
-        const searchEl = document.querySelector('#searchForm input[name="search"]');
-        const params = new URLSearchParams();
-        if (searchEl && searchEl.value) {
-            params.set('search', searchEl.value);
-        }
-        if (totalResults > 0) {
-            params.set('limit', String(totalResults));
-        }
-        const sort = getTableSort(currentTable);
-        if (sort && sort.col && sort.dir) {
-            params.set('sort', sort.col);
-            params.set('dir', sort.dir);
-        }
+        const params = buildTableQueryParams(currentTable, {
+            search: getCurrentSearchTerm(),
+            limit: totalResults > 0 ? totalResults : null,
+            page: 1,
+            formConfig
+        });
 
         let rows = (window.__pfTableRows && window.__pfTableRows[currentTable]) || [];
         if (totalResults > rows.length) {
@@ -4635,7 +4994,7 @@ function generatePagination(totalPages, currentPage, search, limit) {
 function setTableLimit(value) {
     const limit = parseInt(value, 10) || 100;
     document.cookie = 'table_limit=' + limit + '; path=/; max-age=' + (60 * 60 * 24 * 365);
-    loadTable(currentTable, '', limit, 1);
+    loadTable(currentTable, getCurrentSearchTerm(), limit, 1);
 }
 
 // Load table data
@@ -4658,6 +5017,11 @@ function loadTable(table = 'location_details', search = '', limit = null, page =
     // Tabellenhervorhebung aktualisieren
     updateActiveTab(table);
 
+    const searchInput = document.querySelector('#searchForm input[name="search"]');
+    if (searchInput && searchInput.value !== search) {
+        searchInput.value = search;
+    }
+
     // Close Details Popup
     closeDetailsPopup();
 
@@ -4674,27 +5038,28 @@ function loadTable(table = 'location_details', search = '', limit = null, page =
         window.__pfTableUserColumns = window.__pfTableUserColumns || {};
         window.__pfTableUserColumns[table] = userColumns;
 
-        const params = new URLSearchParams();
-        if (search) params.set('search', search);
-        if (limit) params.set('limit', limit);
-        if (page && page > 1) params.set('page', page);
-        // Server-side sort (per-table, persisted in sessionStorage).
-        const sort = getTableSort(table);
-        if (sort && sort.col && sort.dir) {
-            params.set('sort', sort.col);
-            params.set('dir', sort.dir);
-        }
-        const query = params.toString() ? ('?' + params.toString()) : '';
+        const requestTableData = (formConfig) => {
+            renderTableFilters(table, formConfig);
+            const params = buildTableQueryParams(table, { search, limit, page, formConfig });
+            const query = params.toString() ? ('?' + params.toString()) : '';
 
-        ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
-            window.__pfTablePageInfo = window.__pfTablePageInfo || {};
-            window.__pfTablePageInfo[table] = data.pageInfo || {};
-            window.__pfTableRows = window.__pfTableRows || {};
-            window.__pfTableRows[table] = Array.isArray(data.items) ? data.items : [];
-            $('#count').text('<?php echo $lang['datasets']; ?>: ' + parseInt(data.pageInfo.totalResults));
-            displayTable(columns, userColumns, data.items);
-            generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
-        });
+            ajaxGet(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}` + query, data => {
+                window.__pfTablePageInfo = window.__pfTablePageInfo || {};
+                window.__pfTablePageInfo[table] = data.pageInfo || {};
+                window.__pfTableRows = window.__pfTableRows || {};
+                window.__pfTableRows[table] = Array.isArray(data.items) ? data.items : [];
+                $('#count').text('<?php echo $lang['datasets']; ?>: ' + parseInt(data.pageInfo.totalResults));
+                displayTable(columns, userColumns, data.items);
+                generatePagination(Math.ceil(data.pageInfo.totalResults / data.pageInfo.resultsPerPage), data.pageInfo.currentPage, search, limit);
+            });
+        };
+
+        getItamFormsConfig()
+            .then(configData => requestTableData(getItamFormConfig(configData, table)))
+            .catch(error => {
+                console.warn('ITAM filter config could not be loaded', error);
+                requestTableData(null);
+            });
     });
 
     // Formular für neuen Eintrag generieren

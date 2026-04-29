@@ -72,6 +72,20 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "status",
+                    "field": "status",
+                    "column": "location_metadata_status",
+                    "operator": "eq"
+                },
+                {
+                    "name": "type",
+                    "field": "type",
+                    "column": "location_type",
+                    "operator": "eq"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "metadata",
@@ -151,6 +165,20 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "status",
+                    "field": "status",
+                    "column": "ip_range_metadata_status",
+                    "operator": "eq"
+                },
+                {
+                    "name": "ip_range",
+                    "field": "ip_range",
+                    "column": "ip_range_ip_range",
+                    "operator": "eq"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "metadata",
@@ -214,6 +242,20 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "status",
+                    "field": "status",
+                    "column": "vlan_metadata_status",
+                    "operator": "eq"
+                },
+                {
+                    "name": "vlan",
+                    "field": "vlan",
+                    "column": "vlan_vlan",
+                    "operator": "eq"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "metadata",
@@ -351,6 +393,32 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "status",
+                    "field": "status",
+                    "column": "device_metadata_status",
+                    "operator": "eq"
+                },
+                {
+                    "name": "type",
+                    "field": "type",
+                    "column": "device_type",
+                    "operator": "eq"
+                },
+                {
+                    "name": "anc",
+                    "field": "anc",
+                    "column": "device_anc",
+                    "operator": "eq"
+                },
+                {
+                    "name": "template",
+                    "field": "template",
+                    "column": "device_template",
+                    "operator": "eq"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "metadata",
@@ -406,6 +474,20 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "tagged",
+                    "field": "tagged",
+                    "column": "device_port_vlan_tagged",
+                    "operator": "eq"
+                },
+                {
+                    "name": "expected_tagged",
+                    "field": "expected_tagged",
+                    "column": "device_port_vlan_expected_tagged",
+                    "operator": "eq"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "device_port_vlan",
@@ -579,6 +661,38 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "status",
+                    "field": "status",
+                    "column": "device_port_metadata_status",
+                    "operator": "eq"
+                },
+                {
+                    "name": "type",
+                    "field": "type",
+                    "column": "device_port_type",
+                    "operator": "eq"
+                },
+                {
+                    "name": "poe",
+                    "field": "poe",
+                    "column": "device_port_poe",
+                    "operator": "eq"
+                },
+                {
+                    "name": "coupling",
+                    "field": "coupling",
+                    "column": "device_port_coupling",
+                    "operator": "eq"
+                },
+                {
+                    "name": "speed",
+                    "field": "speed",
+                    "column": "device_port_speed",
+                    "operator": "range"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "metadata",
@@ -730,6 +844,32 @@
                     "required": false
                 }
             },
+            "filters": [
+                {
+                    "name": "status",
+                    "field": "status",
+                    "column": "connection_metadata_status",
+                    "operator": "eq"
+                },
+                {
+                    "name": "type",
+                    "field": "type",
+                    "column": "connection_type",
+                    "operator": "eq"
+                },
+                {
+                    "name": "crossover",
+                    "field": "crossover",
+                    "column": "connection_crossover",
+                    "operator": "eq"
+                },
+                {
+                    "name": "length",
+                    "field": "length",
+                    "column": "connection_length",
+                    "operator": "range"
+                }
+            ],
             "postOrder": [
                 {
                     "table": "metadata",
