@@ -341,6 +341,40 @@
             </div>
         </div>
 
+        <!-- Lifecycle Entry Modal -->
+        <div id="lifecycleEntryModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
+            <div class="max-h-[90vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div class="text-xl font-bold text-slate-900">Lifecycle-Eintrag erstellen</div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeLifecycleEntryModal()"><i data-lucide="x"></i></button>
+                </div>
+                <div class="mb-5 grid gap-4">
+                    <div class="grid gap-1.5 md:grid-cols-2 md:gap-4">
+                        <div class="grid gap-1.5">
+                            <label class="text-sm font-semibold text-slate-900">Event-Typ</label>
+                            <select id="lifecycleEntryType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"></select>
+                        </div>
+                        <div class="grid gap-1.5">
+                            <label class="text-sm font-semibold text-slate-900">Datum</label>
+                            <input type="date" id="lifecycleEntryDate" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Titel</label>
+                        <input type="text" id="lifecycleEntryCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Kurzer Titel des Lifecycle-Eintrags">
+                    </div>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
+                        <textarea id="lifecycleEntryDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Detaillierte Beschreibung des Lifecycle-Eintrags"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeLifecycleEntryModal()">Abbrechen</button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitLifecycleEntry()">Speichern</button>
+                </div>
+            </div>
+        </div>
+
         <!-- File Upload Modal -->
         <div id="fileUploadModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
@@ -401,6 +435,40 @@
                 <div class="flex justify-end gap-3">
                     <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditJournalModal()">Abbrechen</button>
                     <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditJournal()">Speichern</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Lifecycle Entry Modal -->
+        <div id="editLifecycleModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
+            <div class="max-h-[90vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div class="text-xl font-bold text-slate-900">Lifecycle-Eintrag bearbeiten</div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeEditLifecycleModal()"><i data-lucide="x"></i></button>
+                </div>
+                <div class="mb-5 grid gap-4">
+                    <div class="grid gap-1.5 md:grid-cols-2 md:gap-4">
+                        <div class="grid gap-1.5">
+                            <label class="text-sm font-semibold text-slate-900">Event-Typ</label>
+                            <select id="editLifecycleType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"></select>
+                        </div>
+                        <div class="grid gap-1.5">
+                            <label class="text-sm font-semibold text-slate-900">Datum</label>
+                            <input type="date" id="editLifecycleDate" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Titel</label>
+                        <input type="text" id="editLifecycleCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Titel">
+                    </div>
+                    <div class="grid gap-1.5">
+                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
+                        <textarea id="editLifecycleDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditLifecycleModal()">Abbrechen</button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditLifecycle()">Speichern</button>
                 </div>
             </div>
         </div>
@@ -466,9 +534,23 @@ let currentNavConfig = {};
 let currentDetailsRowData = null;
 let currentEditingJournalUuid = null;
 let currentEditingMetadataUuid = null;
+let currentEditingLifecycleUuid = null;
+let currentEditingLifecycleMetadataUuid = null;
 let itamFormsConfigCache = null;
 let currentTransferFile = null;
 let currentTable = 'location_details';
+
+const LIFECYCLE_EVENT_TYPES = [
+    { value: 'installation', label: 'Installation' },
+    { value: 'change', label: 'Veraenderung' },
+    { value: 'maintenance', label: 'Wartung' },
+    { value: 'inspection', label: 'Inspektion' },
+    { value: 'repair', label: 'Reparatur' },
+    { value: 'replacement', label: 'Austausch' },
+    { value: 'incident', label: 'Stoerung' },
+    { value: 'decommission', label: 'Ausserbetriebnahme' },
+    { value: 'other', label: 'Sonstiges' }
+];
 
 function searchTable() {
     return false;
@@ -6143,6 +6225,59 @@ async function loadJournalEntriesForRow(rowData) {
     return (payload && Array.isArray(payload.items)) ? payload.items : [];
 }
 
+function renderLifecycleTypeOptions(selectElement, selectedValue = '') {
+    if (!selectElement) {
+        return;
+    }
+
+    const currentValue = String(selectedValue || '').trim().toLowerCase();
+    selectElement.innerHTML = '<option value="">Bitte waehlen</option>';
+
+    LIFECYCLE_EVENT_TYPES.forEach((entry) => {
+        const option = document.createElement('option');
+        option.value = entry.value;
+        option.textContent = entry.label;
+        option.selected = currentValue !== '' && currentValue === entry.value;
+        selectElement.appendChild(option);
+    });
+}
+
+function getLifecycleEventLabel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    const match = LIFECYCLE_EVENT_TYPES.find((entry) => entry.value === normalized);
+    return match ? match.label : (normalized || '--');
+}
+
+async function loadLifecycleEntriesForRow(rowData) {
+    const deviceUuid = String(rowData.device_uuid || rowData.uuid || '').trim();
+    if (!deviceUuid) {
+        return [];
+    }
+
+    try {
+        const query = `?device_lifecycle_device=${encodeURIComponent(deviceUuid)}&limit=50&sort=device_lifecycle_value_date&dir=desc`;
+        const detailsResponse = await fetch(`<?php echo PORTFLOW_HOSTNAME; ?>/api/device_lifecycle_details${query}`);
+        if (detailsResponse.ok) {
+            const detailsPayload = await detailsResponse.json();
+            const detailItems = (detailsPayload && Array.isArray(detailsPayload.items)) ? detailsPayload.items : [];
+            if (detailItems.length > 0) {
+                return detailItems.sort((left, right) => {
+                    const leftTs = Date.parse(left.device_lifecycle_value_date || left.device_lifecycle_metadata_created || '') || 0;
+                    const rightTs = Date.parse(right.device_lifecycle_value_date || right.device_lifecycle_metadata_created || '') || 0;
+                    return rightTs - leftTs;
+                });
+            }
+        }
+
+        const fallbackResponse = await fetch(`<?php echo PORTFLOW_HOSTNAME; ?>/api/device_lifecycle?device=${encodeURIComponent(deviceUuid)}&limit=50`);
+        const fallbackPayload = await fallbackResponse.json();
+        return (fallbackPayload && Array.isArray(fallbackPayload.items)) ? fallbackPayload.items : [];
+    } catch (error) {
+        console.error('Fehler beim Laden der Lifecycle-Eintraege:', error);
+        return [];
+    }
+}
+
 function parseExecutionPayload(rawPayload) {
     try {
         const decoded = JSON.parse(rawPayload || '{}');
@@ -6263,6 +6398,39 @@ async function buildDetailsPanelContent(panel, rowData) {
                 + `<div class="mt-2 flex gap-2">`
                 + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditJournalModal('${escapeHtml(journalMetadataUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
                 + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteJournalEntry('${escapeHtml(journalUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
+                + `</div>`
+                + `</div>`;
+        }).join('');
+    }
+
+    if (panelType === 'lifecycle') {
+        const entries = await loadLifecycleEntriesForRow(rowData);
+        if (entries.length === 0) {
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Lifecycle-Eintraege vorhanden.</div>';
+        }
+
+        return entries.map((entry) => {
+            const rowTitle = getDisplayValue(entry, ['device_lifecycle_metadata_caption', 'metadata_caption', 'device_lifecycle_uuid', 'uuid']);
+            const rowDate = getDisplayValue(entry, ['device_lifecycle_value_date', 'device_lifecycle_metadata_created', 'created'], '--');
+            const rowUser = getDisplayValue(entry, ['device_lifecycle_metadata_users_username', 'metadata_users_username', 'device_lifecycle_metadata_users', 'metadata_users'], '--');
+            const rowDescription = getDisplayValue(entry, ['device_lifecycle_metadata_description', 'metadata_description'], '');
+            const rowTypeValue = getDisplayValue(entry, ['device_lifecycle_metadata_tags', 'metadata_tags', 'device_lifecycle_event_type', 'event_type'], '');
+            const rowType = getLifecycleEventLabel(rowTypeValue);
+            const lifecycleUuid = entry.device_lifecycle_uuid || entry.uuid || '';
+            const lifecycleMetadataUuid = entry.device_lifecycle_metadata_uuid || entry.metadata_uuid || '';
+
+            return `<div class="mt-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs">`
+                + `<div class="flex flex-wrap items-start justify-between gap-2">`
+                + `<div>`
+                + `<div class="text-xs font-bold text-slate-900">${escapeHtml(rowTitle)}</div>`
+                + `<div class="mt-1 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">${escapeHtml(rowType)}</div>`
+                + `</div>`
+                + `<div class="text-right text-xs text-slate-500">${escapeHtml(rowDate)}<br>${escapeHtml(rowUser)}</div>`
+                + `</div>`
+                + (rowDescription !== '--' && rowDescription !== '' ? `<div class="mt-2 whitespace-pre-wrap text-xs text-slate-700">${escapeHtml(rowDescription)}</div>` : '')
+                + `<div class="mt-2 flex gap-2">`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditLifecycleModal('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}', '${escapeHtml(rowTypeValue).replace(/'/g, "\\'")}', '${escapeHtml(rowDate).replace(/'/g, "\\'")}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteLifecycleEntry('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}')" title="Loeschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Loeschen</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
@@ -6390,6 +6558,11 @@ async function renderDetailsGrid(rowData) {
             const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
             const $journalBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openJournalEntryModal()"><i data-lucide="message-square-plus"></i>Journaleintrag erstellen</button>');
             $actions.append($journalBtn);
+            $panelCard.append($actions);
+        } else if (panelType.includes('lifecycle')) {
+            const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
+            const $lifecycleBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openLifecycleEntryModal()"><i data-lucide="history"></i>Lifecycle-Eintrag erstellen</button>');
+            $actions.append($lifecycleBtn);
             $panelCard.append($actions);
         } else if (panelType.includes('attachment') || panelType.includes('anhang') || panelType.includes('file')) {
             const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
@@ -7330,7 +7503,7 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
     }
 }
 
-function closeJournalEntryModal() {
+function openJournalEntryModal() {
     if (!currentDetailsRowData) {
         alert('Keine Zeile ausgewählt.');
         return;
@@ -7344,6 +7517,29 @@ function closeJournalEntryModal() {
 
 function closeJournalEntryModal() {
     const modal = document.getElementById('journalEntryModal');
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
+}
+
+function openLifecycleEntryModal() {
+    if (!currentDetailsRowData) {
+        alert('Keine Zeile ausgewählt.');
+        return;
+    }
+
+    renderLifecycleTypeOptions(document.getElementById('lifecycleEntryType'));
+    document.getElementById('lifecycleEntryType').value = 'installation';
+    document.getElementById('lifecycleEntryDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('lifecycleEntryCaption').value = '';
+    document.getElementById('lifecycleEntryDescription').value = '';
+
+    const modal = document.getElementById('lifecycleEntryModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeLifecycleEntryModal() {
+    const modal = document.getElementById('lifecycleEntryModal');
     modal.classList.remove('flex');
     modal.classList.add('hidden');
 }
@@ -7551,6 +7747,80 @@ async function submitJournalEntry() {
     }
 }
 
+async function submitLifecycleEntry() {
+    if (!currentDetailsRowData) {
+        alert('Keine Zeile ausgewählt.');
+        return;
+    }
+
+    const eventType = String(document.getElementById('lifecycleEntryType').value || '').trim();
+    const valueDate = String(document.getElementById('lifecycleEntryDate').value || '').trim();
+    const caption = document.getElementById('lifecycleEntryCaption').value.trim();
+    const description = document.getElementById('lifecycleEntryDescription').value.trim();
+
+    if (!eventType) {
+        alert('Bitte waehlen Sie einen Event-Typ.');
+        return;
+    }
+    if (!valueDate) {
+        alert('Bitte geben Sie ein Datum an.');
+        return;
+    }
+    if (!caption) {
+        alert('Bitte geben Sie einen Titel ein.');
+        return;
+    }
+
+    try {
+        const deviceUuid = String(currentDetailsRowData.device_uuid || currentDetailsRowData.uuid || '').trim();
+        if (!deviceUuid) {
+            alert('Konnte Geraet-UUID nicht bestimmen.');
+            return;
+        }
+
+        const metadataResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/metadata/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                status: '0',
+                caption,
+                description,
+                specification: '',
+                tags: eventType
+            })
+        });
+
+        const metadataResult = await metadataResponse.json();
+        const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
+        if (!metadataUuid) {
+            alert('Lifecycle-Metadaten konnten nicht erstellt werden.');
+            return;
+        }
+
+        const lifecycleResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=device_lifecycle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                metadata: metadataUuid,
+                device: deviceUuid,
+                value_date: valueDate
+            })
+        });
+
+        const lifecycleResult = await lifecycleResponse.json();
+        if (!lifecycleResult || !lifecycleResult[0]) {
+            alert('Lifecycle-Eintrag konnte nicht erstellt werden.');
+            return;
+        }
+
+        closeLifecycleEntryModal();
+        await openDetailsPopup(currentDetailsRowData);
+    } catch (error) {
+        console.error('Fehler beim Erstellen des Lifecycle-Eintrags:', error);
+        alert('Ein Fehler ist aufgetreten: ' + error.message);
+    }
+}
+
 // File upload submission
 async function submitFileUpload() {
     if (!currentDetailsRowData) {
@@ -7720,6 +7990,27 @@ function closeEditJournalModal() {
     currentEditingJournalUuid = null;
 }
 
+function openEditLifecycleModal(lifecycleUuid, metadataUuid, eventType, valueDate, caption, description) {
+    currentEditingLifecycleUuid = lifecycleUuid;
+    currentEditingLifecycleMetadataUuid = metadataUuid;
+    renderLifecycleTypeOptions(document.getElementById('editLifecycleType'), eventType || '');
+    document.getElementById('editLifecycleType').value = eventType || '';
+    document.getElementById('editLifecycleDate').value = valueDate && valueDate !== '--' ? valueDate : '';
+    document.getElementById('editLifecycleCaption').value = caption || '';
+    document.getElementById('editLifecycleDescription').value = description || '';
+    const modal = document.getElementById('editLifecycleModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeEditLifecycleModal() {
+    const modal = document.getElementById('editLifecycleModal');
+    modal.classList.remove('flex');
+    modal.classList.add('hidden');
+    currentEditingLifecycleUuid = null;
+    currentEditingLifecycleMetadataUuid = null;
+}
+
 async function submitEditJournal() {
     if (!currentEditingJournalUuid) {
         alert('Keine Journal-Metadaten-UUID gefunden.');
@@ -7770,6 +8061,81 @@ async function deleteJournalEntry(journalUuid) {
         }
     } catch (error) {
         console.error('Fehler beim Löschen:', error);
+        alert('Ein Fehler ist aufgetreten: ' + error.message);
+    }
+}
+
+async function submitEditLifecycle() {
+    if (!currentEditingLifecycleUuid || !currentEditingLifecycleMetadataUuid) {
+        alert('Kein Lifecycle-Eintrag ausgewählt.');
+        return;
+    }
+
+    const eventType = String(document.getElementById('editLifecycleType').value || '').trim();
+    const valueDate = String(document.getElementById('editLifecycleDate').value || '').trim();
+    const caption = document.getElementById('editLifecycleCaption').value.trim();
+    const description = document.getElementById('editLifecycleDescription').value.trim();
+
+    if (!eventType || !valueDate || !caption) {
+        alert('Bitte Typ, Datum und Titel angeben.');
+        return;
+    }
+
+    try {
+        const metadataResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata&uuid=' + encodeURIComponent(currentEditingLifecycleMetadataUuid), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                caption,
+                description,
+                tags: eventType
+            })
+        });
+
+        const lifecycleResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=device_lifecycle&uuid=' + encodeURIComponent(currentEditingLifecycleUuid), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                value_date: valueDate
+            })
+        });
+
+        if (metadataResponse.ok && lifecycleResponse.ok) {
+            closeEditLifecycleModal();
+            await openDetailsPopup(currentDetailsRowData);
+        } else {
+            alert('Fehler beim Aktualisieren des Lifecycle-Eintrags.');
+        }
+    } catch (error) {
+        console.error('Fehler beim Aktualisieren des Lifecycle-Eintrags:', error);
+        alert('Ein Fehler ist aufgetreten: ' + error.message);
+    }
+}
+
+async function deleteLifecycleEntry(lifecycleUuid, metadataUuid) {
+    if (!confirm('Moechten Sie diesen Lifecycle-Eintrag wirklich loeschen?')) {
+        return;
+    }
+
+    try {
+        let response;
+        if (metadataUuid) {
+            response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=metadata&uuid=' + encodeURIComponent(metadataUuid), {
+                method: 'DELETE'
+            });
+        } else {
+            response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?table=device_lifecycle&uuid=' + encodeURIComponent(lifecycleUuid), {
+                method: 'DELETE'
+            });
+        }
+
+        if (response.ok) {
+            await openDetailsPopup(currentDetailsRowData);
+        } else {
+            alert('Fehler beim Loeschen des Lifecycle-Eintrags.');
+        }
+    } catch (error) {
+        console.error('Fehler beim Loeschen des Lifecycle-Eintrags:', error);
         alert('Ein Fehler ist aufgetreten: ' + error.message);
     }
 }

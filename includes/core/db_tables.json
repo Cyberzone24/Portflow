@@ -92,6 +92,7 @@
         "uuid": "UUID DEFAULT gen_random_uuid() NOT NULL",
         "metadata": "UUID REFERENCES metadata(uuid) ON DELETE CASCADE",
         "device": "UUID REFERENCES device(uuid) ON DELETE CASCADE NOT NULL",
+        "event_type": "VARCHAR(64)",
         "value_date": "DATE",
         "PRIMARY KEY": "(uuid)"
     },

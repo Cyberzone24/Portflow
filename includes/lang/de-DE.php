@@ -178,6 +178,7 @@ if (isset($_GET['nav'])) {
             'panels' => [
                 ['type' => 'scripts', 'title' => 'Letzte Skript-Ausfuehrungen'],
                 ['type' => 'journal', 'title' => 'Journal'],
+                ['type' => 'lifecycle', 'title' => 'Lifecycle'],
                 ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
             ]
         ],
