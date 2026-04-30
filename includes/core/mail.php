@@ -29,6 +29,12 @@ class Mail {
     }
     
     public function send($mail_to, $subject, $message) {
+        $mailSecure = trim((string)MAIL_SMTPSECURE);
+
+        $this->mail->clearAllRecipients();
+        $this->mail->clearReplyTos();
+        $this->mail->clearAttachments();
+
         //SMTP needs accurate times, and the PHP time zone MUST be set
         //This should be done in your php.ini, but this is how to do it if you don't have access to that
         date_default_timezone_set('Etc/UTC');
@@ -43,11 +49,12 @@ class Mail {
         //Set the hostname of the mail server
         $this->mail->Host = MAIL_HOST;
         //Set the SMTP port number - likely to be 25, 465 or 587
-        $this->mail->Port = MAIL_PORT;
+        $this->mail->Port = (int)MAIL_PORT;
         //Whether to use SMTP authentication
         $this->mail->SMTPAuth = MAIL_SMTPAUTH;
         //Set the encryption mechanism to use - STARTTLS or SMTPS
-        $this->mail->SMTPSecure = MAIL_SMTPSECURE;
+        $this->mail->SMTPSecure = $mailSecure;
+        $this->mail->Timeout = 8;
         //Username to use for SMTP authentication
         $this->mail->Username = MAIL_USER;
         //Password to use for SMTP authentication

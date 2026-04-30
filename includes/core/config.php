@@ -61,6 +61,24 @@ function getEnvValue($key, $default = null) {
     return ($value !== false) ? $value : $default;
 }
 
+function normalizeMailSecureEnvValue($value): string {
+    $normalized = strtolower(trim((string)$value));
+
+    if ($normalized === '' || $normalized === 'none') {
+        return '';
+    }
+
+    if ($normalized === 'tls' || $normalized === 'phpmailer::encryption_starttls') {
+        return 'tls';
+    }
+
+    if ($normalized === 'ssl' || $normalized === 'phpmailer::encryption_smtps') {
+        return 'ssl';
+    }
+
+    return $normalized;
+}
+
 // Load configuration from .env and define constants
 define('LOG_LEVEL', (int) getEnvValue('LOG_LEVEL', 1));
 define('DB_TYPE', getEnvValue('DB_TYPE', 'pgsql'));
@@ -80,7 +98,7 @@ define('MAIL_USER', getEnvValue('MAIL_USER', ''));
 define('MAIL_PASSWORD', getEnvValue('MAIL_PASSWORD', ''));
 define('MAIL_PORT', getEnvValue('MAIL_PORT', '587'));
 define('MAIL_SMTPAUTH', getEnvValue('MAIL_SMTPAUTH', true) === true || getEnvValue('MAIL_SMTPAUTH') === 'true');
-define('MAIL_SMTPSECURE', getEnvValue('MAIL_SMTPSECURE', 'tls'));
+define('MAIL_SMTPSECURE', normalizeMailSecureEnvValue(getEnvValue('MAIL_SMTPSECURE', 'tls')));
 
 define('LDAP_ENABLED', getEnvValue('LDAP_ENABLED', false) === true || getEnvValue('LDAP_ENABLED') === 'true');
 define('LDAP_SERVER', getEnvValue('LDAP_SERVER', ''));

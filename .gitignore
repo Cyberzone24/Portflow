@@ -1,5 +1,5 @@
 .vscode
 .env
-.env.local
+.env.bak.*
 podman-compose.override.yml
 data
