@@ -2012,6 +2012,10 @@
             return ['ok' => false, 'label' => 'Present but empty'];
         }
 
+        if (strpos($content, '$php_bin') !== false) {
+            return ['ok' => false, 'label' => 'Present but contains unresolved php path'];
+        }
+
         if (strpos($content, $schedulerPath) === false) {
             return ['ok' => false, 'label' => 'Present but points elsewhere'];
         }
@@ -2119,7 +2123,7 @@
 
         foreach ([
             '/.env' => 'Webzugriff auf .env',
-            '/.git/HEAD' => 'Webzugriff auf .git',
+            '/.git/HEAD' => 'Webzugriff auf .git/HEAD',
             '/.htaccess' => 'Webzugriff auf .htaccess',
             '/data/' => 'Webzugriff auf data/'
         ] as $probePath => $title) {
@@ -3060,16 +3064,22 @@
                 }
 
                 $retentionDays = (int)($_POST['notification_queue_retention_days'] ?? (defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
-                if ($retentionDays < 1 || $retentionDays > 365) {
+                if ($retentionDays < 0 || $retentionDays > 365) {
                     $retentionDays = 30;
                 }
 
                 try {
                     $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
                     $cleanup = $notificationCenter->cleanupQueue($retentionDays);
-                    $message = 'Queue bereinigt: removed=' . (int)($cleanup['removed'] ?? 0)
-                        . ', remaining=' . (int)($cleanup['remaining'] ?? 0)
-                        . ', retention_days=' . (int)($cleanup['retention_days'] ?? $retentionDays);
+                    $removedEntries = (int)($cleanup['removed'] ?? 0);
+                    $effectiveRetention = (int)($cleanup['retention_days'] ?? $retentionDays);
+                    if ($removedEntries > 0) {
+                        $message = 'Queue bereinigt: removed=' . $removedEntries
+                            . ', remaining=' . (int)($cleanup['remaining'] ?? 0)
+                            . ', retention_days=' . $effectiveRetention;
+                    } else {
+                        $message = 'Keine abgeschlossenen Queue-Eintraege zum Bereinigen gefunden. Es werden nur sent/failed Eintraege entfernt, die aelter als ' . $effectiveRetention . ' Tage sind.';
+                    }
                     configSetFeedback('notification', true, $message);
                     $logger->log('notification queue cleanup executed: ' . $message, 1, echoToWeb: true);
                     logAutomationChange($db_adapter, 'DELETE', 'configuration_notification_cleanup_queue', $cleanup);
@@ -5508,7 +5518,7 @@ switch ($site) {
         echo '</form>';
         echo '<form action="?set=config_notification_cleanup_queue" method="post" class="m-0 flex items-center gap-2">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<input name="notification_queue_retention_days" type="number" min="1" max="365" value="' . escapeSettingValue((string)$currentRetentionDays) . '" class="w-24 py-2 px-3" title="Retention in Tagen">';
+        echo '<input name="notification_queue_retention_days" type="number" min="0" max="365" value="' . escapeSettingValue((string)$currentRetentionDays) . '" class="w-24 py-2 px-3" title="Retention in Tagen (0 = sofort alle abgeschlossenen Eintraege entfernen)">';
         echo '<button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white">Queue bereinigen</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_test_slack" method="post" class="m-0">';

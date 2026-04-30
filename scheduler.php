@@ -139,6 +139,26 @@ function schedulerRunSnmpScanAll(DatabaseAdapter $db, AutomationStore $automatio
     return $failCount === 0 ? 0 : 1;
 }
 
+function schedulerProcessNotifications(NotificationCenter $notificationCenter, Logger $logger): array {
+    $notificationCenter->enqueueDailySummaryIfDue();
+    $deliveryResult = $notificationCenter->processQueue(150);
+    $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
+
+    $logger->log(
+        'Scheduler: notifications processed - processed=' . (int)$deliveryResult['processed']
+        . ' sent=' . (int)$deliveryResult['sent']
+        . ' failed=' . (int)$deliveryResult['failed']
+        . ' remaining=' . (int)$deliveryResult['remaining']
+        . ' cleaned=' . (int)$cleanupResult['removed'],
+        1
+    );
+
+    return [
+        'delivery' => $deliveryResult,
+        'cleanup' => $cleanupResult,
+    ];
+}
+
 // Dispatch alternative scheduler tasks via first CLI argument.
 $schedulerTask = isset($argv[1]) ? trim((string)$argv[1]) : '';
 
@@ -179,14 +199,13 @@ try {
     if (!$taskConfig['queue_enabled']) {
         $notificationSummary = '';
         if ($taskConfig['notifications_enabled']) {
-            $notificationCenter->enqueueDailySummaryIfDue();
-            $deliveryResult = $notificationCenter->processQueue(150);
-            $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
+            $notificationRun = schedulerProcessNotifications($notificationCenter, $logger);
+            $deliveryResult = is_array($notificationRun['delivery'] ?? null) ? $notificationRun['delivery'] : [];
+            $cleanupResult = is_array($notificationRun['cleanup'] ?? null) ? $notificationRun['cleanup'] : [];
             $notificationSummary = ' Notifications: processed=' . (int)$deliveryResult['processed']
                 . ' sent=' . (int)$deliveryResult['sent']
                 . ' failed=' . (int)$deliveryResult['failed']
                 . ' cleaned=' . (int)$cleanupResult['removed'] . '.';
-            $logger->log('Scheduler: notifications processed without queue execution', 1);
         }
 
         $message = 'Scheduler: Queue execution disabled by configuration.' . $notificationSummary;
@@ -217,7 +236,17 @@ try {
 
     if (empty($switches)) {
         $logger->log('Scheduler: No switches configured in inventory', 2);
-        recordSchedulerRun(false, 'No switches in inventory', $automationStore);
+        $notificationSummary = '';
+        if ($taskConfig['notifications_enabled']) {
+            $notificationRun = schedulerProcessNotifications($notificationCenter, $logger);
+            $deliveryResult = is_array($notificationRun['delivery'] ?? null) ? $notificationRun['delivery'] : [];
+            $cleanupResult = is_array($notificationRun['cleanup'] ?? null) ? $notificationRun['cleanup'] : [];
+            $notificationSummary = ' Notifications: processed=' . (int)$deliveryResult['processed']
+                . ' sent=' . (int)$deliveryResult['sent']
+                . ' failed=' . (int)$deliveryResult['failed']
+                . ' cleaned=' . (int)$cleanupResult['removed'] . '.';
+        }
+        recordSchedulerRun(false, 'No switches in inventory.' . $notificationSummary, $automationStore);
         exit(1);
     }
 
@@ -237,7 +266,17 @@ try {
 
     if (empty($userSwitchPairs)) {
         $logger->log('Scheduler: No pending changes to process', 1);
-        recordSchedulerRun(true, 'No pending changes to process', $automationStore);
+        $notificationSummary = '';
+        if ($taskConfig['notifications_enabled']) {
+            $notificationRun = schedulerProcessNotifications($notificationCenter, $logger);
+            $deliveryResult = is_array($notificationRun['delivery'] ?? null) ? $notificationRun['delivery'] : [];
+            $cleanupResult = is_array($notificationRun['cleanup'] ?? null) ? $notificationRun['cleanup'] : [];
+            $notificationSummary = ' Notifications: processed=' . (int)$deliveryResult['processed']
+                . ' sent=' . (int)$deliveryResult['sent']
+                . ' failed=' . (int)$deliveryResult['failed']
+                . ' cleaned=' . (int)$cleanupResult['removed'] . '.';
+        }
+        recordSchedulerRun(true, 'No pending changes to process.' . $notificationSummary, $automationStore);
         exit(0);
     }
 
@@ -343,17 +382,7 @@ try {
     }
 
     if ($taskConfig['notifications_enabled']) {
-        $notificationCenter->enqueueDailySummaryIfDue();
-        $deliveryResult = $notificationCenter->processQueue(150);
-        $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
-        $logger->log(
-            'Scheduler: notifications processed - processed=' . (int)$deliveryResult['processed']
-            . ' sent=' . (int)$deliveryResult['sent']
-            . ' failed=' . (int)$deliveryResult['failed']
-            . ' remaining=' . (int)$deliveryResult['remaining']
-            . ' cleaned=' . (int)$cleanupResult['removed'],
-            1
-        );
+        schedulerProcessNotifications($notificationCenter, $logger);
     } else {
         $logger->log('Scheduler: notification processing disabled by configuration', 1);
     }

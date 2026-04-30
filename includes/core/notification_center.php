@@ -449,7 +449,7 @@ class NotificationCenter {
     }
 
     public function cleanupQueue(int $retentionDays = 30): array {
-        $retentionDays = max(1, $retentionDays);
+        $retentionDays = max(0, $retentionDays);
         $queue = $this->readQueue();
         if (empty($queue)) {
             return ['removed' => 0, 'remaining' => 0, 'retention_days' => $retentionDays];

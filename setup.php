@@ -189,6 +189,10 @@ function getSchedulerCronStatus(string $applicationDir): array {
         return ['ok' => false, 'label' => 'Present but empty'];
     }
 
+    if (strpos($content, '$php_bin') !== false) {
+        return ['ok' => false, 'label' => 'Present but contains unresolved php path'];
+    }
+
     if (strpos($content, $schedulerPath) === false) {
         return ['ok' => false, 'label' => 'Present but points elsewhere'];
     }
