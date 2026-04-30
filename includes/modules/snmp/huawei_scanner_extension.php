@@ -122,6 +122,13 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
             'sample_indices' => array_slice(array_values(array_map('strval', $poeIndices)), 0, 10),
         ];
         if (empty($poeIndices)) {
+            $cliPoeMode = strtolower(trim((string)($config['poe_collection'] ?? '')));
+            if ($cliPoeMode === 'cli') {
+                $cliResult = $this->collectPoeViaCli($client, $logger, $config);
+                if ($cliResult !== null) {
+                    return $cliResult;
+                }
+            }
             return null;
         }
 
@@ -481,6 +488,217 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         return array_values($values);
+    }
+
+    /**
+     * CLI-based PoE collection for Huawei devices that do not expose any
+     * PoE MIB via SNMP (e.g. CloudEngine S5732-H-V2 on YunShan OS).
+     * Parses `display poe power` and maps the port names back to ifIndex
+     * via a single ifName walk.
+     *
+     * @param array<string,mixed> $config
+     * @return array{
+     *   admin: array<string,int>,
+     *   detection: array<string,int>,
+     *   class: array<string,?int>,
+     *   consumption: array<string,int>,
+     *   port_name: array<string,string>,
+     *   main_consumption: array<int,int>,
+     *   source: string
+     * }|null
+     */
+    private function collectPoeViaCli(SnmpClient $client, Logger $logger, array $config): ?array
+    {
+        $diag = [
+            'mode' => 'cli',
+            'status' => 'starting',
+        ];
+
+        $connection = $this->resolveSshConnection($config);
+        if ($connection === null) {
+            $diag['status'] = 'switch-not-found';
+            $diag['error'] = 'Switch konnte fuer CLI-Zugangsdaten nicht im Inventar gefunden werden.';
+            $this->lastDiagnostics['poe_cli'] = $diag;
+            return null;
+        }
+
+        $diag['connection'] = $this->describeConnection($connection);
+
+        $result = $this->runReadOnlySshCommands(
+            $connection,
+            ['display poe power'],
+            $logger,
+            (string)($config['switch_name'] ?? '')
+        );
+        $diag['execution'] = $result['diagnostics'] ?? [];
+        $diag['output_preview'] = $this->buildOutputPreview((string)($result['output'] ?? ''));
+
+        $rows = $this->parseDisplayPoePower((string)($result['output'] ?? ''));
+        $diag['parsed_row_count'] = count($rows);
+
+        if (!$result['ok'] && empty($rows)) {
+            $diag['status'] = 'failed';
+            $diag['error'] = (string)($result['output'] ?? '');
+            $this->lastDiagnostics['poe_cli'] = $diag;
+            $logger->log('HuaweiScannerExtension: CLI PoE collection failed for ' . (string)($config['switch_name'] ?? '?') . ': exit=' . (string)($result['diagnostics']['exit_code'] ?? '?'), 2);
+            return null;
+        }
+
+        if (empty($rows)) {
+            $diag['status'] = 'parsed-empty';
+            $this->lastDiagnostics['poe_cli'] = $diag;
+            return null;
+        }
+
+        $ifNameMap = $this->walkMap($client, $config, self::OID_IF_NAME);
+        $nameToIfIndex = [];
+        foreach ($ifNameMap as $ifIndex => $ifName) {
+            $nameToIfIndex[strtolower(trim((string)$ifName))] = (string)$ifIndex;
+        }
+        $diag['ifname_map_size'] = count($nameToIfIndex);
+
+        $admin = [];
+        $detection = [];
+        $class = [];
+        $consumption = [];
+        $portNames = [];
+        $unmatched = [];
+
+        foreach ($rows as $row) {
+            $portName = (string)$row['port_name'];
+            $key = $nameToIfIndex[strtolower($portName)] ?? null;
+            if ($key === null) {
+                $unmatched[] = $portName;
+                continue;
+            }
+
+            $admin[$key] = 1;
+            $hasPd = $row['class'] !== null;
+            $detection[$key] = $hasPd ? 3 : 2; // deliveringPower : searching
+            $class[$key] = $row['class'];
+            if ($row['current_mw'] !== null) {
+                $consumption[$key] = $row['current_mw'];
+            }
+            $portNames[$key] = $portName;
+        }
+
+        $totalCurrent = 0;
+        foreach ($rows as $row) {
+            if ($row['current_mw'] !== null) {
+                $totalCurrent += $row['current_mw'];
+            }
+        }
+
+        $diag['matched_port_count'] = count($admin);
+        $diag['unmatched_port_count'] = count($unmatched);
+        $diag['unmatched_sample'] = array_slice($unmatched, 0, 10);
+        $diag['status'] = empty($admin) ? 'no-ifindex-match' : 'ok';
+
+        $this->lastDiagnostics['poe_cli'] = $diag;
+
+        $this->lastDiagnostics['poe'] = [
+            'source' => 'cli:huawei:display-poe-power',
+            'status' => empty($admin) ? 'cli-no-ifindex-match' : 'cli-ok',
+            'enable_count' => count($admin),
+            'status_count' => count($detection),
+            'class_count' => count(array_filter($class, static fn($v) => $v !== null)),
+            'reference_power_count' => 0,
+            'consumption_count' => count($consumption),
+            'peak_power_count' => 0,
+            'average_power_count' => 0,
+            'port_name_count' => count($portNames),
+            'main_consumption_count' => $totalCurrent > 0 ? 1 : 0,
+            'data_index_count' => count($admin),
+            'resolved_port_count' => count($admin),
+            'root_probe_mode' => 'cli-fallback',
+            'root_probe_oid_count' => 0,
+            'root_probe_status' => 'snmp-empty-using-cli',
+            'root_probe_sample_oid' => '',
+            'sample_indices' => array_slice(array_values(array_map('strval', array_keys($admin))), 0, 10),
+        ];
+
+        if (empty($admin)) {
+            return null;
+        }
+
+        return [
+            'admin' => $admin,
+            'detection' => $detection,
+            'class' => $class,
+            'consumption' => $consumption,
+            'port_name' => $portNames,
+            'main_consumption' => $totalCurrent > 0 ? [$totalCurrent] : [],
+            'source' => 'cli:huawei:display-poe-power',
+        ];
+    }
+
+    /**
+     * Parse the body of `display poe power` into per-port records.
+     * Expected line shape:
+     *   PortName  Class  REFPW  USMPW  CURPW  PKPW  AVGPW
+     * with `-` representing missing/no PD.
+     *
+     * @return array<int,array{port_name:string,class:?int,reference_mw:?int,user_max_mw:?int,current_mw:?int,peak_mw:?int,average_mw:?int}>
+     */
+    private function parseDisplayPoePower(string $output): array
+    {
+        $rows = [];
+        $lines = preg_split("/\r\n?|\n/", $output) ?: [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+            // Skip header / decoration lines.
+            if (preg_match('/^[-=]+$/', $trimmed)) {
+                continue;
+            }
+            if (stripos($trimmed, 'PortName') !== false) {
+                continue;
+            }
+            if (stripos($trimmed, 'Codes:') !== false || stripos($trimmed, 'REFPW') === 0) {
+                continue;
+            }
+            if (preg_match('/^[<\[].*[>\]]/', $trimmed)) {
+                // CLI prompt like <H9441AS0H>
+                continue;
+            }
+
+            $parts = preg_split('/\s+/', $trimmed) ?: [];
+            if (count($parts) < 7) {
+                continue;
+            }
+
+            $portName = $parts[0];
+            // First field must look like a Huawei interface name.
+            if (preg_match('/^(MultiGE|GigabitEthernet|XGigabitEthernet|TenGigE|25GE|40GE|100GE|GE|XGE|Eth)/i', $portName) !== 1) {
+                continue;
+            }
+
+            $rows[] = [
+                'port_name'    => $portName,
+                'class'        => $this->parseDisplayPoeNumber($parts[1]),
+                'reference_mw' => $this->parseDisplayPoeNumber($parts[2]),
+                'user_max_mw'  => $this->parseDisplayPoeNumber($parts[3]),
+                'current_mw'   => $this->parseDisplayPoeNumber($parts[4]),
+                'peak_mw'      => $this->parseDisplayPoeNumber($parts[5]),
+                'average_mw'   => $this->parseDisplayPoeNumber($parts[6]),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function parseDisplayPoeNumber(string $value): ?int
+    {
+        $value = trim($value);
+        if ($value === '' || $value === '-' || $value === 'N/A') {
+            return null;
+        }
+        if (!preg_match('/^-?\d+$/', $value)) {
+            return null;
+        }
+        return (int)$value;
     }
 
     /**

@@ -27,7 +27,8 @@
             "description": "Access switches apply configuration directly without a commit step.",
             "snmp": {
                 "extension": "huawei",
-                "node_ip_collection": "cli-dhcp-snooping"
+                "node_ip_collection": "cli-dhcp-snooping",
+                "poe_collection": "cli"
             },
             "supports_commit": false,
             "enter_config": "system-view",

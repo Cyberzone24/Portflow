@@ -1127,6 +1127,16 @@ if ($tab === 'topology') {
                 $poeDiagRootProbeSampleOid = trim((string)($poeDiagnostics['root_probe_sample_oid'] ?? ''));
                 $poeDiagSampleIndices = is_array($poeDiagnostics['sample_indices'] ?? null) ? $poeDiagnostics['sample_indices'] : [];
                 $poeDiagSampleSummary = empty($poeDiagSampleIndices) ? '-' : implode(' · ', array_map(static fn($value): string => (string)$value, $poeDiagSampleIndices));
+                $poeCliDiagnostics = is_array($scannerExtensionDiagnostics['poe_cli'] ?? null) ? $scannerExtensionDiagnostics['poe_cli'] : [];
+                $poeCliStatus = trim((string)($poeCliDiagnostics['status'] ?? ''));
+                $poeCliMode = trim((string)($poeCliDiagnostics['mode'] ?? ''));
+                $poeCliParsedRowCount = isset($poeCliDiagnostics['parsed_row_count']) ? (int)$poeCliDiagnostics['parsed_row_count'] : 0;
+                $poeCliMatched = isset($poeCliDiagnostics['matched_port_count']) ? (int)$poeCliDiagnostics['matched_port_count'] : 0;
+                $poeCliUnmatched = isset($poeCliDiagnostics['unmatched_port_count']) ? (int)$poeCliDiagnostics['unmatched_port_count'] : 0;
+                $poeCliIfNameMapSize = isset($poeCliDiagnostics['ifname_map_size']) ? (int)$poeCliDiagnostics['ifname_map_size'] : 0;
+                $poeCliUnmatchedSample = is_array($poeCliDiagnostics['unmatched_sample'] ?? null) ? $poeCliDiagnostics['unmatched_sample'] : [];
+                $poeCliUnmatchedSummary = empty($poeCliUnmatchedSample) ? '-' : implode(' · ', array_map(static fn($value): string => (string)$value, $poeCliUnmatchedSample));
+                $poeCliExitCode = isset($poeCliDiagnostics['execution']['exit_code']) ? (string)$poeCliDiagnostics['execution']['exit_code'] : '-';
                 $genericPoeDiagnostics = is_array($det['generic_poe_diagnostics'] ?? null) ? $det['generic_poe_diagnostics'] : [];
                 $genericPoeStatus = trim((string)($genericPoeDiagnostics['status'] ?? ''));
                 $genericPoeSource = trim((string)($genericPoeDiagnostics['source'] ?? ''));
@@ -1283,6 +1293,17 @@ if ($tab === 'topology') {
                         <div><span class="font-semibold text-slate-900">PoE Root-Probe OIDs:</span> <?php echo $poeDiagRootProbeOidCount; ?></div>
                         <div class="md:col-span-2"><span class="font-semibold text-slate-900">PoE Root-Probe Beispiel-OID:</span> <?php echo rep_h($poeDiagRootProbeSampleOid !== '' ? $poeDiagRootProbeSampleOid : '-'); ?></div>
                         <div class="md:col-span-2"><span class="font-semibold text-slate-900">PoE Beispiel-Indizes:</span> <?php echo rep_h($poeDiagSampleSummary); ?></div>
+                        <?php if ($poeCliMode !== '' || $poeCliStatus !== '' || $poeCliParsedRowCount > 0): ?>
+                        <div class="md:col-span-2 mt-1 border-t border-slate-200 pt-2 text-xs uppercase tracking-wide text-slate-500">PoE CLI-Fallback</div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI-Modus:</span> <?php echo rep_h($poeCliMode !== '' ? $poeCliMode : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI-Status:</span> <?php echo rep_h($poeCliStatus !== '' ? $poeCliStatus : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI Parsed-Rows:</span> <?php echo $poeCliParsedRowCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI ifName-Map:</span> <?php echo $poeCliIfNameMapSize; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI gemappte Ports:</span> <?php echo $poeCliMatched; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI ungemappt:</span> <?php echo $poeCliUnmatched; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE CLI Exit-Code:</span> <?php echo rep_h($poeCliExitCode); ?></div>
+                        <div class="md:col-span-2"><span class="font-semibold text-slate-900">PoE CLI ungemappte Ports:</span> <?php echo rep_h($poeCliUnmatchedSummary); ?></div>
+                        <?php endif; ?>
                         <div><span class="font-semibold text-slate-900">Credential-Mode:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['credential_mode'] ?? '-')); ?></div>
                         <div><span class="font-semibold text-slate-900">SSH Auth:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['auth_method'] ?? '-')); ?></div>
                         <div><span class="font-semibold text-slate-900">Host gesetzt:</span> <?php echo $scannerExtensionHostSet; ?></div>

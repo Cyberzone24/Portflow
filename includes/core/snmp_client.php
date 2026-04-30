@@ -75,6 +75,7 @@ class SnmpClient
             'mib'                 => trim((string)($overrides['mib'] ?? $pick('mib', $switchSnmp) ?? $pick('default_mib', $profileSnmp) ?? '')),
             'snmp_extension'      => trim((string)($overrides['extension'] ?? $pick('extension', $switchSnmp, $profileSnmp) ?? '')),
             'node_ip_collection'  => trim((string)($overrides['node_ip_collection'] ?? $pick('node_ip_collection', $switchSnmp, $profileSnmp) ?? '')),
+            'poe_collection'      => trim((string)($overrides['poe_collection'] ?? $pick('poe_collection', $switchSnmp, $profileSnmp) ?? '')),
             'port'                => (int)($overrides['port'] ?? $pick('port', $switchSnmp, $profileSnmp) ?? 161),
             'timeout'             => (int)($overrides['timeout'] ?? $pick('timeout', $switchSnmp, $profileSnmp) ?? 2),
             'retries'             => (int)($overrides['retries'] ?? $pick('retries', $switchSnmp, $profileSnmp) ?? 1),
