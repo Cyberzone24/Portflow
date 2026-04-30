@@ -572,8 +572,13 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
                 continue;
             }
 
-            $admin[$key] = 1;
-            $hasPd = $row['class'] !== null;
+            $hasPd = $row['class'] !== null
+                || ($row['current_mw'] !== null && $row['current_mw'] > 0);
+            // admin: 1=enabled+delivering, 2=enabled-but-no-PD (port is PoE-capable
+            // and configured but currently not powering anything). The downstream
+            // reconciler maps `poe = true` only when admin==1 OR detection==3,
+            // so this keeps unused PoE ports as poe=false.
+            $admin[$key] = $hasPd ? 1 : 2;
             $detection[$key] = $hasPd ? 3 : 2; // deliveringPower : searching
             $class[$key] = $row['class'];
             if ($row['current_mw'] !== null) {
