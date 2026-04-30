@@ -50,6 +50,153 @@ function uri() {
     return $position !== false ? $protocol . substr($_SERVER['SERVER_ADDR'] . $_SERVER['REQUEST_URI'], 0, $position) : null;
 }
 
+function normalizeMailSecureForForm($value) {
+    $value = trim((string)$value);
+    if ($value === 'PHPMailer::ENCRYPTION_STARTTLS') {
+        return 'tls';
+    }
+    if ($value === 'PHPMailer::ENCRYPTION_SMTPS') {
+        return 'ssl';
+    }
+    return $value;
+}
+
+function defaultSetupConfig() {
+    return [
+        'LOG_LEVEL' => defined('LOG_LEVEL') ? (string)LOG_LEVEL : '1',
+        'DB_SERVER' => defined('DB_SERVER') ? (string)DB_SERVER : 'localhost',
+        'DB_PORT' => defined('DB_PORT') ? (string)DB_PORT : '5432',
+        'DB_NAME' => defined('DB_NAME') ? (string)DB_NAME : '',
+        'DB_USER' => defined('DB_USER') ? (string)DB_USER : '',
+        'DB_PASSWORD' => defined('DB_PASSWORD') ? (string)DB_PASSWORD : '',
+        'HOSTNAME' => defined('PORTFLOW_HOSTNAME') ? (string)PORTFLOW_HOSTNAME : (uri() ?? ''),
+        'SSL' => (defined('PORTFLOW_SECURE') && PORTFLOW_SECURE) ? 'TRUE' : 'FALSE',
+        'REGISTER' => (defined('PORTFLOW_REGISTER') && PORTFLOW_REGISTER) ? 'TRUE' : 'FALSE',
+        'MAIL_HOST' => defined('MAIL_HOST') ? (string)MAIL_HOST : '',
+        'MAIL_USER' => defined('MAIL_USER') ? (string)MAIL_USER : '',
+        'MAIL_PASSWORD' => defined('MAIL_PASSWORD') ? (string)MAIL_PASSWORD : '',
+        'MAIL_PORT' => defined('MAIL_PORT') ? (string)MAIL_PORT : '587',
+        'MAIL_SMTPAUTH' => (defined('MAIL_SMTPAUTH') && MAIL_SMTPAUTH) ? 'TRUE' : 'FALSE',
+        'MAIL_SMTPSECURE' => defined('MAIL_SMTPSECURE') ? normalizeMailSecureForForm((string)MAIL_SMTPSECURE) : '',
+        'LDAP_ENABLED' => (defined('LDAP_ENABLED') && LDAP_ENABLED) ? 'TRUE' : 'FALSE',
+        'LDAP_SERVER' => defined('LDAP_SERVER') ? (string)LDAP_SERVER : '',
+        'LDAP_PORT' => defined('LDAP_PORT') ? (string)LDAP_PORT : '389',
+        'LDAP_BASEDN' => defined('LDAP_BASEDN') ? (string)LDAP_BASEDN : '',
+        'LDAP_USERDN' => defined('LDAP_USERDN') ? (string)LDAP_USERDN : '',
+        'LDAP_FILTER' => defined('LDAP_FILTER') ? (string)LDAP_FILTER : '',
+        'LDAP_BIND' => (defined('LDAP_BIND') && LDAP_BIND) ? 'TRUE' : 'FALSE',
+        'LDAP_BIND_USER' => defined('LDAP_BIND_USER') ? (string)LDAP_BIND_USER : '',
+        'LDAP_BIND_PASSWORD' => defined('LDAP_BIND_PASSWORD') ? (string)LDAP_BIND_PASSWORD : '',
+        'LDAP_TRUST' => (defined('LDAP_TRUST') && LDAP_TRUST) ? 'TRUE' : 'FALSE',
+        'AUTOMATION_SECRET' => defined('AUTOMATION_SECRET') ? (string)AUTOMATION_SECRET : '',
+    ];
+}
+
+function normalizeSetupConfig($config) {
+    return array_merge(defaultSetupConfig(), is_array($config) ? $config : []);
+}
+
+function configHasValues($config, $keys) {
+    foreach ($keys as $key) {
+        if (trim((string)($config[$key] ?? '')) === '') {
+            return false;
+        }
+    }
+    return true;
+}
+
+function hasBootstrapDatabaseConfig($config) {
+    return configHasValues($config, ['DB_SERVER', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']);
+}
+
+function hasBootstrapServerConfig($config) {
+    return configHasValues($config, ['HOSTNAME', 'LOG_LEVEL'])
+        && array_key_exists('SSL', $config)
+        && array_key_exists('REGISTER', $config);
+}
+
+function hasBootstrapAutomationConfig($config) {
+    return trim((string)($config['AUTOMATION_SECRET'] ?? '')) !== '';
+}
+
+function hasBootstrapMailConfig($config) {
+    return configHasValues($config, ['MAIL_HOST', 'MAIL_USER', 'MAIL_PASSWORD', 'MAIL_PORT']);
+}
+
+function hasBootstrapLdapConfig($config) {
+    if (($config['LDAP_ENABLED'] ?? 'FALSE') !== 'TRUE') {
+        return false;
+    }
+
+    return configHasValues($config, ['LDAP_SERVER', 'LDAP_PORT', 'LDAP_BASEDN', 'LDAP_USERDN']);
+}
+
+function isDatabaseSchemaInitialized() {
+    try {
+        $dbAdapter = new DatabaseAdapter();
+        return $dbAdapter->checkDatabaseAndTableExistence('users');
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+function isPhpFpmAvailable(): bool {
+    $sapi = PHP_SAPI;
+    if ($sapi === 'fpm-fcgi') {
+        return true;
+    }
+
+    if (stripos($sapi, 'cgi') !== false) {
+        return true;
+    }
+
+    return extension_loaded('Zend OPcache');
+}
+
+function checkApplicationDirectories(string $dir): bool {
+    if (!is_dir($dir) || !is_readable($dir) || !is_executable($dir)) {
+        return false;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    foreach ($iterator as $item) {
+        if ($item->isDir() && (!$item->isReadable() || !$item->isExecutable())) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function nextSetupStep($config, $afterStep = 0) {
+    if ($afterStep < 1) {
+        return 1;
+    }
+    if ($afterStep < 2 && !hasBootstrapDatabaseConfig($config)) {
+        return 2;
+    }
+    if ($afterStep < 3 && !hasBootstrapServerConfig($config)) {
+        return 3;
+    }
+    if ($afterStep < 4) {
+        return 4;
+    }
+    if ($afterStep < 5 && !hasBootstrapMailConfig($config)) {
+        return 5;
+    }
+    if ($afterStep < 6 && !hasBootstrapLdapConfig($config)) {
+        return 6;
+    }
+    if ($afterStep < 7 && !hasBootstrapAutomationConfig($config)) {
+        return 7;
+    }
+    return null;
+}
+
 // Start, reset configuration, get time, or initialize database
 if (isset($_GET['start'])) {
     $_SESSION['step'] = 0;
@@ -68,17 +215,24 @@ if (isset($_GET['start'])) {
     $logger->log('DB initialized', 1);
 
     // Go to next step
-    $step = intval($_SESSION['step']);
-    displayForm($step + 1);
-    $_SESSION['step'] = $step + 1;
+    $config = normalizeSetupConfig(isset($_SESSION['config']) ? $_SESSION['config'] : []);
+    $nextStep = nextSetupStep($config, 2);
+    if ($nextStep === null) {
+        createEnvFile($config);
+        header('refresh:5;url=index.php?signup');
+        exit;
+    }
+    displayForm($nextStep, $config);
+    $_SESSION['step'] = $nextStep;
     exit;
 }
 
 // Load configuration from session
-$config = isset($_SESSION['config']) ? $_SESSION['config'] : [];
+$config = normalizeSetupConfig(isset($_SESSION['config']) ? $_SESSION['config'] : []);
 
 // Display form based on the current step
-function displayForm($step) {
+function displayForm($step, $config = []) {
+    $config = normalizeSetupConfig($config);
     $action = htmlspecialchars($_SERVER["PHP_SELF"]);
     echo <<<HTML
     <!DOCTYPE html>
@@ -134,7 +288,7 @@ function displayForm($step) {
             HTML;
 
             // Modules
-            $modules = ['fpm', 'session', 'mbstring', 'pdo', 'pdo_pgsql', 'openssl', 'ldap', 'snmp'];
+            $modules = ['session', 'mbstring', 'pdo', 'pdo_pgsql', 'openssl', 'ldap', 'snmp'];
             echo <<<HTML
             <div class="pb-6">
                 <p>PHP-Module</p>
@@ -144,6 +298,9 @@ function displayForm($step) {
                         <th class="p-4 border border-slate-500">Status</th>
                     </tr>
             HTML;
+            echo '<tr><td class="p-4 border border-slate-500">php-fpm / CGI SAPI</td><td class="p-4 border border-slate-500">';
+            echo isPhpFpmAvailable() ? 'Available' : 'Not Available';
+            echo '</td></tr>';
             foreach ($modules as $module) {
                 echo '<tr><td class="p-4 border border-slate-500">' . $module . '</td><td class="p-4 border border-slate-500">';
                 if (extension_loaded($module)) {
@@ -167,21 +324,11 @@ function displayForm($step) {
                         <th class="p-4 border border-slate-500">Directory</th>
                         <th class="p-4 border border-slate-500">Status</th>
             HTML;
-            function checkDir($dir) {
-                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
-                foreach($iterator as $item) {
-                    if (!is_executable($item)) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-
             echo '<tr><td class="p-4 border border-slate-500">Portflow (Sub-)Directory</td><td class="p-4 border border-slate-500">';
-            if (checkDir(getcwd())) {
-                echo 'Executable';
+            if (checkApplicationDirectories(getcwd())) {
+                echo 'Readable + Traversable';
             } else {
-                echo 'Not Executable';
+                echo 'Not Readable/Traversable';
             }
             echo '</td></tr>';
 
@@ -203,8 +350,10 @@ function displayForm($step) {
 
             $logDir = '/var/log/portflow';
             echo '<tr><td class="p-4 border border-slate-500">Log Directory</td><td class="p-4 border border-slate-500">';
-            if (is_writable($logDir)) {
+            if (is_dir($logDir) && is_writable($logDir)) {
                 echo 'Writable';
+            } elseif (!is_dir($logDir)) {
+                echo 'Missing';
             } else {
                 echo 'Not Writable';
             }
@@ -226,6 +375,10 @@ function displayForm($step) {
             break;
 
         case 2:
+            $dbServer = htmlspecialchars((string)$config['DB_SERVER']);
+            $dbPort = htmlspecialchars((string)$config['DB_PORT']);
+            $dbName = htmlspecialchars((string)$config['DB_NAME']);
+            $dbUser = htmlspecialchars((string)$config['DB_USER']);
             echo <<<HTML
             <form class="m-0" method="POST" action="$action">
                 <div class="flex justify-center items-center pb-12">
@@ -236,19 +389,19 @@ function displayForm($step) {
                 </div>
                 <div class="pb-6">
                     <label for="db_server">Database Server</label>
-                    <input type="text" id="db_server" name="db_server" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="'localhost' or any hostname" value="localhost">
+                    <input type="text" id="db_server" name="db_server" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="'localhost' or any hostname" value="$dbServer">
                 </div>
                 <div class="pb-6">
                     <label for="db_port">Database Port</label>
-                    <input type="number" id="db_port" name="db_port" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="5432" value="5432">
+                    <input type="number" id="db_port" name="db_port" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="5432" value="$dbPort">
                 </div>
                 <div class="pb-6">
                     <label for="db_name">Database Name</label>
-                    <input type="text" id="db_name" name="db_name" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="portflow">
+                    <input type="text" id="db_name" name="db_name" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="portflow" value="$dbName">
                 </div>
                 <div class="pb-6">
                     <label for="db_user">Database User</label>
-                    <input type="text" id="db_user" name="db_user" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="username">
+                    <input type="text" id="db_user" name="db_user" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" placeholder="username" value="$dbUser">
                 </div>
                 <div class="pb-6">
                     <label for="db_password">Database Password</label>
@@ -264,7 +417,15 @@ function displayForm($step) {
             break;
 
         case 3:
-            $uri = uri();
+            $uri = htmlspecialchars((string)($config['HOSTNAME'] ?: uri()));
+            $sslChecked = ($config['SSL'] === 'TRUE') ? 'checked' : '';
+            $registerChecked = ($config['REGISTER'] === 'TRUE') ? 'checked' : '';
+            $logLevel = (string)$config['LOG_LEVEL'];
+            $selectedDebug = ($logLevel === '0') ? 'selected' : '';
+            $selectedInfo = ($logLevel === '1') ? 'selected' : '';
+            $selectedWarn = ($logLevel === '2') ? 'selected' : '';
+            $selectedError = ($logLevel === '3') ? 'selected' : '';
+            $selectedNone = ($logLevel === '4') ? 'selected' : '';
             echo <<<HTML
             <form class="m-0" method="POST" action="$action">
                 <div class="flex justify-center items-center pb-12">
@@ -279,20 +440,20 @@ function displayForm($step) {
                 </div>
                 <div class="pb-6">
                     <label for="ssl">Force https connection</label>
-                    <input type="checkbox" id="ssl" name="ssl" value="true" checked class="border rounded w-5 h-5 focus:outline-none focus:shadow-outline">
+                    <input type="checkbox" id="ssl" name="ssl" value="true" $sslChecked class="border rounded w-5 h-5 focus:outline-none focus:shadow-outline">
                 </div>
                 <div class="pb-6">
                     <label for="register">Allow user registration</label>
-                    <input type="checkbox" id="register" name="register" value="true" class="border rounded w-5 h-5 focus:outline-none focus:shadow-outline">
+                    <input type="checkbox" id="register" name="register" value="true" $registerChecked class="border rounded w-5 h-5 focus:outline-none focus:shadow-outline">
                 </div>
                 <div class="pb-6">
                     <label for="log_level">Log Level</label>
                     <select id="log_level" name="log_level" required class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline">
-                        <option value="0">DEBUG</option>
-                        <option value="1" selected>INFO</option>
-                        <option value="2">WARN</option>
-                        <option value="3">ERROR</option>
-                        <option value="4">NONE</option>
+                        <option value="0" $selectedDebug>DEBUG</option>
+                        <option value="1" $selectedInfo>INFO</option>
+                        <option value="2" $selectedWarn>WARN</option>
+                        <option value="3" $selectedError>ERROR</option>
+                        <option value="4" $selectedNone>NONE</option>
                     </select>
                 </div>
                 <input type="hidden" name="step" value="2">
@@ -337,6 +498,15 @@ function displayForm($step) {
             break;
 
         case 5:
+            $mailHost = htmlspecialchars((string)$config['MAIL_HOST']);
+            $mailUser = htmlspecialchars((string)$config['MAIL_USER']);
+            $mailPassword = htmlspecialchars((string)$config['MAIL_PASSWORD']);
+            $mailPort = htmlspecialchars((string)$config['MAIL_PORT']);
+            $mailSmtpAuthChecked = ($config['MAIL_SMTPAUTH'] === 'TRUE') ? 'checked' : '';
+            $mailSecure = (string)$config['MAIL_SMTPSECURE'];
+            $mailSecureNone = ($mailSecure === '') ? 'selected' : '';
+            $mailSecureTls = ($mailSecure === 'tls') ? 'selected' : '';
+            $mailSecureSsl = ($mailSecure === 'ssl') ? 'selected' : '';
             echo <<<HTML
             <form class="m-0" method="POST" action="$action">
                 <div class='flex justify-center items-center pb-12'>
@@ -347,30 +517,30 @@ function displayForm($step) {
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_host'>Mail Host</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_host' name='mail_host' placeholder='smtp.domain.tld' required>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_host' name='mail_host' placeholder='smtp.domain.tld' value='$mailHost' required>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_user'>Mail User</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_user' name='mail_user' placeholder='user@domain.tld' required>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_user' name='mail_user' placeholder='user@domain.tld' value='$mailUser' required>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_password'>Mail Password</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='mail_password' name='mail_password' placeholder='password' required>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='mail_password' name='mail_password' placeholder='password' value='$mailPassword' required>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_port'>Mail Port</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_port' name='mail_port' placeholder='25, 465, 587' required>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='mail_port' name='mail_port' placeholder='25, 465, 587' value='$mailPort' required>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_smtpauth'>SMTP Auth</label>
-                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='mail_smtpauth' name='mail_smtpauth' value='false'>                
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='mail_smtpauth' name='mail_smtpauth' value='false' $mailSmtpAuthChecked>                
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='mail_smtpsecure'>SMTP Secure</label>
                     <select class="border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id='mail_smtpsecure' name='mail_smtpsecure'>
-                        <option value=''>None</option>
-                        <option value='tls'>TLS</option>
-                        <option value='ssl'>SSL</option>
+                        <option value='' $mailSecureNone>None</option>
+                        <option value='tls' $mailSecureTls>TLS</option>
+                        <option value='ssl' $mailSecureSsl>SSL</option>
                     </select>
                 </div>
                 <input type='hidden' name='step' value='3'>
@@ -383,6 +553,16 @@ function displayForm($step) {
         break;
 
         case 6:
+            $ldapEnabledChecked = ($config['LDAP_ENABLED'] === 'TRUE') ? 'checked' : '';
+            $ldapServer = htmlspecialchars((string)$config['LDAP_SERVER']);
+            $ldapPort = htmlspecialchars((string)$config['LDAP_PORT']);
+            $ldapBaseDn = htmlspecialchars((string)$config['LDAP_BASEDN']);
+            $ldapUserDn = htmlspecialchars((string)$config['LDAP_USERDN']);
+            $ldapFilter = htmlspecialchars((string)$config['LDAP_FILTER']);
+            $ldapBindChecked = ($config['LDAP_BIND'] === 'TRUE') ? 'checked' : '';
+            $ldapBindUser = htmlspecialchars((string)$config['LDAP_BIND_USER']);
+            $ldapBindPassword = htmlspecialchars((string)$config['LDAP_BIND_PASSWORD']);
+            $ldapTrustChecked = ($config['LDAP_TRUST'] === 'TRUE') ? 'checked' : '';
             echo <<<HTML
             <form class="m-0" method="POST" action="$action">
                 <div class='flex justify-center items-center pb-12'>
@@ -393,44 +573,44 @@ function displayForm($step) {
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_enabled'>Enable LDAP Module</label>
-                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_enabled' name='ldap_enabled' value='false'>
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_enabled' name='ldap_enabled' value='false' $ldapEnabledChecked>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_server'>LDAP Server</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_server' name='ldap_server' placeholder='ldap.domain.tld'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_server' name='ldap_server' placeholder='ldap.domain.tld' value='$ldapServer'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_server'>LDAP Port</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_port' name='ldap_port' value='389' placeholder='389, 636'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_port' name='ldap_port' value='$ldapPort' placeholder='389, 636'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_basedn'>LDAP Base DN</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_basedn' name='ldap_basedn' placeholder='dc=domain,dc=tld'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_basedn' name='ldap_basedn' placeholder='dc=domain,dc=tld' value='$ldapBaseDn'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_userdn'>LDAP User DN</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_userdn' name='ldap_userdn' placeholder='ou=people'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_userdn' name='ldap_userdn' placeholder='ou=people' value='$ldapUserDn'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_filter'>LDAP Filter</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_filter' name='ldap_filter' placeholder='(|(title=Admin)(title=Network)) or (ou=Headoffice)'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_filter' name='ldap_filter' placeholder='(|(title=Admin)(title=Network)) or (ou=Headoffice)' value='$ldapFilter'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_bind'>LDAP Bind</label>
-                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_bind' name='ldap_bind' value='false'>
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_bind' name='ldap_bind' value='false' $ldapBindChecked>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_bind_user'>LDAP Bind User</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_bind_user' name='ldap_bind_user' placeholder='username'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='text' id='ldap_bind_user' name='ldap_bind_user' placeholder='username' value='$ldapBindUser'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_bind_password'>LDAP Bind Password</label>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='ldap_bind_password' name='ldap_bind_password' placeholder='password'>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='ldap_bind_password' name='ldap_bind_password' placeholder='password' value='$ldapBindPassword'>
                 </div>
                 <div class='pb-6'>
                     <label class='block mb-2' for='ldap_trust'>LDAP Trust</label>
                     <p>Allows the login of ldap accounts without activating them beforehand.</p>
-                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_trust' name='ldap_trust' value='false'>
+                    <input class='border rounded w-5 h-5 focus:outline-none focus:shadow-outline' type='checkbox' id='ldap_trust' name='ldap_trust' value='false' $ldapTrustChecked>
                 </div>
                 <input type='hidden' name='step' value='4'>
                 <div class='pt-6 flex justify-between items-center'>
@@ -442,6 +622,7 @@ function displayForm($step) {
         break;
 
         case 7:
+            $automationSecret = htmlspecialchars((string)$config['AUTOMATION_SECRET']);
             echo <<<HTML
             <form class="m-0" method="POST" action="$action">
                 <div class='flex justify-center items-center pb-12'>
@@ -453,7 +634,7 @@ function displayForm($step) {
                 <div class='pb-6'>
                     <label class='block mb-2' for='automation_secret'>Automation Secret</label>
                     <p class='text-lg'>Please set a long random value as automation secret. This secret is used to authenticate API requests from the automation module.</p>
-                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='automation_secret' name='automation_secret' placeholder='change-this-to-a-long-random-value' required>
+                    <input class='appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline' type='password' id='automation_secret' name='automation_secret' placeholder='change-this-to-a-long-random-value' value="$automationSecret" required>
                 </div>
                 <input type='hidden' name='step' value='5'>
                 <div class='pt-6 flex justify-between items-center'>
@@ -577,7 +758,23 @@ if (isset($_SESSION['step'])) {
     }
 
     if ($step < 7) {
-        displayForm($step + 1);
+        if ($step === 1 && hasBootstrapDatabaseConfig($config) && !isDatabaseSchemaInitialized()) {
+            createEnvFile($config);
+            $_SESSION['config'] = $config;
+            $_SESSION['step'] = 2;
+            header('Location: ?db_init=1');
+            exit;
+        }
+
+        $nextStep = nextSetupStep($config, $step);
+        if ($nextStep === null) {
+            createEnvFile($config);
+            header('refresh:5;url=index.php?signup');
+            exit;
+        }
+
+        displayForm($nextStep, $config);
+        $_SESSION['step'] = $nextStep;
     } else {
         // Create config file
         createEnvFile($config);
@@ -610,12 +807,12 @@ if (isset($_SESSION['step'])) {
         header('refresh:5;url=index.php?signup');
     }
     $_SESSION['config'] = $config;
-    $_SESSION['step'] = $step + 1;
 } else {
-    displayForm(NULL);
+    displayForm(NULL, $config);
 }
 
 function createEnvFile($config) {
+    $config = normalizeSetupConfig($config);
     $envContent = "# Portflow Configuration - Generated by setup wizard
 # Logging
 LOG_LEVEL={$config['LOG_LEVEL']}

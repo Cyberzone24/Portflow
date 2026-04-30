@@ -703,7 +703,7 @@
 
     function getConfigTabFromRequest(): string {
         $rawTab = trim((string)($_GET['tab'] ?? 'system'));
-        return in_array($rawTab, ['system', 'notifications'], true) ? $rawTab : 'system';
+        return in_array($rawTab, ['system', 'updater', 'notifications'], true) ? $rawTab : 'system';
     }
 
     function decodeJsonArrayString(?string $raw, array $fallback = []): array {
@@ -1378,6 +1378,110 @@
             'feedback' => is_array($feedback) ? $feedback : [],
             'form_data' => is_array($formData) ? $formData : []
         ];
+    }
+
+    function configGitRepoPath(): string {
+        return __DIR__;
+    }
+
+    function configRunGitCommand(array $arguments, ?int &$exitCode = null): string {
+        $command = ['git', '-C', configGitRepoPath()];
+        foreach ($arguments as $argument) {
+            $command[] = (string)$argument;
+        }
+
+        $escaped = array_map('escapeshellarg', $command);
+        $output = [];
+        exec(implode(' ', $escaped) . ' 2>&1', $output, $commandExitCode);
+        $exitCode = $commandExitCode;
+        return trim(implode("\n", $output));
+    }
+
+    function configGetUpdateStatus(bool $refreshRemote = false): array {
+        $status = [
+            'ok' => false,
+            'repo_available' => false,
+            'repo_path' => configGitRepoPath(),
+            'branch' => '',
+            'upstream' => '',
+            'current_commit' => '',
+            'current_version' => '',
+            'remote_commit' => '',
+            'remote_version' => '',
+            'behind_count' => 0,
+            'ahead_count' => 0,
+            'updates_available' => false,
+            'working_tree_dirty' => false,
+            'last_checked_at' => '',
+            'message' => '',
+        ];
+
+        if (!is_dir(configGitRepoPath() . '/.git')) {
+            $status['message'] = 'Kein Git-Repository im Portflow-Verzeichnis gefunden.';
+            return $status;
+        }
+
+        $insideWorkTree = configRunGitCommand(['rev-parse', '--is-inside-work-tree'], $exitCode);
+        if ($exitCode !== 0 || trim($insideWorkTree) !== 'true') {
+            $status['message'] = 'Portflow ist kein gueltiges Git-Repository.';
+            return $status;
+        }
+
+        $status['repo_available'] = true;
+        $status['branch'] = configRunGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], $exitCode);
+        $status['current_commit'] = configRunGitCommand(['rev-parse', '--short', 'HEAD'], $exitCode);
+        $status['current_version'] = configRunGitCommand(['describe', '--tags', '--always', '--dirty'], $exitCode);
+        $statusOutput = configRunGitCommand(['status', '--porcelain'], $exitCode);
+        $status['working_tree_dirty'] = trim($statusOutput) !== '';
+
+        $upstream = configRunGitCommand(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], $exitCode);
+        if ($exitCode === 0) {
+            $status['upstream'] = $upstream;
+        }
+
+        if ($refreshRemote && $status['upstream'] !== '') {
+            $remoteName = strstr($status['upstream'], '/', true);
+            if ($remoteName === false || $remoteName === '') {
+                $remoteName = 'origin';
+            }
+
+            configRunGitCommand(['fetch', '--quiet', '--tags', $remoteName], $fetchExitCode);
+            if ($fetchExitCode !== 0) {
+                $status['message'] = 'Git-Fetch fehlgeschlagen. Bitte Netzwerk und Remote pruefen.';
+                $status['last_checked_at'] = date('Y-m-d H:i:s');
+                return $status;
+            }
+        }
+
+        if ($status['upstream'] !== '') {
+            $counts = configRunGitCommand(['rev-list', '--left-right', '--count', 'HEAD...' . $status['upstream']], $exitCode);
+            if ($exitCode === 0 && preg_match('/^(\d+)\s+(\d+)$/', $counts, $matches)) {
+                $status['ahead_count'] = (int)$matches[1];
+                $status['behind_count'] = (int)$matches[2];
+            }
+
+            $status['remote_commit'] = configRunGitCommand(['rev-parse', '--short', $status['upstream']], $exitCode);
+            $status['remote_version'] = configRunGitCommand(['describe', '--tags', '--always', $status['upstream']], $exitCode);
+            $status['updates_available'] = $status['behind_count'] > 0;
+
+            if ($status['updates_available']) {
+                $status['message'] = 'Es sind ' . $status['behind_count'] . ' neue Commits verfuegbar.';
+            } elseif ($status['ahead_count'] > 0) {
+                $status['message'] = 'Der lokale Stand ist ' . $status['ahead_count'] . ' Commits vor dem Upstream.';
+            } else {
+                $status['message'] = 'Portflow ist auf dem aktuellen Stand.';
+            }
+        } else {
+            $status['message'] = 'Kein Tracking-Branch konfiguriert. Update-Pruefung nur lokal moeglich.';
+        }
+
+        if ($status['working_tree_dirty']) {
+            $status['message'] .= ' Es gibt lokale, nicht committete Aenderungen.';
+        }
+
+        $status['ok'] = true;
+        $status['last_checked_at'] = date('Y-m-d H:i:s');
+        return $status;
     }
 
     function configWriteEnvValues(array $updates): array {
@@ -2284,6 +2388,24 @@
                     ]);
                 }
                 header('Location: ?site=configuration&tab=notifications#cfg-notification');
+                break;
+            case 'config_update_check':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for updater check', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=updater');
+                    die();
+                }
+
+                $updateStatus = configGetUpdateStatus(true);
+                configSetFeedback('updater', (bool)$updateStatus['ok'], (string)$updateStatus['message'], $updateStatus);
+                $logger->log('system updater check executed', $updateStatus['ok'] ? 1 : 2, echoToWeb: true);
+                header('Location: ?site=configuration&tab=updater#cfg-updater');
                 break;
             case 'config_notification_cleanup_queue':
                 if ($role !== 'admin') {
@@ -3952,6 +4074,7 @@
             <?php if ($role == 'admin' && $site == 'configuration') : ?>
                 <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
                     <a href="?site=configuration&tab=system"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'system') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="system">System</li></a>
+                    <a href="?site=configuration&tab=updater"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'updater') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="updater">Updater</li></a>
                     <a href="?site=configuration&tab=notifications"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'notifications') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="notifications">Benachrichtigungen</li></a>
                 </div>
             <?php endif; ?>
@@ -4245,6 +4368,8 @@ switch ($site) {
             'mail_smtpsecure' => configNormalizeMailSecureToUi((string)MAIL_SMTPSECURE) ?? ''
         ];
         $mailValues = array_merge($mailDefaults, is_array($cfgFormData['mail'] ?? null) ? $cfgFormData['mail'] : []);
+        $updaterDefaults = configGetUpdateStatus(false);
+        $updaterValues = array_merge($updaterDefaults, is_array($cfgFormData['updater'] ?? null) ? $cfgFormData['updater'] : []);
 
         $notificationCfgDefaults = [
             'notification_daily_time' => (string)NOTIFICATION_DAILY_TIME,
@@ -4363,6 +4488,54 @@ switch ($site) {
         echo '</form>';
         echo '</section>';
         echo '</div>'; // end cfg-section-system
+
+        echo '<div class="cfg-section-updater' . ($activeConfigTab !== 'updater' ? ' hidden' : '') . '">';
+        echo '<section id="cfg-updater">';
+        echo '<div class="text-xl font-bold pb-1">System Updater</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">Zeigt den aktuellen Git-Stand und prueft, ob im Tracking-Branch neuere Commits verfuegbar sind.</p>';
+        echo $renderFeedback($cfgFeedback, 'updater');
+        echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+        echo '<div class="rounded-xl border border-slate-200 p-4">';
+        echo '<div class="text-sm text-gray-500">Repository</div>';
+        echo '<div class="text-base font-semibold">' . escapeSettingValue((string)($updaterValues['repo_available'] ? 'Git erkannt' : 'Kein Git-Repository')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Pfad</div>';
+        echo '<div class="text-sm font-mono break-all">' . escapeSettingValue((string)($updaterValues['repo_path'] ?? '')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Branch</div>';
+        echo '<div class="text-sm font-medium">' . escapeSettingValue((string)($updaterValues['branch'] ?? '-')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Upstream</div>';
+        echo '<div class="text-sm font-medium">' . escapeSettingValue((string)($updaterValues['upstream'] ?? '-')) . '</div>';
+        echo '</div>';
+        echo '<div class="rounded-xl border border-slate-200 p-4">';
+        echo '<div class="text-sm text-gray-500">Aktueller Versionsstand</div>';
+        echo '<div class="text-base font-semibold">' . escapeSettingValue((string)($updaterValues['current_version'] ?? '-')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Lokaler Commit</div>';
+        echo '<div class="text-sm font-mono">' . escapeSettingValue((string)($updaterValues['current_commit'] ?? '-')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Remote-Version</div>';
+        echo '<div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterValues['remote_version'] ?? '-')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Remote-Commit</div>';
+        echo '<div class="text-sm font-mono">' . escapeSettingValue((string)($updaterValues['remote_commit'] ?? '-')) . '</div>';
+        echo '</div>';
+        echo '</div>';
+
+        echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Update-Status</div><div class="text-lg font-semibold">' . escapeSettingValue(((int)($updaterValues['behind_count'] ?? 0) > 0) ? 'Update verfuegbar' : 'Aktuell') . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Behind</div><div class="text-lg font-semibold">' . escapeSettingValue((string)($updaterValues['behind_count'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Ahead</div><div class="text-lg font-semibold">' . escapeSettingValue((string)($updaterValues['ahead_count'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Worktree</div><div class="text-lg font-semibold">' . escapeSettingValue(!empty($updaterValues['working_tree_dirty']) ? 'Dirty' : 'Clean') . '</div></div>';
+        echo '</div>';
+
+        echo '<div class="mt-4 rounded-xl border border-slate-200 p-4">';
+        echo '<div class="text-sm text-gray-500">Letzte Pruefung</div>';
+        echo '<div class="font-medium">' . escapeSettingValue((string)($updaterValues['last_checked_at'] ?? '-')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Ergebnis</div>';
+        echo '<div class="font-medium">' . escapeSettingValue((string)($updaterValues['message'] ?? 'Noch keine Update-Pruefung ausgefuehrt.')) . '</div>';
+        echo '<form action="?set=config_update_check" method="post" class="m-0 pt-4">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Nach Updates suchen</button>';
+        echo '</form>';
+        echo '</div>';
+        echo '</section>';
+        echo '</div>'; // end cfg-section-updater
 
         // Notification configuration section
         echo '<div class="cfg-section-notifications' . ($activeConfigTab !== 'notifications' ? ' hidden' : '') . '">';

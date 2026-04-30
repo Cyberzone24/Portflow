@@ -25,6 +25,7 @@ if (session_status() == PHP_SESSION_NONE) {
 class Logger {
     private $logFile;
     private $logLevel;
+    private $fallbackLogFile;
 
     // Definiere die Log-Levels
     private $logLevels = [
@@ -37,8 +38,27 @@ class Logger {
 
     public function __construct($logLevel = 1) {
         $this->logFile = '/var/log/portflow/portflow.log'; // Pfad zur Log-Datei
+        $this->fallbackLogFile = sys_get_temp_dir() . '/portflow.log';
         // Überprüfe, ob LOG_LEVEL definiert ist; wenn nicht, verwende den Standardwert oder den übergebenen Wert
         $this->logLevel = defined('LOG_LEVEL') ? LOG_LEVEL : $logLevel;
+    }
+
+    private function resolveWritableLogFile(): string {
+        $directory = dirname($this->logFile);
+
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0750, true);
+        }
+
+        if (is_dir($directory) && !file_exists($this->logFile)) {
+            @touch($this->logFile);
+        }
+
+        if (is_dir($directory) && is_writable($directory) && (!file_exists($this->logFile) || is_writable($this->logFile))) {
+            return $this->logFile;
+        }
+
+        return $this->fallbackLogFile;
     }
 
     private function sanitizeMessage($msg): string {
@@ -121,7 +141,7 @@ class Logger {
             file_put_contents('php://stderr', "[portflow] $formattedMsg\n");
 
             // Nachricht in die Datei schreiben
-            file_put_contents($this->logFile, "$formattedMsg\n", FILE_APPEND);
+            file_put_contents($this->resolveWritableLogFile(), "$formattedMsg\n", FILE_APPEND);
             if ($echoToWeb) {
                 $this->emitWebAlert($safeMessage, (int)$level);
             }
