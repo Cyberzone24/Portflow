@@ -5,6 +5,7 @@ namespace Portflow\Core;
 include_once __DIR__ . '/db_adapter.php';
 include_once __DIR__ . '/logger.php';
 include_once __DIR__ . '/snmp_naming.php';
+include_once __DIR__ . '/cable_trace.php';
 
 /**
  * Maps SNMP scan facts onto Portflow's "current" columns and the
@@ -820,74 +821,51 @@ class PortReconciler
         if (empty($portUuids)) {
             return [];
         }
-
-        $params = [];
-        $placeholders = [];
-        foreach ($portUuids as $index => $portUuid) {
-            $key = 'p' . $index;
-            $params[$key] = $portUuid;
-            $placeholders[] = ':' . $key;
-        }
-
-        $sql = "SELECT c.device_port_source AS observed_port_uuid,
-                       c.device_port_destination AS peer_port_uuid,
-                       d_peer.type AS peer_device_type,
-                       COALESCE(m_peer.caption, '') AS peer_device_caption,
-                       CASE WHEN s_peer.device_port IS NULL THEN 0 ELSE 1 END AS peer_has_snmp_state
-                FROM connection c
-                JOIN device_port dp_peer ON dp_peer.uuid = c.device_port_destination
-                JOIN device d_peer ON d_peer.uuid = dp_peer.device
-                LEFT JOIN metadata m_peer ON m_peer.uuid = d_peer.metadata
-                LEFT JOIN device_port_snmp_state s_peer ON s_peer.device_port = dp_peer.uuid
-                WHERE c.device_port_source IN (" . implode(',', $placeholders) . ")
-                  AND c.device_port_destination IS NOT NULL
-                UNION ALL
-                SELECT c.device_port_destination AS observed_port_uuid,
-                       c.device_port_source AS peer_port_uuid,
-                       d_peer.type AS peer_device_type,
-                       COALESCE(m_peer.caption, '') AS peer_device_caption,
-                       CASE WHEN s_peer.device_port IS NULL THEN 0 ELSE 1 END AS peer_has_snmp_state
-                FROM connection c
-                JOIN device_port dp_peer ON dp_peer.uuid = c.device_port_source
-                JOIN device d_peer ON d_peer.uuid = dp_peer.device
-                LEFT JOIN metadata m_peer ON m_peer.uuid = d_peer.metadata
-                LEFT JOIN device_port_snmp_state s_peer ON s_peer.device_port = dp_peer.uuid
-                WHERE c.device_port_destination IN (" . implode(',', $placeholders) . ")
-                  AND c.device_port_source IS NOT NULL";
-
-        $rows = $this->db->db_query($sql, $params);
-        if (!is_array($rows) || empty($rows)) {
-            return [];
-        }
-
-        $grouped = [];
-        foreach ($rows as $row) {
-            $observedPortUuid = trim((string)($row['observed_port_uuid'] ?? ''));
-            $peerPortUuid = trim((string)($row['peer_port_uuid'] ?? ''));
-            if ($observedPortUuid === '' || $peerPortUuid === '') {
-                continue;
-            }
-            $grouped[$observedPortUuid][] = [
-                'peer_port_uuid' => $peerPortUuid,
-                'peer_device_type' => trim((string)($row['peer_device_type'] ?? '')),
-                'peer_device_caption' => trim((string)($row['peer_device_caption'] ?? '')),
-                'peer_has_snmp_state' => !empty($row['peer_has_snmp_state']),
-            ];
-        }
-
         $targets = [];
-        foreach ($grouped as $observedPortUuid => $candidates) {
-            if (count($candidates) !== 1) {
+        $tracer = new CableTrace($this->db);
+        foreach (array_values(array_unique($portUuids)) as $observedPortUuid) {
+            $trace = $tracer->trace('device_port', $observedPortUuid, ['max_hops' => 12]);
+            if (!empty($trace['error']) || !is_array($trace['branches'] ?? null)) {
                 continue;
             }
-            $candidate = $candidates[0];
-            if (!empty($candidate['peer_has_snmp_state'])) {
+
+            $endpointCandidates = [];
+            foreach ($trace['branches'] as $branch) {
+                if (!is_array($branch) || empty($branch)) {
+                    continue;
+                }
+                $lastHop = $branch[count($branch) - 1];
+                $portNode = is_array($lastHop['port'] ?? null) ? $lastHop['port'] : null;
+                if ($portNode === null) {
+                    continue;
+                }
+                $endpointPortUuid = trim((string)($portNode['uuid'] ?? ''));
+                if ($endpointPortUuid === '' || $endpointPortUuid === $observedPortUuid) {
+                    continue;
+                }
+
+                $deviceNode = is_array($portNode['device'] ?? null) ? $portNode['device'] : [];
+                $deviceType = trim((string)($deviceNode['type'] ?? ''));
+                $deviceCaption = trim((string)($deviceNode['caption'] ?? ''));
+                if (in_array(strtolower($deviceType), CableTrace::PASSTHROUGH_DEVICE_TYPES, true)) {
+                    continue;
+                }
+                $snmpNode = is_array($portNode['snmp'] ?? null) ? $portNode['snmp'] : [];
+                $hasOwnSnmpState = trim((string)($snmpNode['if_name'] ?? '')) !== '' || trim((string)($snmpNode['updated'] ?? '')) !== '';
+                if ($hasOwnSnmpState) {
+                    continue;
+                }
+                if ($this->isLikelyInfrastructureDevice($deviceType, $deviceCaption)) {
+                    continue;
+                }
+
+                $endpointCandidates[$endpointPortUuid] = $endpointPortUuid;
+            }
+
+            if (count($endpointCandidates) !== 1) {
                 continue;
             }
-            if ($this->isLikelyInfrastructureDevice((string)$candidate['peer_device_type'], (string)$candidate['peer_device_caption'])) {
-                continue;
-            }
-            $targets[$observedPortUuid] = (string)$candidate['peer_port_uuid'];
+            $targets[$observedPortUuid] = array_values($endpointCandidates)[0];
         }
 
         return $targets;
