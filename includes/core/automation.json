@@ -10,31 +10,44 @@
     },
     "profiles": {
         "huawei_core_commit": {
-        "label": "Huawei Core",
-        "description": "Core switches use commit and save after configuration changes.",
-        "snmp": {
-            "extension": "huawei"
-        },
-        "supports_commit": true,
-        "enter_config": "system-view",
-        "commit": "commit",
-        "save": "save",
-        "write_config": "Y",
-        "exit_config": "return"
+            "label": "Huawei Core",
+            "description": "Core switches use commit and save after configuration changes.",
+            "snmp": {
+                "extension": "huawei"
+            },
+            "supports_commit": true,
+            "enter_config": "system-view",
+            "commit": "commit",
+            "save": "save",
+            "write_config": "Y",
+            "exit_config": "return"
         },
         "huawei_access_no_commit": {
-        "label": "Huawei Access",
-        "description": "Access switches apply configuration directly without a commit step.",
-        "snmp": {
-            "extension": "huawei",
-            "node_ip_collection": "cli-dhcp-snooping"
+            "label": "Huawei Access",
+            "description": "Access switches apply configuration directly without a commit step.",
+            "snmp": {
+                "extension": "huawei",
+                "node_ip_collection": "cli-dhcp-snooping"
+            },
+            "supports_commit": false,
+            "enter_config": "system-view",
+            "commit": "",
+            "save": "save",
+            "write_config": "Y",
+            "exit_config": "return"
         },
-        "supports_commit": false,
-        "enter_config": "system-view",
-        "commit": "",
-        "save": "save",
-        "write_config": "Y",
-        "exit_config": "return"
+        "ubiquiti_unifi": {
+            "label": "Ubiquiti UniFi",
+            "description": "UniFi switches use a controller-based approach and do not support CLI configuration changes via SSH.",
+            "snmp": {
+                "extension": "ubiquiti_unifi"
+            },
+            "supports_commit": false,
+            "enter_config": "",
+            "commit": "",
+            "save": "",
+            "write_config": "",
+            "exit_config": ""
         }
     },
     "templates": {

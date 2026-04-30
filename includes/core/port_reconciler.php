@@ -15,8 +15,8 @@ include_once __DIR__ . '/snmp_naming.php';
  * - Update device_port.speed and device_port.mac_address on the matched port.
  * - Upsert device_port_snmp_state with last counters and "last_seen_active" derived from oper-status / counter delta.
  *
- * Out of scope for this MVP (covered in follow-up steps): stack member resolution,
- * VLAN write-back, IP/hostname write-back, drift report generation.
+ * Follow-up work still exists around drift views and richer reconciliation,
+ * but port matching now supports stack-member selection within item groups.
  */
 class PortReconciler
 {
@@ -49,8 +49,8 @@ class PortReconciler
             return ['findings' => 0, 'unknown_interfaces' => count($facts['interfaces'] ?? []), 'matched' => 0, 'matched_details' => [], 'unknown_details' => []];
         }
 
-        $portsByCaption = $this->loadDevicePorts($deviceUuid, $itemGroupUuid);
-        $portIndex = $this->buildPortAliasIndex($portsByCaption);
+        $devicePorts = $this->loadDevicePorts($deviceUuid, $itemGroupUuid);
+        $portIndexes = $this->buildPortIndexes($devicePorts);
         $vlanUuidById = $this->loadVlanUuidIndex();
         $profile = is_array($facts['profile'] ?? null) ? $facts['profile'] : [];
 
@@ -66,7 +66,12 @@ class PortReconciler
             }
 
             $caption = SnmpNaming::normalizePortName($ifName, $profile);
-            $port = $this->matchPort($portIndex, $caption, (string)($iface['if_alias'] ?? ''));
+            $stackUnit = $this->extractStackUnit($ifName);
+            $resolvedIndex = $this->resolvePortIndexForInterface($portIndexes, $deviceUuid, $stackUnit);
+            $port = $this->matchPort($resolvedIndex['index'], $caption, (string)($iface['if_alias'] ?? ''));
+            if ($port === null && $resolvedIndex['scope'] !== 'all') {
+                $port = $this->matchPort($portIndexes['all'], $caption, (string)($iface['if_alias'] ?? ''));
+            }
             if ($port === null) {
                 $unknown++;
                 $findings++;
@@ -74,6 +79,7 @@ class PortReconciler
                     'if_index' => $iface['if_index'] ?? null,
                     'if_name'  => $ifName,
                     'if_alias' => (string)($iface['if_alias'] ?? ''),
+                    'stack_unit' => $stackUnit,
                     'oper'     => $iface['if_oper_status'] ?? null,
                     'admin'    => $iface['if_admin_status'] ?? null,
                 ];
@@ -82,10 +88,13 @@ class PortReconciler
             $matched++;
             $matchedDetails[] = [
                 'device_port_uuid' => $port['uuid'],
+                'device_uuid'      => $port['device_uuid'] ?? null,
+                'device_caption'   => $port['device_caption'] ?? null,
                 'caption'          => $port['caption'] ?? $caption,
                 'if_index'         => $iface['if_index'] ?? null,
                 'if_name'          => $ifName,
                 'if_alias'         => (string)($iface['if_alias'] ?? ''),
+                'stack_unit'       => $stackUnit,
                 'speed'            => $iface['if_high_speed'] ?? null,
                 'mac'              => $this->normalizeMac((string)($iface['if_phys_address'] ?? '')),
                 'ip_address'       => (string)($iface['ip_address'] ?? ''),
@@ -133,7 +142,7 @@ class PortReconciler
     }
 
     /**
-     * @return array<string,array<string,mixed>> caption-lowercased -> row
+    * @return array<int,array<string,mixed>>
      */
     private function loadDevicePorts(?string $deviceUuid, ?string $itemGroupUuid = null): array
     {
@@ -173,23 +182,87 @@ class PortReconciler
         }
 
         $rows = $this->db->db_query(
-            "SELECT dp.uuid, dp.speed, dp.mac_address, dp.metadata AS metadata_uuid, m.caption "
-            . "FROM device_port dp LEFT JOIN metadata m ON m.uuid = dp.metadata "
+            "SELECT dp.uuid, dp.device AS device_uuid, dp.speed, dp.mac_address, dp.metadata AS metadata_uuid, "
+            . "pm.caption, dm.caption AS device_caption, dm.tags AS device_tags "
+            . "FROM device_port dp "
+            . "LEFT JOIN metadata pm ON pm.uuid = dp.metadata "
+            . "LEFT JOIN device d ON d.uuid = dp.device "
+            . "LEFT JOIN metadata dm ON dm.uuid = d.metadata "
             . "WHERE dp.device IN (" . implode(',', $placeholders) . ")",
             $params
         );
 
-        $byCaption = [];
-        if (is_array($rows)) {
-            foreach ($rows as $row) {
-                $caption = trim((string)($row['caption'] ?? ''));
-                if ($caption === '') {
-                    continue;
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $devicePorts
+     * @return array{all:array<string,mixed>,by_device:array<string,array<string,mixed>>,by_unit:array<int,array<string,mixed>>}
+     */
+    private function buildPortIndexes(array $devicePorts): array
+    {
+        $byDevice = [];
+        $deviceMeta = [];
+        foreach ($devicePorts as $row) {
+            $deviceUuid = trim((string)($row['device_uuid'] ?? ''));
+            if ($deviceUuid !== '') {
+                $byDevice[$deviceUuid][] = $row;
+                if (!isset($deviceMeta[$deviceUuid])) {
+                    $deviceMeta[$deviceUuid] = [
+                        'caption' => (string)($row['device_caption'] ?? ''),
+                        'tags' => (string)($row['device_tags'] ?? ''),
+                    ];
                 }
-                $byCaption[strtolower($caption)] = $row;
             }
         }
-        return $byCaption;
+
+        $byDeviceIndexes = [];
+        foreach ($byDevice as $resolvedDeviceUuid => $rows) {
+            $byDeviceIndexes[$resolvedDeviceUuid] = $this->buildPortAliasIndex($rows);
+        }
+
+        $unitOwners = [];
+        foreach ($deviceMeta as $resolvedDeviceUuid => $meta) {
+            foreach ($this->extractDeviceUnits((string)($meta['caption'] ?? ''), (string)($meta['tags'] ?? '')) as $unit) {
+                if (isset($unitOwners[$unit]) && $unitOwners[$unit] !== $resolvedDeviceUuid) {
+                    $unitOwners[$unit] = '';
+                    continue;
+                }
+                $unitOwners[$unit] = $resolvedDeviceUuid;
+            }
+        }
+
+        $byUnit = [];
+        foreach ($unitOwners as $unit => $ownerDeviceUuid) {
+            if ($ownerDeviceUuid === '' || !isset($byDeviceIndexes[$ownerDeviceUuid])) {
+                continue;
+            }
+            $byUnit[(int)$unit] = $byDeviceIndexes[$ownerDeviceUuid];
+        }
+
+        return [
+            'all' => $this->buildPortAliasIndex($devicePorts),
+            'by_device' => $byDeviceIndexes,
+            'by_unit' => $byUnit,
+        ];
+    }
+
+    /**
+     * @param array{all:array<string,mixed>,by_device:array<string,array<string,mixed>>,by_unit:array<int,array<string,mixed>>} $portIndexes
+     * @return array{scope:string,index:array<string,mixed>}
+     */
+    private function resolvePortIndexForInterface(array $portIndexes, ?string $deviceUuid, ?int $stackUnit): array
+    {
+        if ($stackUnit !== null && isset($portIndexes['by_unit'][$stackUnit])) {
+            return ['scope' => 'unit', 'index' => $portIndexes['by_unit'][$stackUnit]];
+        }
+
+        $deviceUuid = trim((string)$deviceUuid);
+        if ($deviceUuid !== '' && isset($portIndexes['by_device'][$deviceUuid])) {
+            return ['scope' => 'device', 'index' => $portIndexes['by_device'][$deviceUuid]];
+        }
+
+        return ['scope' => 'all', 'index' => $portIndexes['all']];
     }
 
     private function applyInterfaceFacts(array $port, array $iface): void
@@ -529,22 +602,25 @@ class PortReconciler
     }
 
     /**
-     * Build an alias index for matching SNMP ifNames to Portflow port captions.
+    * Build an alias index for matching SNMP ifNames to Portflow port captions.
      * Each caption registers under several normalized keys so common variants match:
      *   - the full caption (lowercased, trimmed)
      *   - a "type-prefix-stripped" form keeping just slot/port digits with slashes (e.g. "0/0/1")
      *   - the trailing port number only (e.g. "1") -- only kept when unique among ports
      *
-     * @param array<string,array<string,mixed>> $portsByCaption caption-lower -> row
+     * @param array<int,array<string,mixed>> $devicePorts
      * @return array{full:array<string,array<string,mixed>>,slot:array<string,array<string,mixed>|false>,tail:array<string,array<string,mixed>|false>}
      */
-    private function buildPortAliasIndex(array $portsByCaption): array
+    private function buildPortAliasIndex(array $devicePorts): array
     {
         $full = [];
         $slot = [];
         $tail = [];
-        foreach ($portsByCaption as $captionKey => $row) {
-            $caption = (string)($row['caption'] ?? $captionKey);
+        foreach ($devicePorts as $row) {
+            $caption = (string)($row['caption'] ?? '');
+            if (trim($caption) === '') {
+                continue;
+            }
             $full[strtolower(trim($caption))] = $row;
 
             $slotKey = $this->stripToSlotForm($caption);
@@ -566,6 +642,52 @@ class PortReconciler
             }
         }
         return ['full' => $full, 'slot' => $slot, 'tail' => $tail];
+    }
+
+    private function extractStackUnit(string $ifName): ?int
+    {
+        $ifName = trim($ifName);
+        if ($ifName === '') {
+            return null;
+        }
+
+        if (!preg_match('/^[A-Za-z][A-Za-z0-9-]*\s*(\d+)(?:\/\d+){1,}\b/', $ifName, $matches)) {
+            return null;
+        }
+
+        $unit = (int)($matches[1] ?? 0);
+        return $unit > 0 ? $unit : null;
+    }
+
+    /**
+     * @return array<int>
+     */
+    private function extractDeviceUnits(string $deviceCaption, string $deviceTags): array
+    {
+        $units = [];
+        $haystacks = [$deviceCaption, $deviceTags];
+        $patterns = [
+            '/\bunit[-\s]?(\d+)\b/i',
+            '/\bmember[-\s]?(\d+)\b/i',
+            '/\bstack\s*(\d+)\b/i',
+            '/\bstack\s*[:#-]?\s*(\d+)\b/i',
+        ];
+
+        foreach ($haystacks as $haystack) {
+            foreach ($patterns as $pattern) {
+                if (!preg_match_all($pattern, $haystack, $matches)) {
+                    continue;
+                }
+                foreach (($matches[1] ?? []) as $match) {
+                    $unit = (int)$match;
+                    if ($unit > 0) {
+                        $units[$unit] = $unit;
+                    }
+                }
+            }
+        }
+
+        return array_values($units);
     }
 
     private function matchPort(array $portIndex, string $caption, string $ifAlias = ''): ?array

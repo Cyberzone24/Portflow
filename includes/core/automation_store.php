@@ -243,10 +243,36 @@ class AutomationStore {
     private function normalizeSchedulerConfig($config): array {
         $input = is_array($config) ? $config : [];
 
+        $legacySnmpEnabled = $this->toBoolFlag($input['snmp_scan_enabled'] ?? false);
+        $snmpScanInput = is_array($input['snmp_scan'] ?? null) ? $input['snmp_scan'] : [];
+        $snmpScanEnabled = $this->toBoolFlag($snmpScanInput['enabled'] ?? $legacySnmpEnabled);
+        $intervalMinutes = (int)($snmpScanInput['interval_minutes'] ?? 60);
+        if ($intervalMinutes < 5) {
+            $intervalMinutes = 5;
+        }
+        $inactivityDays = (int)($snmpScanInput['inactivity_days'] ?? 14);
+        if ($inactivityDays < 1) {
+            $inactivityDays = 1;
+        }
+
+        $oidModulesInput = is_array($snmpScanInput['oid_modules'] ?? null) ? $snmpScanInput['oid_modules'] : [];
+        $oidModules = [
+            'lldp' => !array_key_exists('lldp', $oidModulesInput) || $this->toBoolFlag($oidModulesInput['lldp']),
+            'arp' => !array_key_exists('arp', $oidModulesInput) || $this->toBoolFlag($oidModulesInput['arp']),
+            'poe' => !array_key_exists('poe', $oidModulesInput) || $this->toBoolFlag($oidModulesInput['poe']),
+            'entity' => !array_key_exists('entity', $oidModulesInput) || $this->toBoolFlag($oidModulesInput['entity']),
+        ];
+
         return [
             'queue_enabled' => $this->toBoolFlag($input['queue_enabled'] ?? true),
             'notifications_enabled' => $this->toBoolFlag($input['notifications_enabled'] ?? true),
-            'snmp_scan_enabled' => $this->toBoolFlag($input['snmp_scan_enabled'] ?? false),
+            'snmp_scan_enabled' => $snmpScanEnabled,
+            'snmp_scan' => [
+                'enabled' => $snmpScanEnabled,
+                'interval_minutes' => $intervalMinutes,
+                'inactivity_days' => $inactivityDays,
+                'oid_modules' => $oidModules,
+            ],
         ];
     }
 
@@ -382,13 +408,17 @@ class AutomationStore {
      */
     public function updateSchedulerStatus(array $status): void {
         $stored = $this->readStored();
+        $current = is_array($stored['scheduler_status'] ?? null) ? $stored['scheduler_status'] : [];
         $stored['scheduler_status'] = [
-            'last_run' => (string)($status['last_run'] ?? ''),
-            'last_success' => (string)($status['last_success'] ?? ''),
-            'processed' => (int)($status['processed'] ?? 0),
-            'succeeded' => (int)($status['succeeded'] ?? 0),
-            'failed' => (int)($status['failed'] ?? 0),
-            'message' => substr((string)($status['message'] ?? ''), 0, 500)
+            'last_run' => (string)($status['last_run'] ?? ($current['last_run'] ?? '')),
+            'last_success' => (string)($status['last_success'] ?? ($current['last_success'] ?? '')),
+            'processed' => (int)($status['processed'] ?? ($current['processed'] ?? 0)),
+            'succeeded' => (int)($status['succeeded'] ?? ($current['succeeded'] ?? 0)),
+            'failed' => (int)($status['failed'] ?? ($current['failed'] ?? 0)),
+            'message' => substr((string)($status['message'] ?? ($current['message'] ?? '')), 0, 500),
+            'last_snmp_scan_run' => (string)($status['last_snmp_scan_run'] ?? ($current['last_snmp_scan_run'] ?? '')),
+            'last_snmp_scan_success' => (string)($status['last_snmp_scan_success'] ?? ($current['last_snmp_scan_success'] ?? '')),
+            'last_snmp_scan_message' => substr((string)($status['last_snmp_scan_message'] ?? ($current['last_snmp_scan_message'] ?? '')), 0, 500)
         ];
         $this->writeStored($stored);
     }

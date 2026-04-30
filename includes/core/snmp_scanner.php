@@ -286,7 +286,12 @@ class SnmpScanner
                     if ($mac === '' || !isset($nodeIps[$mac])) {
                         continue;
                     }
+                    $nodeIfIndex = isset($node['if_index']) ? (int)$node['if_index'] : 0;
+                    $nodeIpIfIndex = (int)($nodeIps[$mac]['if_index'] ?? 0);
                     $nodeIpMatchedMacs[$mac] = true;
+                    if ($nodeIfIndex <= 0 && $nodeIpIfIndex > 0) {
+                        $nodes[$idx]['if_index'] = $nodeIpIfIndex;
+                    }
                     $nodes[$idx]['ip'] = (string)($nodeIps[$mac]['ip'] ?? '');
                     $nodes[$idx]['hostname'] = (string)($nodeIps[$mac]['hostname'] ?? '');
                     $nodes[$idx]['ip_source'] = (string)($nodeIps[$mac]['source'] ?? 'snmp:arp');

@@ -2858,10 +2858,22 @@
 
                 $automationStore = new AutomationStore();
                 $automationSettings = $automationStore->getSettings();
+                $existingSchedulerConfig = is_array($automationSettings['scheduler_config'] ?? null) ? $automationSettings['scheduler_config'] : [];
                 $schedulerConfig = [
                     'queue_enabled' => isset($_POST['scheduler_queue_enabled']) ? '1' : '0',
                     'notifications_enabled' => isset($_POST['scheduler_notifications_enabled']) ? '1' : '0',
                     'snmp_scan_enabled' => isset($_POST['scheduler_snmp_scan_enabled']) ? '1' : '0',
+                    'snmp_scan' => [
+                        'enabled' => isset($_POST['scheduler_snmp_scan_enabled']) ? '1' : '0',
+                        'interval_minutes' => (int)($_POST['scheduler_snmp_scan_interval_minutes'] ?? (($existingSchedulerConfig['snmp_scan']['interval_minutes'] ?? 60))),
+                        'inactivity_days' => (int)($_POST['scheduler_snmp_inactivity_days'] ?? (($existingSchedulerConfig['snmp_scan']['inactivity_days'] ?? 14))),
+                        'oid_modules' => [
+                            'lldp' => isset($_POST['scheduler_snmp_oid_lldp']) ? '1' : '0',
+                            'arp' => isset($_POST['scheduler_snmp_oid_arp']) ? '1' : '0',
+                            'poe' => isset($_POST['scheduler_snmp_oid_poe']) ? '1' : '0',
+                            'entity' => isset($_POST['scheduler_snmp_oid_entity']) ? '1' : '0',
+                        ],
+                    ],
                 ];
 
                 try {
@@ -2881,18 +2893,33 @@
                         'queue_enabled' => $schedulerConfig['queue_enabled'],
                         'notifications_enabled' => $schedulerConfig['notifications_enabled'],
                         'snmp_scan_enabled' => $schedulerConfig['snmp_scan_enabled'],
+                        'snmp_scan_interval_minutes' => (string)$schedulerConfig['snmp_scan']['interval_minutes'],
+                        'snmp_inactivity_days' => (string)$schedulerConfig['snmp_scan']['inactivity_days'],
+                        'snmp_oid_lldp' => $schedulerConfig['snmp_scan']['oid_modules']['lldp'],
+                        'snmp_oid_arp' => $schedulerConfig['snmp_scan']['oid_modules']['arp'],
+                        'snmp_oid_poe' => $schedulerConfig['snmp_scan']['oid_modules']['poe'],
+                        'snmp_oid_entity' => $schedulerConfig['snmp_scan']['oid_modules']['entity'],
                     ]);
                     $logger->log('scheduler configuration save executed', 1, echoToWeb: true);
                     logAutomationChange($db_adapter, 'UPDATE', 'configuration_scheduler_save', [
                         'queue_enabled' => $schedulerConfig['queue_enabled'] === '1',
                         'notifications_enabled' => $schedulerConfig['notifications_enabled'] === '1',
                         'snmp_scan_enabled' => $schedulerConfig['snmp_scan_enabled'] === '1',
+                        'snmp_scan_interval_minutes' => (int)$schedulerConfig['snmp_scan']['interval_minutes'],
+                        'snmp_inactivity_days' => (int)$schedulerConfig['snmp_scan']['inactivity_days'],
+                        'snmp_oid_modules' => $schedulerConfig['snmp_scan']['oid_modules'],
                     ]);
                 } catch (\Throwable $e) {
                     configSetFeedback('scheduler', false, 'Scheduler-Einstellungen konnten nicht gespeichert werden: ' . $e->getMessage(), [
                         'queue_enabled' => $schedulerConfig['queue_enabled'],
                         'notifications_enabled' => $schedulerConfig['notifications_enabled'],
                         'snmp_scan_enabled' => $schedulerConfig['snmp_scan_enabled'],
+                        'snmp_scan_interval_minutes' => (string)$schedulerConfig['snmp_scan']['interval_minutes'],
+                        'snmp_inactivity_days' => (string)$schedulerConfig['snmp_scan']['inactivity_days'],
+                        'snmp_oid_lldp' => $schedulerConfig['snmp_scan']['oid_modules']['lldp'],
+                        'snmp_oid_arp' => $schedulerConfig['snmp_scan']['oid_modules']['arp'],
+                        'snmp_oid_poe' => $schedulerConfig['snmp_scan']['oid_modules']['poe'],
+                        'snmp_oid_entity' => $schedulerConfig['snmp_scan']['oid_modules']['entity'],
                     ]);
                     $logger->log('scheduler configuration save failed: ' . $e->getMessage(), 3, echoToWeb: true);
                 }
@@ -5201,10 +5228,18 @@ switch ($site) {
         $automationStore = new AutomationStore();
         $automationSettings = $automationStore->getSettings();
         $schedulerDefaultsRaw = is_array($automationSettings['scheduler_config'] ?? null) ? $automationSettings['scheduler_config'] : [];
+        $schedulerSnmpDefaults = is_array($schedulerDefaultsRaw['snmp_scan'] ?? null) ? $schedulerDefaultsRaw['snmp_scan'] : [];
+        $schedulerSnmpOidDefaults = is_array($schedulerSnmpDefaults['oid_modules'] ?? null) ? $schedulerSnmpDefaults['oid_modules'] : [];
         $schedulerDefaults = [
             'queue_enabled' => !array_key_exists('queue_enabled', $schedulerDefaultsRaw) || !empty($schedulerDefaultsRaw['queue_enabled']) ? '1' : '0',
             'notifications_enabled' => !array_key_exists('notifications_enabled', $schedulerDefaultsRaw) || !empty($schedulerDefaultsRaw['notifications_enabled']) ? '1' : '0',
             'snmp_scan_enabled' => !empty($schedulerDefaultsRaw['snmp_scan_enabled']) ? '1' : '0',
+            'snmp_scan_interval_minutes' => (string)(isset($schedulerSnmpDefaults['interval_minutes']) ? (int)$schedulerSnmpDefaults['interval_minutes'] : 60),
+            'snmp_inactivity_days' => (string)(isset($schedulerSnmpDefaults['inactivity_days']) ? (int)$schedulerSnmpDefaults['inactivity_days'] : 14),
+            'snmp_oid_lldp' => !array_key_exists('lldp', $schedulerSnmpOidDefaults) || !empty($schedulerSnmpOidDefaults['lldp']) ? '1' : '0',
+            'snmp_oid_arp' => !array_key_exists('arp', $schedulerSnmpOidDefaults) || !empty($schedulerSnmpOidDefaults['arp']) ? '1' : '0',
+            'snmp_oid_poe' => !array_key_exists('poe', $schedulerSnmpOidDefaults) || !empty($schedulerSnmpOidDefaults['poe']) ? '1' : '0',
+            'snmp_oid_entity' => !array_key_exists('entity', $schedulerSnmpOidDefaults) || !empty($schedulerSnmpOidDefaults['entity']) ? '1' : '0',
         ];
         $schedulerValues = array_merge($schedulerDefaults, is_array($cfgFormData['scheduler'] ?? null) ? $cfgFormData['scheduler'] : []);
         $schedulerStatus = is_array($automationSettings['scheduler_status'] ?? null) ? $automationSettings['scheduler_status'] : [];
@@ -5382,14 +5417,29 @@ switch ($site) {
         echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_notifications_enabled" value="1"' . (configToBool($schedulerValues['notifications_enabled'] ?? false) ? ' checked' : '') . '> <span>Benachrichtigungen verarbeiten</span></label>';
         echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_scan_enabled" value="1"' . (configToBool($schedulerValues['snmp_scan_enabled'] ?? false) ? ' checked' : '') . '> <span>SNMP-Scan fuer alle Switches</span></label>';
         echo '</div>';
+        echo '<div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">';
+        echo '<div><label class="block mb-2" for="cfg_scheduler_snmp_interval">SNMP-Scan Intervall (Minuten)</label><input id="cfg_scheduler_snmp_interval" name="scheduler_snmp_scan_interval_minutes" type="number" min="5" step="5" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$schedulerValues['snmp_scan_interval_minutes']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_scheduler_snmp_inactivity">Inaktivitaetsgrenze Ports (Tage)</label><input id="cfg_scheduler_snmp_inactivity" name="scheduler_snmp_inactivity_days" type="number" min="1" step="1" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$schedulerValues['snmp_inactivity_days']) . '"></div>';
+        echo '</div>';
+        echo '<div class="mt-4">';
+        echo '<div class="mb-2 text-sm font-medium text-slate-700">OID-Module</div>';
+        echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3">';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_lldp" value="1"' . (configToBool($schedulerValues['snmp_oid_lldp'] ?? false) ? ' checked' : '') . '> <span>LLDP</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_arp" value="1"' . (configToBool($schedulerValues['snmp_oid_arp'] ?? false) ? ' checked' : '') . '> <span>ARP / Node-IPs</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_poe" value="1"' . (configToBool($schedulerValues['snmp_oid_poe'] ?? false) ? ' checked' : '') . '> <span>PoE</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_entity" value="1"' . (configToBool($schedulerValues['snmp_oid_entity'] ?? false) ? ' checked' : '') . '> <span>Entity-Inventar</span></label>';
+        echo '</div>';
+        echo '</div>';
         echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">';
         echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter Lauf</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_run'] ?? '-')) . '</div></div>';
         echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter Erfolg</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_success'] ?? '-')) . '</div></div>';
-        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Processed / OK</div><div class="text-sm font-semibold">' . escapeSettingValue((string)((int)($schedulerStatus['processed'] ?? 0) . ' / ' . (int)($schedulerStatus['succeeded'] ?? 0))) . '</div></div>';
-        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Fehlgeschlagen</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['failed'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter SNMP-Scan</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_snmp_scan_run'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Processed / OK / Fehler</div><div class="text-sm font-semibold">' . escapeSettingValue((string)((int)($schedulerStatus['processed'] ?? 0) . ' / ' . (int)($schedulerStatus['succeeded'] ?? 0) . ' / ' . (int)($schedulerStatus['failed'] ?? 0))) . '</div></div>';
         echo '</div>';
         echo '<div class="mt-3 text-sm text-gray-500">Letzte Meldung</div>';
         echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['message'] ?? 'Noch keine Scheduler-Ausfuehrung protokolliert.')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Letzte SNMP-Meldung</div>';
+        echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['last_snmp_scan_message'] ?? 'Noch kein separater SNMP-Scan protokolliert.')) . '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';

@@ -1077,6 +1077,8 @@ if ($tab === 'topology') {
                 $nodeIps = is_array($det['node_ips'] ?? null) ? $det['node_ips'] : [];
                 $nodeIpMatchCount = (int)($det['node_ip_match_count'] ?? 0);
                 $nodeIpUnmatchedCount = (int)($det['node_ip_unmatched_count'] ?? 0);
+                $nodesSeen = (int)($det['nodes_seen'] ?? 0);
+                $nodesPersisted = (int)($det['nodes_persisted'] ?? 0);
                 $nodeIpSources = is_array($det['node_ip_sources'] ?? null) ? $det['node_ip_sources'] : [];
                 $scannerExtensionId = trim((string)($det['scanner_extension'] ?? ''));
                 $scannerExtensionDiagnostics = is_array($det['scanner_extension_diagnostics'] ?? null) ? $det['scanner_extension_diagnostics'] : [];
@@ -1121,12 +1123,15 @@ if ($tab === 'topology') {
                         &nbsp;·&nbsp; <?php echo rep_run_status_pill((string)($selectedRun['status'] ?? '')); ?>
                     </p>
                 </div>
-                <div class="grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-6">
+                <div class="grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-8">
                     <div class="rounded-lg bg-slate-100 px-3 py-2"><div class="text-lg font-bold text-slate-900"><?php echo (int)($selectedRun['interfaces_seen'] ?? 0); ?></div><div class="text-slate-500">Interfaces</div></div>
                     <div class="rounded-lg bg-slate-100 px-3 py-2"><div class="text-lg font-bold text-slate-900"><?php echo (int)($selectedRun['vlans_seen'] ?? 0); ?></div><div class="text-slate-500">VLANs</div></div>
                     <div class="rounded-lg bg-cyan-50 px-3 py-2"><div class="text-lg font-bold text-cyan-800"><?php echo count($interfaceIps); ?></div><div class="text-cyan-700">IPs entdeckt</div></div>
                     <div class="rounded-lg bg-sky-50 px-3 py-2"><div class="text-lg font-bold text-sky-800"><?php echo count($nodeIps); ?></div><div class="text-sky-700">Node-IPs roh</div></div>
+                    <div class="rounded-lg bg-indigo-50 px-3 py-2"><div class="text-lg font-bold text-indigo-800"><?php echo count($matched); ?></div><div class="text-indigo-700">Ports gemappt</div></div>
                     <div class="rounded-lg bg-emerald-50 px-3 py-2"><div class="text-lg font-bold text-emerald-800"><?php echo $mappedIpCount; ?></div><div class="text-emerald-700">IPs gemappt</div></div>
+                    <div class="rounded-lg bg-lime-50 px-3 py-2"><div class="text-lg font-bold text-lime-800"><?php echo $nodesPersisted; ?></div><div class="text-lime-700">Nodes persistiert</div></div>
+                    <div class="rounded-lg bg-amber-50 px-3 py-2"><div class="text-lg font-bold text-amber-800"><?php echo $nodesSeen; ?></div><div class="text-amber-700">FDB-Nodes</div></div>
                     <div class="rounded-lg bg-amber-50 px-3 py-2"><div class="text-lg font-bold text-amber-800"><?php echo (int)($selectedRun['findings_total'] ?? 0); ?></div><div class="text-amber-700">Findings</div></div>
                 </div>
             </div>
@@ -1224,7 +1229,7 @@ if ($tab === 'topology') {
             <div class="mt-3 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div><span class="font-semibold text-slate-900">Node-IP-Quellen:</span> <?php echo $nodeIpSourceSummary; ?></div>
-                    <div class="text-xs text-slate-500">FDB-Matches: <?php echo $nodeIpMatchCount; ?> · Ohne FDB-Match: <?php echo $nodeIpUnmatchedCount; ?></div>
+                    <div class="text-xs text-slate-500">FDB-Matches: <?php echo $nodeIpMatchCount; ?> · Ohne FDB-Match: <?php echo $nodeIpUnmatchedCount; ?> · Nodes persistiert: <?php echo $nodesPersisted; ?>/<?php echo $nodesSeen; ?></div>
                 </div>
             </div>
 
@@ -1406,15 +1411,20 @@ if ($tab === 'topology') {
                 </thead>
                 <tbody>
                 <?php foreach ($runsRows as $row): $rUuid = (string)($row['uuid'] ?? ''); ?>
+                    <?php
+                        $rowDetails = is_array($row['details'] ?? null) ? $row['details'] : [];
+                        $rowMatchedPorts = is_array($rowDetails['matched_ports'] ?? null) ? count($rowDetails['matched_ports']) : 0;
+                        $rowNodesPersisted = (int)($rowDetails['nodes_persisted'] ?? 0);
+                    ?>
                     <tr class="cursor-pointer border-t border-slate-100 hover:bg-blue-50" onclick="window.location='?tab=runs&amp;run=<?php echo rep_h($rUuid); ?>'">
                         <td class="p-2"><?php echo rep_run_status_pill((string)($row['status'] ?? 'running')); ?></td>
                         <td class="p-2 font-medium text-slate-900"><?php echo rep_h($row['switch_name'] ?? ''); ?></td>
                         <td class="p-2 text-xs"><?php echo rep_h($row['trigger'] ?? ''); ?></td>
                         <td class="p-2 text-xs"><?php echo rep_h($row['started'] ?? ''); ?></td>
                         <td class="p-2 text-xs"><?php echo rep_h($row['finished'] ?? ''); ?></td>
-                        <td class="p-2 text-right"><?php echo (int)($row['interfaces_seen'] ?? 0); ?></td>
+                        <td class="p-2 text-right"><?php echo (int)($row['interfaces_seen'] ?? 0); ?><div class="text-[10px] text-slate-400">Ports <?php echo $rowMatchedPorts; ?></div></td>
                         <td class="p-2 text-right"><?php echo (int)($row['vlans_seen'] ?? 0); ?></td>
-                        <td class="p-2 text-right"><?php echo (int)($row['findings_total'] ?? 0); ?></td>
+                        <td class="p-2 text-right"><?php echo (int)($row['findings_total'] ?? 0); ?><div class="text-[10px] text-slate-400">Nodes <?php echo $rowNodesPersisted; ?></div></td>
                         <td class="p-2 text-xs"><?php echo rep_h($row['username'] ?? ''); ?></td>
                         <td class="p-2 text-xs text-slate-500"><?php echo rep_h(mb_strimwidth((string)($row['message'] ?? ''), 0, 120, '…')); ?></td>
                     </tr>

@@ -81,12 +81,48 @@ $startTime = microtime(true);
 
 function schedulerGetTaskConfig(array $storedSettings): array {
     $config = is_array($storedSettings['scheduler_config'] ?? null) ? $storedSettings['scheduler_config'] : [];
+    $snmpScan = is_array($config['snmp_scan'] ?? null) ? $config['snmp_scan'] : [];
+    $snmpScanEnabled = !empty($config['snmp_scan_enabled']) || !empty($snmpScan['enabled']);
+    $snmpIntervalMinutes = max(5, (int)($snmpScan['interval_minutes'] ?? 60));
+    $snmpInactivityDays = max(1, (int)($snmpScan['inactivity_days'] ?? 14));
+    $snmpOidModules = is_array($snmpScan['oid_modules'] ?? null) ? $snmpScan['oid_modules'] : [];
 
     return [
         'queue_enabled' => !array_key_exists('queue_enabled', $config) || !empty($config['queue_enabled']),
         'notifications_enabled' => !array_key_exists('notifications_enabled', $config) || !empty($config['notifications_enabled']),
-        'snmp_scan_enabled' => !empty($config['snmp_scan_enabled']),
+        'snmp_scan_enabled' => $snmpScanEnabled,
+        'snmp_scan' => [
+            'enabled' => $snmpScanEnabled,
+            'interval_minutes' => $snmpIntervalMinutes,
+            'inactivity_days' => $snmpInactivityDays,
+            'oid_modules' => [
+                'lldp' => !array_key_exists('lldp', $snmpOidModules) || !empty($snmpOidModules['lldp']),
+                'arp' => !array_key_exists('arp', $snmpOidModules) || !empty($snmpOidModules['arp']),
+                'poe' => !array_key_exists('poe', $snmpOidModules) || !empty($snmpOidModules['poe']),
+                'entity' => !array_key_exists('entity', $snmpOidModules) || !empty($snmpOidModules['entity']),
+            ],
+        ],
     ];
+}
+
+function schedulerShouldRunSnmpScan(array $taskConfig, array $storedSettings): bool {
+    if (empty($taskConfig['snmp_scan_enabled'])) {
+        return false;
+    }
+
+    $intervalMinutes = max(5, (int)($taskConfig['snmp_scan']['interval_minutes'] ?? 60));
+    $status = is_array($storedSettings['scheduler_status'] ?? null) ? $storedSettings['scheduler_status'] : [];
+    $lastRun = trim((string)($status['last_snmp_scan_run'] ?? ''));
+    if ($lastRun === '') {
+        return true;
+    }
+
+    $lastRunTs = strtotime($lastRun);
+    if ($lastRunTs === false) {
+        return true;
+    }
+
+    return (time() - $lastRunTs) >= ($intervalMinutes * 60);
 }
 
 function schedulerRunSnmpScanAll(DatabaseAdapter $db, AutomationStore $automationStore, Logger $logger, float $startTime): int {
@@ -136,6 +172,16 @@ function schedulerRunSnmpScanAll(DatabaseAdapter $db, AutomationStore $automatio
     $logger->log(sprintf('Scheduler[snmp-scan] done: total=%d ok=%d fail=%d duration=%.2fs',
         count($switchNames), $okCount, $failCount, microtime(true) - $startTime), 1);
 
+    try {
+        $automationStore->updateSchedulerStatus([
+            'last_snmp_scan_run' => date('Y-m-d H:i:s'),
+            'last_snmp_scan_success' => $failCount === 0 ? date('Y-m-d H:i:s') : '',
+            'last_snmp_scan_message' => sprintf('SNMP-Scan: total=%d ok=%d fail=%d', count($switchNames), $okCount, $failCount),
+        ]);
+    } catch (\Throwable $ignored) {
+        // Best-effort status tracking for SNMP scan cadence.
+    }
+
     return $failCount === 0 ? 0 : 1;
 }
 
@@ -176,8 +222,10 @@ try {
     if ($taskConfig['notifications_enabled']) {
         $enabledTasks[] = 'notifications';
     }
-    if ($taskConfig['snmp_scan_enabled']) {
+    if ($taskConfig['snmp_scan_enabled'] && schedulerShouldRunSnmpScan($taskConfig, $storedSettings)) {
         $enabledTasks[] = 'snmp-scan';
+    } elseif ($taskConfig['snmp_scan_enabled']) {
+        $enabledTasks[] = 'snmp-scan-wait';
     }
 
     if (empty($enabledTasks)) {
@@ -189,11 +237,16 @@ try {
 
     $logger->log('Scheduler: Starting tasks [' . implode(', ', $enabledTasks) . ']', 1);
 
-    if ($taskConfig['snmp_scan_enabled']) {
+    if ($taskConfig['snmp_scan_enabled'] && schedulerShouldRunSnmpScan($taskConfig, $storedSettings)) {
         $snmpExitCode = schedulerRunSnmpScanAll($db, $automationStore, $logger, $startTime);
         if ($snmpExitCode !== 0) {
             $logger->log('Scheduler: SNMP scan finished with failures', 2);
         }
+    } elseif ($taskConfig['snmp_scan_enabled']) {
+        $logger->log(
+            'Scheduler: SNMP scan skipped because interval_minutes=' . (int)($taskConfig['snmp_scan']['interval_minutes'] ?? 60) . ' is not due yet',
+            1
+        );
     }
 
     if (!$taskConfig['queue_enabled']) {
