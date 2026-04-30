@@ -1883,6 +1883,269 @@
         }
     }
 
+    function configGetFileModeString(string $path): string {
+        $permissions = @fileperms($path);
+        if ($permissions === false) {
+            return 'unbekannt';
+        }
+
+        return substr(sprintf('%o', $permissions), -4);
+    }
+
+    function configGetSecurityProbeBaseUrl(): ?string {
+        $requestHost = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+        if ($requestHost !== '') {
+            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (string)($_SERVER['SERVER_PORT'] ?? '') === '443';
+            return ($isHttps ? 'https://' : 'http://') . $requestHost;
+        }
+
+        $configuredHost = trim((string)(defined('PORTFLOW_HOSTNAME') ? PORTFLOW_HOSTNAME : ''));
+        if ($configuredHost !== '' && preg_match('#^https?://#i', $configuredHost) === 1) {
+            return rtrim($configuredHost, '/');
+        }
+
+        return null;
+    }
+
+    function configProbeProtectedPath(string $path): array {
+        $baseUrl = configGetSecurityProbeBaseUrl();
+        if ($baseUrl === null) {
+            return [
+                'path' => $path,
+                'status_code' => null,
+                'severity' => 'warn',
+                'message' => 'Pruefung nicht moeglich: Basis-URL konnte nicht ermittelt werden.'
+            ];
+        }
+
+        $url = $baseUrl . $path;
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 4,
+                'ignore_errors' => true,
+                'follow_location' => 0,
+                'max_redirects' => 0,
+                'header' => "User-Agent: Portflow-Security-Check\r\nAccept: */*\r\nConnection: close\r\n",
+            ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+            ],
+        ]);
+
+        $headers = @get_headers($url, false, $context);
+        if (!is_array($headers) || empty($headers[0])) {
+            return [
+                'path' => $path,
+                'status_code' => null,
+                'severity' => 'warn',
+                'message' => 'Pruefung nicht moeglich: Keine HTTP-Antwort von ' . $url . '.'
+            ];
+        }
+
+        $statusLine = (string)$headers[0];
+        $statusCode = preg_match('/\s(\d{3})\s/', $statusLine, $matches) === 1 ? (int)$matches[1] : null;
+        if ($statusCode === null) {
+            return [
+                'path' => $path,
+                'status_code' => null,
+                'severity' => 'warn',
+                'message' => 'Pruefung unklar: HTTP-Status konnte fuer ' . $url . ' nicht gelesen werden.'
+            ];
+        }
+
+        if ($statusCode >= 200 && $statusCode < 300) {
+            return [
+                'path' => $path,
+                'status_code' => $statusCode,
+                'severity' => 'critical',
+                'message' => 'Pfad antwortet mit HTTP ' . $statusCode . ' und wirkt oeffentlich erreichbar.'
+            ];
+        }
+
+        if (in_array($statusCode, [401, 403, 404], true)) {
+            return [
+                'path' => $path,
+                'status_code' => $statusCode,
+                'severity' => 'ok',
+                'message' => 'Pfad ist nicht direkt oeffentlich erreichbar (HTTP ' . $statusCode . ').'
+            ];
+        }
+
+        if ($statusCode >= 300 && $statusCode < 400) {
+            return [
+                'path' => $path,
+                'status_code' => $statusCode,
+                'severity' => 'warn',
+                'message' => 'Pfad liefert einen Redirect (HTTP ' . $statusCode . '). Direkte Sperre waere eindeutiger.'
+            ];
+        }
+
+        return [
+            'path' => $path,
+            'status_code' => $statusCode,
+            'severity' => 'warn',
+            'message' => 'Pfad liefert unerwarteten HTTP-Status ' . $statusCode . '. Bitte Webserver-Regeln pruefen.'
+        ];
+    }
+
+    function getSchedulerCronStatus(string $applicationDir): array {
+        $cronPath = '/etc/cron.d/portflow';
+        $schedulerPath = rtrim($applicationDir, '/') . '/scheduler.php';
+
+        if (!is_file($cronPath)) {
+            return ['ok' => false, 'label' => 'Missing'];
+        }
+
+        if (!is_readable($cronPath)) {
+            return ['ok' => true, 'label' => 'Present (not readable)'];
+        }
+
+        $content = @file_get_contents($cronPath);
+        if (!is_string($content) || trim($content) === '') {
+            return ['ok' => false, 'label' => 'Present but empty'];
+        }
+
+        if (strpos($content, $schedulerPath) === false) {
+            return ['ok' => false, 'label' => 'Present but points elsewhere'];
+        }
+
+        return ['ok' => true, 'label' => 'Installed'];
+    }
+
+    function configBuildSystemSecurityCheck(): array {
+        $items = [];
+        $summary = ['critical' => 0, 'warn' => 0, 'ok' => 0, 'info' => 0];
+
+        $addItem = static function (array $item) use (&$items, &$summary): void {
+            $severity = (string)($item['severity'] ?? 'info');
+            if (!isset($summary[$severity])) {
+                $severity = 'info';
+                $item['severity'] = $severity;
+            }
+            $summary[$severity]++;
+            $items[] = $item;
+        };
+
+        $envPath = __DIR__ . '/.env';
+        if (!is_file($envPath)) {
+            $addItem([
+                'severity' => 'critical',
+                'title' => '.env Datei',
+                'message' => '.env wurde nicht gefunden.',
+                'fix' => 'Setup erneut abschliessen oder .env aus einem gueltigen Backup wiederherstellen.'
+            ]);
+        } else {
+            $envMode = @fileperms($envPath);
+            $envModeString = configGetFileModeString($envPath);
+            $envReadableByWorld = is_int($envMode) && (($envMode & 0x0004) === 0x0004);
+            $envWritableByGroupOrWorld = is_int($envMode) && (($envMode & 0x0012) !== 0 || ($envMode & 0x0002) === 0x0002);
+            $envSeverity = 'ok';
+            $envMessage = '.env Rechte sehen plausibel aus (' . $envModeString . ').';
+            $envFix = 'Empfohlen sind restriktive Rechte wie 0640 oder 0600.';
+
+            if ($envReadableByWorld || $envWritableByGroupOrWorld) {
+                $envSeverity = 'critical';
+                $envMessage = '.env hat zu offene Rechte (' . $envModeString . ').';
+                $envFix = 'Datei auf 0640 oder 0600 begrenzen und Owner/Group des Webserver-Users pruefen.';
+            } elseif (!is_readable($envPath) || !is_writable($envPath)) {
+                $envSeverity = 'warn';
+                $envMessage = '.env ist vorhanden, aber fuer Portflow nicht durchgaengig les- und schreibbar.';
+                $envFix = 'Owner und Rechte so setzen, dass der Webserver lesen und Einstellungen sicher schreiben kann.';
+            }
+
+            $addItem([
+                'severity' => $envSeverity,
+                'title' => '.env Rechte',
+                'message' => $envMessage,
+                'fix' => $envFix
+            ]);
+        }
+
+        $dataPath = __DIR__ . '/data';
+        if (is_dir($dataPath)) {
+            $dataMode = @fileperms($dataPath);
+            $dataModeString = configGetFileModeString($dataPath);
+            if (is_int($dataMode) && (($dataMode & 0x0002) === 0x0002)) {
+                $addItem([
+                    'severity' => 'warn',
+                    'title' => 'data Verzeichnis-Rechte',
+                    'message' => 'Das data Verzeichnis ist fuer andere beschreibbar (' . $dataModeString . ').',
+                    'fix' => 'Rechte auf einen restriktiveren Modus wie 0750 oder 0770 reduzieren.'
+                ]);
+            } else {
+                $addItem([
+                    'severity' => 'ok',
+                    'title' => 'data Verzeichnis-Rechte',
+                    'message' => 'Das data Verzeichnis ist vorhanden (' . $dataModeString . ').',
+                    'fix' => 'Fuer Laufzeitdaten restriktive Rechte beibehalten.'
+                ]);
+            }
+        } else {
+            $addItem([
+                'severity' => 'warn',
+                'title' => 'data Verzeichnis',
+                'message' => 'Das Laufzeitverzeichnis data fehlt.',
+                'fix' => 'Installer erneut ausfuehren oder die benoetigten Datenverzeichnisse anlegen.'
+            ]);
+        }
+
+        $serverSoftware = trim((string)($_SERVER['SERVER_SOFTWARE'] ?? 'unbekannt'));
+        $serverSoftwareLower = strtolower($serverSoftware);
+        $htaccessMode = is_file(__DIR__ . '/.htaccess') ? 'vorhanden' : 'nicht vorhanden';
+        if (strpos($serverSoftwareLower, 'apache') !== false) {
+            $addItem([
+                'severity' => is_file(__DIR__ . '/.htaccess') ? 'ok' : 'warn',
+                'title' => '.htaccess / Apache',
+                'message' => is_file(__DIR__ . '/.htaccess')
+                    ? 'Apache erkannt, Root-.htaccess ist vorhanden.'
+                    : 'Apache erkannt, aber Root-.htaccess fehlt.',
+                'fix' => 'Sicherstellen, dass AllowOverride aktiv ist und die Apache-Regeln fuer sensible Pfade geladen werden.'
+            ]);
+        } else {
+            $addItem([
+                'severity' => 'info',
+                'title' => '.htaccess / Webserver',
+                'message' => 'Aktiver Webserver: ' . $serverSoftware . '. Root-.htaccess ist ' . $htaccessMode . ' und wird ausserhalb von Apache nicht ausgewertet.',
+                'fix' => 'Sensible Pfade zusaetzlich in Lighttpd- oder Nginx-Konfiguration sperren.'
+            ]);
+        }
+
+        foreach ([
+            '/.env' => 'Webzugriff auf .env',
+            '/.git/HEAD' => 'Webzugriff auf .git',
+            '/.htaccess' => 'Webzugriff auf .htaccess',
+            '/data/' => 'Webzugriff auf data/'
+        ] as $probePath => $title) {
+            $probe = configProbeProtectedPath($probePath);
+            $addItem([
+                'severity' => $probe['severity'],
+                'title' => $title,
+                'message' => $probe['message'],
+                'fix' => 'Direkten Webzugriff serverseitig blockieren. Erwartet sind 403 oder 404 fuer diesen Pfad.'
+            ]);
+        }
+
+        $schedulerStatus = getSchedulerCronStatus(__DIR__);
+        $addItem([
+            'severity' => !empty($schedulerStatus['ok']) ? 'ok' : 'warn',
+            'title' => 'Scheduler Cronjob',
+            'message' => !empty($schedulerStatus['ok'])
+                ? 'Cronjob ist vorhanden: ' . (string)($schedulerStatus['label'] ?? 'Installed') . '.'
+                : 'Cronjob-Auffaelligkeit: ' . (string)($schedulerStatus['label'] ?? 'Missing') . '.',
+            'fix' => 'Installer erneut ausfuehren oder /etc/cron.d/portflow auf den aktuellen scheduler.php Pfad ausrichten.'
+        ]);
+
+        return [
+            'summary' => $summary,
+            'items' => $items,
+            'checked_at' => date('Y-m-d H:i:s'),
+            'base_url' => configGetSecurityProbeBaseUrl(),
+        ];
+    }
+
     function configTestLdap(array $formData): array {
         $ldapServer = trim((string)($formData['ldap_server'] ?? ''));
         $ldapPort = (int)($formData['ldap_port'] ?? 0);
@@ -4798,6 +5061,7 @@ switch ($site) {
         ];
         $schedulerValues = array_merge($schedulerDefaults, is_array($cfgFormData['scheduler'] ?? null) ? $cfgFormData['scheduler'] : []);
         $schedulerStatus = is_array($automationSettings['scheduler_status'] ?? null) ? $automationSettings['scheduler_status'] : [];
+        $securityCheck = configBuildSystemSecurityCheck();
         $updaterDefaults = configGetUpdateStatus(false);
         $updaterValues = array_merge($updaterDefaults, is_array($cfgFormData['updater'] ?? null) ? $cfgFormData['updater'] : []);
         $updaterStateValues = configReadUpdaterState();
@@ -4853,6 +5117,45 @@ switch ($site) {
         echo '<div class="h-fit w-full p-2 space-y-6">';
 
         echo '<div class="cfg-section-system' . ($activeConfigTab !== 'system' ? ' hidden' : '') . '">';
+        echo '<section id="cfg-security">';
+        echo '<div class="flex flex-wrap items-start justify-between gap-3 pb-3">';
+        echo '<div><div class="text-xl font-bold pb-1">System / Security Check</div><p class="text-sm text-gray-500">Prueft lokale Rechte und testet, ob sensible Pfade ueber den aktiven Webserver wirklich geblockt werden.</p></div>';
+        echo '<div class="text-xs text-gray-500">Geprueft: ' . escapeSettingValue((string)($securityCheck['checked_at'] ?? '-')) . '<br>Basis-URL: ' . escapeSettingValue((string)($securityCheck['base_url'] ?? 'nicht ermittelbar')) . '</div>';
+        echo '</div>';
+        echo '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">';
+        echo '<div class="rounded-lg border border-red-200 p-3"><div class="text-xs text-gray-500">Kritisch</div><div class="text-lg font-semibold text-red-700">' . escapeSettingValue((string)($securityCheck['summary']['critical'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-amber-200 p-3"><div class="text-xs text-gray-500">Warnungen</div><div class="text-lg font-semibold text-amber-700">' . escapeSettingValue((string)($securityCheck['summary']['warn'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-emerald-200 p-3"><div class="text-xs text-gray-500">OK</div><div class="text-lg font-semibold text-emerald-700">' . escapeSettingValue((string)($securityCheck['summary']['ok'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-xs text-gray-500">Hinweise</div><div class="text-lg font-semibold text-slate-700">' . escapeSettingValue((string)($securityCheck['summary']['info'] ?? 0)) . '</div></div>';
+        echo '</div>';
+        echo '<div class="space-y-3">';
+        foreach ((array)($securityCheck['items'] ?? []) as $securityItem) {
+            $severity = (string)($securityItem['severity'] ?? 'info');
+            $toneMap = [
+                'critical' => 'border-red-300 bg-red-50 text-red-900',
+                'warn' => 'border-amber-300 bg-amber-50 text-amber-900',
+                'ok' => 'border-emerald-300 bg-emerald-50 text-emerald-900',
+                'info' => 'border-slate-300 bg-slate-50 text-slate-900',
+            ];
+            $labelMap = [
+                'critical' => 'Kritisch',
+                'warn' => 'Warnung',
+                'ok' => 'OK',
+                'info' => 'Hinweis',
+            ];
+            $cardClasses = $toneMap[$severity] ?? $toneMap['info'];
+            $severityLabel = $labelMap[$severity] ?? $labelMap['info'];
+            echo '<div class="rounded-2xl border px-4 py-4 ' . $cardClasses . '">';
+            echo '<div class="flex flex-wrap items-start justify-between gap-3">';
+            echo '<div><div class="text-sm font-semibold">' . escapeSettingValue((string)($securityItem['title'] ?? 'Pruefung')) . '</div><div class="pt-1 text-sm whitespace-pre-wrap">' . escapeSettingValue((string)($securityItem['message'] ?? '')) . '</div></div>';
+            echo '<span class="rounded-full border border-current px-3 py-1 text-xs font-semibold uppercase tracking-wide">' . escapeSettingValue($severityLabel) . '</span>';
+            echo '</div>';
+            echo '<div class="pt-3 text-xs opacity-80">Empfohlene Massnahme: ' . escapeSettingValue((string)($securityItem['fix'] ?? '')) . '</div>';
+            echo '</div>';
+        }
+        echo '</div>';
+        echo '</section>';
+
         echo '<section id="cfg-db">';
         echo '<div class="text-xl font-bold pb-1">Datenbank</div>';
         echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes DB Passwort beibehalten.</p>';

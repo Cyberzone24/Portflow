@@ -695,6 +695,18 @@ configure_lighttpd() {
     cat >"$tmp_config" <<EOF
 server.modules += ( "mod_fastcgi" )
 
+$HTTP["url"] =~ "^/data(?:/|$)" {
+    url.access-deny = ( "" )
+}
+
+$HTTP["url"] =~ "^/(?:\.git|\.env(?:\..*)?|\.htaccess|\.gitignore|\.gitmodules)(?:$|/)" {
+    url.access-deny = ( "" )
+}
+
+$HTTP["url"] =~ "^/(?:composer\.(?:json|lock)|Dockerfile|podman-compose\.yml)$" {
+    url.access-deny = ( "" )
+}
+
 fastcgi.server = ( ".php" =>
     ( "localhost" =>
         (
@@ -799,7 +811,18 @@ EOF
 
 set_permissions() {
     run_root_cmd "Besitzer setzen" chown -R www-data:www-data "$TARGET_DIR"
-    run_root_cmd "Standardrechte setzen" chmod -R u=rwX,go=rX "$TARGET_DIR"
+
+    run_root_cmd "Verzeichnisrechte setzen" find "$TARGET_DIR" -type d -exec chmod 0755 {} +
+    run_root_cmd "Dateirechte setzen" find "$TARGET_DIR" -type f -exec chmod 0644 {} +
+
+    if [[ -d "$TARGET_DIR/data" ]]; then
+        run_root_cmd "data Verzeichnis-Rechte haerten" find "$TARGET_DIR/data" -type d -exec chmod 0750 {} +
+        run_root_cmd "data Dateirechte haerten" find "$TARGET_DIR/data" -type f -exec chmod 0640 {} +
+    fi
+
+    if [[ -f "$TARGET_DIR/.env" ]]; then
+        run_root_cmd ".env Rechte haerten" chmod 0640 "$TARGET_DIR/.env"
+    fi
 }
 
 print_summary() {
