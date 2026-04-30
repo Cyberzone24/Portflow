@@ -162,6 +162,11 @@ class AutomationStore {
             $sshPasswordToStore = (string)($current['ssh_password'] ?? '');
         }
 
+        $sshUsernameToStore = $sshUsername;
+        if ($sshUsernameToStore === '') {
+            $sshUsernameToStore = (string)($current['ssh_username'] ?? '');
+        }
+
         $sshPrivateKeyToStore = $sshPrivateKey;
         if ($sshPrivateKeyToStore === '') {
             $sshPrivateKeyToStore = (string)($current['ssh_private_key'] ?? '');
@@ -224,7 +229,7 @@ class AutomationStore {
             'ssh_host' => $sshHost,
             'ssh_port' => $sshPort,
             'ssh_auth_method' => $sshAuthMethod,
-            'ssh_username' => $this->encrypt($sshUsername),
+            'ssh_username' => $this->encrypt($sshUsernameToStore),
             'ssh_password' => $this->encrypt($sshPasswordToStore),
             'ssh_private_key' => $this->encrypt($sshPrivateKeyToStore),
             'scripts_json' => $this->encrypt(json_encode($decodedScripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
