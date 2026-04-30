@@ -6413,11 +6413,7 @@ HTML;
             <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
             <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Switch-Inventar werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert. Templates werden in <span class="font-semibold">data/automation/automation.json</span> gepflegt.</p>
             {$testOutputHtml}
-            <form action="?set=automation_settings_save" method="post">
-                <input type="hidden" name="csrf" value="$csrf">
-                <input type="hidden" class="scripts-active-tab-input" name="scripts_active_tab" value="$activeScriptsTab">
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
                     <div>
                         <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
@@ -6450,9 +6446,9 @@ HTML;
                 </div>
 
                 <div class="pb-6 flex justify-end scripts-section-switch">
-                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="SSH-Zugangsdaten speichern">
+                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitAutomationSettingsSave()">SSH-Zugangsdaten speichern</button>
                 </div>
-            </form>
+            </div>
 
                 <div class="pb-6 scripts-section-switch">
                     <div class="flex items-center justify-between pb-2">
@@ -6911,6 +6907,17 @@ HTML;
                         switch_snmp_v3_auth_passphrase: snmpV3AuthPassphrase,
                         switch_snmp_v3_priv_protocol: snmpV3PrivProtocol,
                         switch_snmp_v3_priv_passphrase: snmpV3PrivPassphrase
+                    });
+                }
+
+                function submitAutomationSettingsSave() {
+                    postAutomationAction('automation_settings_save', {
+                        ssh_host: document.getElementById('ssh_host').value.trim(),
+                        ssh_port: document.getElementById('ssh_port').value,
+                        ssh_auth_method: document.getElementById('ssh_auth_method').value,
+                        ssh_username: document.getElementById('ssh_username').value.trim(),
+                        ssh_password: document.getElementById('ssh_password').value,
+                        ssh_private_key: document.getElementById('ssh_private_key').value
                     });
                 }
 
