@@ -122,7 +122,12 @@ class PortReconciler
         $nodesPersisted = 0;
         $nodes = $facts['nodes'] ?? [];
         if (is_array($nodes) && !empty($nodes) && !empty($ifIndexToPortUuid)) {
-            $nodesPersisted = $this->applyNodeFacts($nodes, $ifIndexToPortUuid, (string)$facts['run_uuid']);
+            $nodesPersisted = $this->applyNodeFacts(
+                $nodes,
+                $ifIndexToPortUuid,
+                (string)$facts['run_uuid'],
+                is_array($facts['interfaces'] ?? null) ? $facts['interfaces'] : []
+            );
         }
 
         $neighborsPersisted = 0;
@@ -194,6 +199,45 @@ class PortReconciler
         );
 
         return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @param array<int,string> $portUuids
+     * @return array<string,array<string,mixed>>
+     */
+    private function loadPortRowsByUuid(array $portUuids): array
+    {
+        $portUuids = array_values(array_unique(array_filter(
+            array_map(static fn($value): string => trim((string)$value), $portUuids),
+            static fn(string $value): bool => $value !== ''
+        )));
+        if ($portUuids === []) {
+            return [];
+        }
+
+        $params = [];
+        $placeholders = [];
+        foreach ($portUuids as $index => $portUuid) {
+            $key = 'p' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $portUuid;
+        }
+
+        $rows = $this->db->db_query(
+            'SELECT uuid, speed, poe, mac_address, metadata AS metadata_uuid, device_port_ip FROM device_port WHERE uuid IN (' . implode(',', $placeholders) . ')',
+            $params
+        );
+
+        $indexed = [];
+        foreach ((array)$rows as $row) {
+            $uuid = trim((string)($row['uuid'] ?? ''));
+            if ($uuid === '') {
+                continue;
+            }
+            $indexed[$uuid] = $row;
+        }
+
+        return $indexed;
     }
 
     /**
@@ -774,12 +818,13 @@ class PortReconciler
     * @param array<int,array{mac:string,vlan:?int,if_index:?int,bridge_port:int,ip?:string,hostname?:string,ip_source?:string}> $nodes
      * @param array<int,string> $ifIndexToPortUuid
      */
-    private function applyNodeFacts(array $nodes, array $ifIndexToPortUuid, string $runUuid): int
+    private function applyNodeFacts(array $nodes, array $ifIndexToPortUuid, string $runUuid, array $interfacesByIfIndex = []): int
     {
         if (empty($ifIndexToPortUuid)) {
             return 0;
         }
         $mirrorTargets = $this->loadConnectedNodeMirrorTargets(array_values($ifIndexToPortUuid));
+        $mirrorTargetPorts = $this->loadPortRowsByUuid(array_values($mirrorTargets));
         $persisted = 0;
         foreach ($nodes as $node) {
             $ifIndex = $node['if_index'] ?? null;
@@ -787,6 +832,7 @@ class PortReconciler
                 continue;
             }
             $portUuid = $ifIndexToPortUuid[(int)$ifIndex];
+            $sourceIface = is_array($interfacesByIfIndex[(int)$ifIndex] ?? null) ? $interfacesByIfIndex[(int)$ifIndex] : [];
             $mac = strtolower((string)($node['mac'] ?? ''));
             if ($mac === '') {
                 continue;
@@ -807,7 +853,14 @@ class PortReconciler
                 if ($this->persistNodeObservation($targetPortUuid, $mac, $vlan, $ipAddress, $hostname, $runUuid)) {
                     $persisted++;
                     if ($targetPortUuid !== $portUuid) {
-                        $this->applyEndpointNodeFacts($targetPortUuid, $mac, $ipAddress, $hostname, $ipSource);
+                        $this->applyEndpointNodeFacts(
+                            $mirrorTargetPorts[$targetPortUuid] ?? ['uuid' => $targetPortUuid],
+                            $sourceIface,
+                            $mac,
+                            $ipAddress,
+                            $hostname,
+                            $ipSource
+                        );
                     }
                 }
             }
@@ -927,26 +980,56 @@ class PortReconciler
         }
     }
 
-    private function applyEndpointNodeFacts(string $portUuid, string $mac, string $ipAddress, string $hostname, string $ipSource): void
+    private function applyEndpointNodeFacts(array $port, array $iface, string $mac, string $ipAddress, string $hostname, string $ipSource): void
     {
         try {
+            $portUuid = trim((string)($port['uuid'] ?? ''));
+            if ($portUuid === '') {
+                return;
+            }
+
+            $updates = [];
+            $params = ['uuid' => $portUuid];
+
+            $speed = $iface['if_high_speed'] ?? null;
+            if ($speed !== null) {
+                $speedString = (string)$speed;
+                if ((string)($port['speed'] ?? '') !== $speedString) {
+                    $updates[] = 'speed = :speed';
+                    $params['speed'] = $speedString;
+                }
+            }
+
             if ($mac !== '') {
+                if (strcasecmp((string)($port['mac_address'] ?? ''), $mac) !== 0) {
+                    $updates[] = 'mac_address = :mac';
+                    $params['mac'] = $mac;
+                }
+            }
+
+            if (array_key_exists('poe', $iface) && $iface['poe'] !== null) {
+                $poeEnabled = (bool)$iface['poe'];
+                if ((bool)($port['poe'] ?? false) !== $poeEnabled) {
+                    $updates[] = 'poe = :poe';
+                    $params['poe'] = $poeEnabled;
+                }
+            }
+
+            if ($updates !== []) {
                 $this->db->db_query(
-                    'UPDATE device_port SET mac_address = :mac WHERE uuid = :uuid AND COALESCE(mac_address, \'\') <> :mac',
-                    ['mac' => $mac, 'uuid' => $portUuid]
+                    'UPDATE device_port SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid',
+                    $params
                 );
             }
+
+            $this->applyMetadataStatus($port, $iface);
 
             if ($ipAddress === '' || !filter_var($ipAddress, FILTER_VALIDATE_IP)) {
                 return;
             }
 
             $dhcpAddress = str_contains(strtolower($ipSource), 'dhcp');
-            $portRows = $this->db->db_query(
-                'SELECT device_port_ip FROM device_port WHERE uuid = :uuid LIMIT 1',
-                ['uuid' => $portUuid]
-            );
-            $devicePortIpUuid = trim((string)($portRows[0]['device_port_ip'] ?? ''));
+            $devicePortIpUuid = trim((string)($port['device_port_ip'] ?? ''));
             if ($devicePortIpUuid === '') {
                 $created = $this->db->db_query(
                     'INSERT INTO device_port_ip (ip, hostname, dhcp_address) VALUES (:ip, :hostname, :dhcp_address) RETURNING uuid',

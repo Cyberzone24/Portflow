@@ -5839,6 +5839,11 @@ function resolveDetailsValue(fieldKey, rowData) {
         return '--';
     }
 
+    const isStatusField = fieldKey === 'status'
+        || fieldKey === 'metadata_status'
+        || fieldKey.endsWith('_status')
+        || fieldKey.endsWith('_metadata_status');
+
     if (typeof value === 'boolean') {
         return value ? 'Yes' : 'No';
     }
@@ -5846,6 +5851,10 @@ function resolveDetailsValue(fieldKey, rowData) {
     const normalized = String(value).trim();
     if (normalized === '') {
         return '--';
+    }
+
+    if (isStatusField && /^\d+$/.test(normalized)) {
+        return getStatusTitle(Number(normalized));
     }
 
     if (normalized === 'true' || normalized === 't' || normalized === '1') {
