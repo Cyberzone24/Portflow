@@ -324,6 +324,7 @@ class SnmpScanner
                         $poeMain = array_values((array)$extensionPoeData['main_consumption']);
                     }
                 }
+                $scannerExtensionDiagnostics = $scannerExtension->getLastDiagnostics();
             }
             $poePorts = [];
             $poeByIfIndex = [];

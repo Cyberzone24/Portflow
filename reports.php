@@ -1110,6 +1110,17 @@ if ($tab === 'topology') {
                 $scannerExtensionPasswordSet = !empty($nodeIpCollectionConnection['password_set']) ? 'ja' : 'nein';
                 $scannerExtensionKeySet = !empty($nodeIpCollectionConnection['private_key_set']) ? 'ja' : 'nein';
                 $scannerExtensionSshpassFound = array_key_exists('sshpass_found', $nodeIpCollectionExecution) ? (!empty($nodeIpCollectionExecution['sshpass_found']) ? 'ja' : 'nein') : '-';
+                $poeDiagnostics = is_array($scannerExtensionDiagnostics['poe'] ?? null) ? $scannerExtensionDiagnostics['poe'] : [];
+                $poeDiagStatus = trim((string)($poeDiagnostics['status'] ?? ''));
+                $poeDiagSource = trim((string)($poeDiagnostics['source'] ?? ''));
+                $poeDiagEnableCount = isset($poeDiagnostics['enable_count']) ? (int)$poeDiagnostics['enable_count'] : 0;
+                $poeDiagStatusCount = isset($poeDiagnostics['status_count']) ? (int)$poeDiagnostics['status_count'] : 0;
+                $poeDiagClassCount = isset($poeDiagnostics['class_count']) ? (int)$poeDiagnostics['class_count'] : 0;
+                $poeDiagConsumptionCount = isset($poeDiagnostics['consumption_count']) ? (int)$poeDiagnostics['consumption_count'] : 0;
+                $poeDiagPortNameCount = isset($poeDiagnostics['port_name_count']) ? (int)$poeDiagnostics['port_name_count'] : 0;
+                $poeDiagMainCount = isset($poeDiagnostics['main_consumption_count']) ? (int)$poeDiagnostics['main_consumption_count'] : 0;
+                $poeDiagSampleIndices = is_array($poeDiagnostics['sample_indices'] ?? null) ? $poeDiagnostics['sample_indices'] : [];
+                $poeDiagSampleSummary = empty($poeDiagSampleIndices) ? '-' : implode(' · ', array_map(static fn($value): string => (string)$value, $poeDiagSampleIndices));
             ?>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1242,6 +1253,15 @@ if ($tab === 'topology') {
                     <div class="grid grid-cols-1 gap-2 px-3 py-2 text-sm md:grid-cols-2">
                         <div><span class="font-semibold text-slate-900">Node-IP-Modus:</span> <?php echo rep_h($scannerExtensionMode !== '' ? $scannerExtensionMode : '-'); ?></div>
                         <div><span class="font-semibold text-slate-900">Status:</span> <?php echo rep_h($scannerExtensionStatus !== '' ? $scannerExtensionStatus : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE-Quelle:</span> <?php echo rep_h($poeDiagSource !== '' ? $poeDiagSource : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE-Status:</span> <?php echo rep_h($poeDiagStatus !== '' ? $poeDiagStatus : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Enable-Eintraege:</span> <?php echo $poeDiagEnableCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Status-Eintraege:</span> <?php echo $poeDiagStatusCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Klassen-Eintraege:</span> <?php echo $poeDiagClassCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Verbrauch-Eintraege:</span> <?php echo $poeDiagConsumptionCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Portnamen-Eintraege:</span> <?php echo $poeDiagPortNameCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Main-Power-Eintraege:</span> <?php echo $poeDiagMainCount; ?></div>
+                        <div class="md:col-span-2"><span class="font-semibold text-slate-900">PoE Beispiel-Indizes:</span> <?php echo rep_h($poeDiagSampleSummary); ?></div>
                         <div><span class="font-semibold text-slate-900">Credential-Mode:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['credential_mode'] ?? '-')); ?></div>
                         <div><span class="font-semibold text-slate-900">SSH Auth:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['auth_method'] ?? '-')); ?></div>
                         <div><span class="font-semibold text-slate-900">Host gesetzt:</span> <?php echo $scannerExtensionHostSet; ?></div>

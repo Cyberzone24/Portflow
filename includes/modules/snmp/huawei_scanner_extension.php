@@ -63,6 +63,12 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     public function collectPoeSnapshot(SnmpClient $client, Logger $logger, array $config): ?array
     {
         $hwEnable = $this->walkMap($client, $config, self::OID_HW_POE_PORT_ENABLE);
+        $this->lastDiagnostics['poe'] = [
+            'source' => 'HUAWEI-POE-MIB::hwPoePortTable',
+            'status' => empty($hwEnable) ? 'empty-enable-table' : 'enable-table-found',
+            'enable_count' => count($hwEnable),
+            'sample_indices' => array_slice(array_values(array_map('strval', array_keys($hwEnable))), 0, 10),
+        ];
         if (empty($hwEnable)) {
             return null;
         }
@@ -98,6 +104,18 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
 
         $mainConsumption = $this->collectHuaweiMainConsumption($hwDeviceUsedPower, $hwSlotConsumingPower, $hwGlobalPower);
 
+        $this->lastDiagnostics['poe'] = [
+            'source' => 'HUAWEI-POE-MIB::hwPoePortTable',
+            'status' => 'ok',
+            'enable_count' => count($admin),
+            'status_count' => count($hwStatus),
+            'class_count' => count($class),
+            'consumption_count' => count($consumption),
+            'port_name_count' => count($portNames),
+            'main_consumption_count' => count($mainConsumption),
+            'sample_indices' => array_slice(array_values(array_map('strval', array_keys($admin))), 0, 10),
+        ];
+
         return [
             'admin' => $admin,
             'detection' => $detection,
@@ -112,13 +130,11 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     public function collectNodeIps(SnmpClient $client, Logger $logger, array $config): array
     {
         $mode = strtolower(trim((string)($config['node_ip_collection'] ?? '')));
-        $this->lastDiagnostics = [
-            'extension' => $this->getId(),
-            'switch_name' => (string)($config['switch_name'] ?? ''),
-            'node_ip_collection' => [
-                'mode' => $mode,
-                'status' => 'disabled',
-            ],
+        $this->lastDiagnostics['extension'] = $this->getId();
+        $this->lastDiagnostics['switch_name'] = (string)($config['switch_name'] ?? '');
+        $this->lastDiagnostics['node_ip_collection'] = [
+            'mode' => $mode,
+            'status' => 'disabled',
         ];
         if (!in_array($mode, ['cli', 'cli-dhcp-snooping', 'cli-arp'], true)) {
             return [];
