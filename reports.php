@@ -96,6 +96,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'accept_port_ip_expected') {
+    if (!$canAutomationWrite) {
+        $enqueueResult = ['ok' => false, 'message' => 'Keine Berechtigung fuer Report-Aktionen.'];
+    } elseif (!$auth->csrf_check()) {
+        $enqueueResult = ['ok' => false, 'message' => 'CSRF token invalid'];
+    } else {
+        $devicePortUuid = trim((string)($_POST['device_port_uuid'] ?? ''));
+        if ($devicePortUuid === '') {
+            $enqueueResult = ['ok' => false, 'message' => 'Port UUID fehlt.'];
+        } else {
+            try {
+                $rows = $db_adapter->db_query(
+                    "SELECT dp.device_port_ip,
+                            dpi.ip::text AS current_ip,
+                            dpi.hostname AS current_hostname,
+                            dpi.dhcp_address AS current_dhcp_address
+                     FROM device_port dp
+                     LEFT JOIN device_port_ip dpi ON dpi.uuid = dp.device_port_ip
+                     WHERE dp.uuid = :uuid
+                     LIMIT 1",
+                    ['uuid' => $devicePortUuid]
+                ) ?: [];
+
+                if (empty($rows) || trim((string)($rows[0]['device_port_ip'] ?? '')) === '') {
+                    $enqueueResult = ['ok' => false, 'message' => 'Kein device_port_ip Datensatz fuer diesen Port gefunden.'];
+                } else {
+                    $devicePortIpUuid = trim((string)$rows[0]['device_port_ip']);
+                    $db_adapter->db_query(
+                        'UPDATE device_port_ip
+                         SET expected_ip = ip,
+                             expected_hostname = hostname,
+                             expected_dhcp_address = dhcp_address
+                         WHERE uuid = :uuid',
+                        ['uuid' => $devicePortIpUuid]
+                    );
+                    $enqueueResult = ['ok' => true, 'message' => 'Expected-Werte fuer Port-IP wurden auf den aktuellen Scan-Stand gesetzt.'];
+                }
+            } catch (\Throwable $e) {
+                $enqueueResult = ['ok' => false, 'message' => 'Expected angleichen fehlgeschlagen: ' . $e->getMessage()];
+            }
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'accept_neighbor_expected') {
+    if (!$canAutomationWrite) {
+        $enqueueResult = ['ok' => false, 'message' => 'Keine Berechtigung fuer Report-Aktionen.'];
+    } elseif (!$auth->csrf_check()) {
+        $enqueueResult = ['ok' => false, 'message' => 'CSRF token invalid'];
+    } else {
+        $devicePortUuid = trim((string)($_POST['device_port_uuid'] ?? ''));
+        if ($devicePortUuid === '') {
+            $enqueueResult = ['ok' => false, 'message' => 'Port UUID fehlt.'];
+        } else {
+            try {
+                $neighborRows = $db_adapter->db_query(
+                    "SELECT remote_sys_name, remote_port_id
+                     FROM device_port_neighbor
+                     WHERE device_port = :uuid
+                       AND remote_sys_name IS NOT NULL
+                       AND remote_sys_name <> ''
+                       AND remote_port_id IS NOT NULL
+                       AND remote_port_id <> ''
+                     ORDER BY last_seen DESC
+                     LIMIT 1",
+                    ['uuid' => $devicePortUuid]
+                ) ?: [];
+                if (empty($neighborRows)) {
+                    $enqueueResult = ['ok' => false, 'message' => 'Kein beobachteter LLDP-Nachbar fuer diesen Port gefunden.'];
+                } else {
+                    $neighbor = $neighborRows[0];
+                    $connectionRows = $db_adapter->db_query(
+                        "SELECT uuid, device_port_source, device_port_destination
+                         FROM connection
+                         WHERE device_port_source = :uuid OR device_port_destination = :uuid
+                         LIMIT 1",
+                        ['uuid' => $devicePortUuid]
+                    ) ?: [];
+                    if (empty($connectionRows)) {
+                        $enqueueResult = ['ok' => false, 'message' => 'Keine bestehende Connection fuer diesen Port gefunden.'];
+                    } else {
+                        $connection = $connectionRows[0];
+                        $remotePortRows = $db_adapter->db_query(
+                            "SELECT dp.uuid
+                             FROM device_port dp
+                             JOIN metadata pm ON pm.uuid = dp.metadata
+                             JOIN device d ON d.uuid = dp.device
+                             JOIN metadata dm ON dm.uuid = d.metadata
+                             WHERE LOWER(dm.caption) = LOWER(:device_caption)
+                               AND LOWER(pm.caption) = LOWER(:port_caption)
+                             LIMIT 1",
+                            [
+                                'device_caption' => trim((string)($neighbor['remote_sys_name'] ?? '')),
+                                'port_caption' => trim((string)($neighbor['remote_port_id'] ?? '')),
+                            ]
+                        ) ?: [];
+                        if (empty($remotePortRows) || trim((string)($remotePortRows[0]['uuid'] ?? '')) === '') {
+                            $enqueueResult = ['ok' => false, 'message' => 'Beobachteter Nachbar konnte nicht auf einen Portflow-Port aufgeloest werden.'];
+                        } else {
+                            $remotePortUuid = trim((string)$remotePortRows[0]['uuid']);
+                            $updateParams = ['uuid' => $connection['uuid']];
+                            if ((string)($connection['device_port_source'] ?? '') === $devicePortUuid) {
+                                $updateSql = 'UPDATE connection SET expected_device_port_source = device_port_source, expected_device_port_destination = :remote_port WHERE uuid = :uuid';
+                                $updateParams['remote_port'] = $remotePortUuid;
+                            } elseif ((string)($connection['device_port_destination'] ?? '') === $devicePortUuid) {
+                                $updateSql = 'UPDATE connection SET expected_device_port_destination = device_port_destination, expected_device_port_source = :remote_port WHERE uuid = :uuid';
+                                $updateParams['remote_port'] = $remotePortUuid;
+                            } else {
+                                $updateSql = '';
+                            }
+
+                            if ($updateSql === '') {
+                                $enqueueResult = ['ok' => false, 'message' => 'Connection konnte nicht eindeutig dem lokalen Port zugeordnet werden.'];
+                            } else {
+                                $db_adapter->db_query($updateSql, $updateParams);
+                                $enqueueResult = ['ok' => true, 'message' => 'Expected-Connection wurde auf den beobachteten LLDP-Nachbarn abgeglichen.'];
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                $enqueueResult = ['ok' => false, 'message' => 'Neighbor angleichen fehlgeschlagen: ' . $e->getMessage()];
+            }
+        }
+    }
 }
 
 include_once __DIR__ . '/includes/header.php';
@@ -161,8 +284,16 @@ try {
                 d.uuid AS device_uuid,
                 d.metadata->>'caption' AS device_caption,
                 dp.metadata->>'caption' AS port_caption,
-                dp.speed AS configured_speed,
-                dp.mac_address AS configured_mac,
+                dp.device_port_ip AS device_port_ip_uuid,
+                dp.speed AS current_speed,
+                dp.expected_speed AS expected_speed,
+                dp.mac_address AS current_mac,
+                dpi.ip::text AS current_ip,
+                dpi.expected_ip::text AS expected_ip,
+                dpi.hostname AS current_hostname,
+                dpi.expected_hostname AS expected_hostname,
+                dpi.dhcp_address AS current_dhcp_address,
+                dpi.expected_dhcp_address AS expected_dhcp_address,
                 s.if_index, s.if_name, s.if_alias,
                 s.if_admin_status, s.if_oper_status,
                 s.last_seen_active, s.updated AS state_updated,
@@ -171,12 +302,125 @@ try {
          FROM device_port_snmp_state s
          JOIN device_port dp ON dp.uuid = s.device_port
          LEFT JOIN device d ON d.uuid = dp.device
+         LEFT JOIN device_port_ip dpi ON dpi.uuid = dp.device_port_ip
          LEFT JOIN snmp_scan_run r ON r.uuid = s.last_scan_run
          ORDER BY s.updated DESC
          LIMIT 500"
     ) ?: [];
 } catch (\Throwable $e) {
     $driftRows = [];
+}
+
+$neighborByPort = [];
+$connectionByPort = [];
+$knownDeviceCaptions = [];
+if (!empty($driftRows)) {
+    try {
+        $knownDeviceRows = $db_adapter->db_query(
+            "SELECT m.caption AS device_caption
+             FROM device d
+             LEFT JOIN metadata m ON m.uuid = d.metadata
+             WHERE m.caption IS NOT NULL AND m.caption <> ''"
+        ) ?: [];
+        foreach ($knownDeviceRows as $knownDeviceRow) {
+            $caption = trim((string)($knownDeviceRow['device_caption'] ?? ''));
+            if ($caption !== '') {
+                $knownDeviceCaptions[strtolower($caption)] = true;
+            }
+        }
+    } catch (\Throwable $e) {
+        $knownDeviceCaptions = [];
+    }
+
+    $portUuids = [];
+    foreach ($driftRows as $driftRow) {
+        $portUuid = trim((string)($driftRow['device_port_uuid'] ?? ''));
+        if ($portUuid !== '') {
+            $portUuids[$portUuid] = true;
+        }
+    }
+
+    if (!empty($portUuids)) {
+        $params = [];
+        $placeholders = [];
+        $portIndex = 0;
+        foreach (array_keys($portUuids) as $portUuid) {
+            $key = 'p' . $portIndex++;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $portUuid;
+        }
+
+        try {
+            $neighborRows = $db_adapter->db_query(
+                "SELECT n.device_port,
+                        n.remote_sys_name,
+                        n.remote_port_id,
+                        n.remote_port_desc,
+                        n.last_seen
+                 FROM device_port_neighbor n
+                 WHERE n.device_port IN (" . implode(',', $placeholders) . ")
+                 ORDER BY n.last_seen DESC",
+                $params
+            ) ?: [];
+            foreach ($neighborRows as $neighborRow) {
+                $portUuid = trim((string)($neighborRow['device_port'] ?? ''));
+                if ($portUuid === '' || isset($neighborByPort[$portUuid])) {
+                    continue;
+                }
+                $remoteSysName = trim((string)($neighborRow['remote_sys_name'] ?? ''));
+                $neighborByPort[$portUuid] = [
+                    'remote_sys_name' => $remoteSysName,
+                    'remote_port_id' => trim((string)($neighborRow['remote_port_id'] ?? '')),
+                    'remote_port_desc' => trim((string)($neighborRow['remote_port_desc'] ?? '')),
+                    'last_seen' => trim((string)($neighborRow['last_seen'] ?? '')),
+                    'managed' => $remoteSysName !== '' && isset($knownDeviceCaptions[strtolower($remoteSysName)]),
+                ];
+            }
+        } catch (\Throwable $e) {
+            $neighborByPort = [];
+        }
+
+        try {
+            $connectionRows = $db_adapter->db_query(
+                "SELECT c.device_port_source,
+                        c.device_port_destination,
+                        src_dev.caption AS src_device_caption,
+                        src_port.caption AS src_port_caption,
+                        dst_dev.caption AS dst_device_caption,
+                        dst_port.caption AS dst_port_caption
+                 FROM connection c
+                 LEFT JOIN device_port dp_src ON dp_src.uuid = c.device_port_source
+                 LEFT JOIN metadata src_port ON src_port.uuid = dp_src.metadata
+                 LEFT JOIN device d_src ON d_src.uuid = dp_src.device
+                 LEFT JOIN metadata src_dev ON src_dev.uuid = d_src.metadata
+                 LEFT JOIN device_port dp_dst ON dp_dst.uuid = c.device_port_destination
+                 LEFT JOIN metadata dst_port ON dst_port.uuid = dp_dst.metadata
+                 LEFT JOIN device d_dst ON d_dst.uuid = dp_dst.device
+                 LEFT JOIN metadata dst_dev ON dst_dev.uuid = d_dst.metadata
+                 WHERE c.device_port_source IN (" . implode(',', $placeholders) . ")
+                    OR c.device_port_destination IN (" . implode(',', $placeholders) . ")",
+                $params
+            ) ?: [];
+            foreach ($connectionRows as $connectionRow) {
+                $srcUuid = trim((string)($connectionRow['device_port_source'] ?? ''));
+                $dstUuid = trim((string)($connectionRow['device_port_destination'] ?? ''));
+                if ($srcUuid !== '' && isset($portUuids[$srcUuid]) && !isset($connectionByPort[$srcUuid])) {
+                    $connectionByPort[$srcUuid] = [
+                        'remote_device_caption' => trim((string)($connectionRow['dst_device_caption'] ?? '')),
+                        'remote_port_caption' => trim((string)($connectionRow['dst_port_caption'] ?? '')),
+                    ];
+                }
+                if ($dstUuid !== '' && isset($portUuids[$dstUuid]) && !isset($connectionByPort[$dstUuid])) {
+                    $connectionByPort[$dstUuid] = [
+                        'remote_device_caption' => trim((string)($connectionRow['src_device_caption'] ?? '')),
+                        'remote_port_caption' => trim((string)($connectionRow['src_port_caption'] ?? '')),
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            $connectionByPort = [];
+        }
+    }
 }
 
 // --- Stale ports (oper down / never seen active in N days) -------------
@@ -236,12 +480,51 @@ function rep_run_status_pill(string $status): string {
 $driftFlagged = [];
 foreach ($driftRows as $i => $row) {
     $flags = [];
+    $portUuid = trim((string)($row['device_port_uuid'] ?? ''));
+    $currentIp = trim((string)($row['current_ip'] ?? ''));
+    $expectedIp = trim((string)($row['expected_ip'] ?? ''));
+    $currentHostname = trim((string)($row['current_hostname'] ?? ''));
+    $expectedHostname = trim((string)($row['expected_hostname'] ?? ''));
+    $currentDhcpRaw = $row['current_dhcp_address'] ?? null;
+    $expectedDhcpRaw = $row['expected_dhcp_address'] ?? null;
+    $currentDhcp = $currentDhcpRaw === null ? null : (bool)$currentDhcpRaw;
+    $expectedDhcp = $expectedDhcpRaw === null ? null : (bool)$expectedDhcpRaw;
+    $observedNeighbor = $portUuid !== '' ? ($neighborByPort[$portUuid] ?? null) : null;
+    $configuredNeighbor = $portUuid !== '' ? ($connectionByPort[$portUuid] ?? null) : null;
+
     // Operational down on a port that has a configured caption
     if ((int)($row['if_oper_status'] ?? 0) === 2) { $flags[] = 'oper-down'; }
     // SNMP if_name vs configured port_caption mismatch (case-insensitive)
     $cfg = strtolower(trim((string)($row['port_caption'] ?? '')));
     $snm = strtolower(trim((string)($row['if_name'] ?? '')));
     if ($cfg !== '' && $snm !== '' && $cfg !== $snm) { $flags[] = 'name-mismatch'; }
+    if ($expectedIp !== '') {
+        if ($currentIp === '') {
+            $flags[] = 'ip-missing';
+        } elseif (strcasecmp($currentIp, $expectedIp) !== 0) {
+            $flags[] = 'ip-mismatch';
+        }
+    }
+    if ($expectedHostname !== '' && strcasecmp($currentHostname, $expectedHostname) !== 0) {
+        $flags[] = 'hostname-mismatch';
+    }
+    if ($expectedDhcp !== null && $currentDhcp !== null && $expectedDhcp !== $currentDhcp) {
+        $flags[] = 'dhcp-mismatch';
+    }
+    if ($observedNeighbor !== null && $configuredNeighbor !== null) {
+        $observedDevice = strtolower(trim((string)($observedNeighbor['remote_sys_name'] ?? '')));
+        $configuredDevice = strtolower(trim((string)($configuredNeighbor['remote_device_caption'] ?? '')));
+        $observedPort = strtolower(trim((string)($observedNeighbor['remote_port_id'] ?? '')));
+        $configuredPort = strtolower(trim((string)($configuredNeighbor['remote_port_caption'] ?? '')));
+        if (($observedDevice !== '' && $configuredDevice !== '' && $observedDevice !== $configuredDevice)
+            || ($observedPort !== '' && $configuredPort !== '' && $observedPort !== $configuredPort)) {
+            $flags[] = 'neighbor-mismatch';
+        }
+    } elseif ($observedNeighbor !== null && !empty($observedNeighbor['managed'])) {
+        $flags[] = 'unexpected-neighbor';
+    } elseif ($observedNeighbor === null && $configuredNeighbor !== null) {
+        $flags[] = 'neighbor-missing';
+    }
     $driftFlagged[$i] = $flags;
 }
 $driftCount = 0;
@@ -298,6 +581,8 @@ $tabs = [
 
 // --- Topology / LLDP neighbors ----------------------------------------
 $topoRows = [];
+$topologyNodes = [];
+$topologyEdges = [];
 if ($tab === 'topology') {
     try {
         $topoRows = $db_adapter->db_query(
@@ -316,6 +601,122 @@ if ($tab === 'topology') {
     } catch (\Throwable $e) {
         $topoRows = [];
     }
+
+    $connectionKeys = [];
+    try {
+        $connectionRows = $db_adapter->db_query(
+            "SELECT dsrc_cap.caption AS src_device_caption,
+                    psrc_cap.caption AS src_port_caption,
+                    ddst_cap.caption AS dst_device_caption,
+                    pdst_cap.caption AS dst_port_caption
+             FROM connection c
+             LEFT JOIN device_port dp_src ON dp_src.uuid = c.device_port_source
+             LEFT JOIN metadata psrc_cap ON psrc_cap.uuid = dp_src.metadata
+             LEFT JOIN device d_src ON d_src.uuid = dp_src.device
+             LEFT JOIN metadata dsrc_cap ON dsrc_cap.uuid = d_src.metadata
+             LEFT JOIN device_port dp_dst ON dp_dst.uuid = c.device_port_destination
+             LEFT JOIN metadata pdst_cap ON pdst_cap.uuid = dp_dst.metadata
+             LEFT JOIN device d_dst ON d_dst.uuid = dp_dst.device
+             LEFT JOIN metadata ddst_cap ON ddst_cap.uuid = d_dst.metadata
+             WHERE c.device_port_source IS NOT NULL AND c.device_port_destination IS NOT NULL"
+        ) ?: [];
+        foreach ($connectionRows as $connectionRow) {
+            $srcDevice = strtolower(trim((string)($connectionRow['src_device_caption'] ?? '')));
+            $srcPort = strtolower(trim((string)($connectionRow['src_port_caption'] ?? '')));
+            $dstDevice = strtolower(trim((string)($connectionRow['dst_device_caption'] ?? '')));
+            $dstPort = strtolower(trim((string)($connectionRow['dst_port_caption'] ?? '')));
+            if ($srcDevice === '' || $srcPort === '' || $dstDevice === '' || $dstPort === '') {
+                continue;
+            }
+            $ends = [$srcDevice . '|' . $srcPort, $dstDevice . '|' . $dstPort];
+            sort($ends, SORT_STRING);
+            $connectionKeys[implode('||', $ends)] = true;
+        }
+    } catch (\Throwable $e) {
+        $connectionKeys = [];
+    }
+
+    $knownDeviceNames = [];
+    foreach ($topoRows as $row) {
+        $deviceCaption = trim((string)($row['device_caption'] ?? ''));
+        if ($deviceCaption === '') {
+            continue;
+        }
+        $knownDeviceNames[strtolower($deviceCaption)] = $deviceCaption;
+    }
+
+    foreach ($topoRows as $row) {
+        $localDevice = trim((string)($row['device_caption'] ?? ''));
+        $localPort = trim((string)($row['port_caption'] ?? ''));
+        $remoteSysName = trim((string)($row['remote_sys_name'] ?? ''));
+        $remotePort = trim((string)($row['remote_port_id'] ?? ''));
+        $lastSeen = trim((string)($row['last_seen'] ?? ''));
+        if ($localDevice === '' || $remoteSysName === '') {
+            continue;
+        }
+
+        $remoteDevice = $knownDeviceNames[strtolower($remoteSysName)] ?? $remoteSysName;
+        $localNodeKey = strtolower($localDevice);
+        $remoteNodeKey = strtolower($remoteDevice);
+        if (!isset($topologyNodes[$localNodeKey])) {
+            $topologyNodes[$localNodeKey] = ['label' => $localDevice, 'managed' => true];
+        }
+        if (!isset($topologyNodes[$remoteNodeKey])) {
+            $topologyNodes[$remoteNodeKey] = [
+                'label' => $remoteDevice,
+                'managed' => isset($knownDeviceNames[$remoteNodeKey]),
+            ];
+        }
+
+        $edgeNodes = [$localNodeKey, $remoteNodeKey];
+        sort($edgeNodes, SORT_STRING);
+        $edgeKey = implode('|', $edgeNodes);
+        if (!isset($topologyEdges[$edgeKey])) {
+            $topologyEdges[$edgeKey] = [
+                'left_key' => $edgeNodes[0],
+                'right_key' => $edgeNodes[1],
+                'left_label' => $topologyNodes[$edgeNodes[0]]['label'],
+                'right_label' => $topologyNodes[$edgeNodes[1]]['label'],
+                'links' => [],
+                'last_seen' => $lastSeen,
+                'managed_both' => !empty($topologyNodes[$edgeNodes[0]]['managed']) && !empty($topologyNodes[$edgeNodes[1]]['managed']),
+                'mapped_links' => 0,
+                'unmapped_links' => 0,
+            ];
+        }
+
+        $linkLabel = $localPort !== '' || $remotePort !== ''
+            ? trim(($localPort !== '' ? $localPort : '?') . ' -> ' . ($remotePort !== '' ? $remotePort : '?'))
+            : 'Uplink';
+        $isMappedConnection = false;
+        if ($localPort !== '' && $remotePort !== '' && !empty($topologyEdges[$edgeKey]['managed_both'])) {
+            $candidateEnds = [
+                strtolower($localDevice) . '|' . strtolower($localPort),
+                strtolower($remoteDevice) . '|' . strtolower($remotePort),
+            ];
+            sort($candidateEnds, SORT_STRING);
+            $isMappedConnection = isset($connectionKeys[implode('||', $candidateEnds)]);
+        }
+        $topologyEdges[$edgeKey]['links'][$linkLabel] = $isMappedConnection ? 'mapped' : (!empty($topologyEdges[$edgeKey]['managed_both']) ? 'unmapped' : 'external');
+        if ($isMappedConnection) {
+            $topologyEdges[$edgeKey]['mapped_links']++;
+        } elseif (!empty($topologyEdges[$edgeKey]['managed_both'])) {
+            $topologyEdges[$edgeKey]['unmapped_links']++;
+        }
+        if ($lastSeen !== '' && strcmp($lastSeen, (string)($topologyEdges[$edgeKey]['last_seen'] ?? '')) > 0) {
+            $topologyEdges[$edgeKey]['last_seen'] = $lastSeen;
+        }
+    }
+
+    uasort($topologyNodes, static function (array $a, array $b): int {
+        return strcasecmp((string)($a['label'] ?? ''), (string)($b['label'] ?? ''));
+    });
+    uasort($topologyEdges, static function (array $a, array $b): int {
+        return strcasecmp(
+            (string)($a['left_label'] ?? '') . '|' . (string)($a['right_label'] ?? ''),
+            (string)($b['left_label'] ?? '') . '|' . (string)($b['right_label'] ?? '')
+        );
+    });
 }
 ?>
 
@@ -356,6 +757,8 @@ if ($tab === 'topology') {
                         <th class="p-2">Gerät</th>
                         <th class="p-2">Konfig. Port</th>
                         <th class="p-2">SNMP ifName</th>
+                        <th class="p-2">Nachbar</th>
+                        <th class="p-2">IP / Hostname</th>
                         <th class="p-2">Alias</th>
                         <th class="p-2">Admin</th>
                         <th class="p-2">Oper</th>
@@ -369,6 +772,9 @@ if ($tab === 'topology') {
                 <?php foreach ($driftRows as $i => $row):
                     $flags = $driftFlagged[$i] ?? [];
                     $hasFlag = !empty($flags);
+                    $portUuid = trim((string)($row['device_port_uuid'] ?? ''));
+                    $observedNeighbor = $portUuid !== '' ? ($neighborByPort[$portUuid] ?? null) : null;
+                    $configuredNeighbor = $portUuid !== '' ? ($connectionByPort[$portUuid] ?? null) : null;
                 ?>
                     <tr class="border-t border-slate-100 <?php echo $hasFlag ? 'bg-amber-50' : ''; ?>">
                         <td class="p-2">
@@ -385,6 +791,36 @@ if ($tab === 'topology') {
                         <td class="p-2"><?php echo rep_h($row['device_caption'] ?? ''); ?></td>
                         <td class="p-2 font-mono text-xs"><?php echo rep_h($row['port_caption'] ?? ''); ?></td>
                         <td class="p-2 font-mono text-xs"><?php echo rep_h($row['if_name'] ?? ''); ?></td>
+                        <td class="p-2 text-xs">
+                            <div><span class="font-semibold text-slate-700">Ist:</span> <?php echo rep_h($observedNeighbor['remote_sys_name'] ?? '-'); ?><?php if (trim((string)($observedNeighbor['remote_port_id'] ?? '')) !== ''): ?> <span class="text-slate-400">(<?php echo rep_h($observedNeighbor['remote_port_id'] ?? ''); ?>)</span><?php endif; ?></div>
+                            <?php if ($configuredNeighbor !== null): ?>
+                                <div class="text-slate-500"><span class="font-semibold">Soll:</span> <?php echo rep_h($configuredNeighbor['remote_device_caption'] ?? '-'); ?><?php if (trim((string)($configuredNeighbor['remote_port_caption'] ?? '')) !== ''): ?> <span class="text-slate-400">(<?php echo rep_h($configuredNeighbor['remote_port_caption'] ?? ''); ?>)</span><?php endif; ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="p-2 text-xs">
+                            <div><span class="font-semibold text-slate-700">Ist:</span> <?php echo rep_h(trim((string)($row['current_ip'] ?? '')) !== '' ? (string)($row['current_ip'] ?? '') : '-'); ?></div>
+                            <?php if (trim((string)($row['expected_ip'] ?? '')) !== ''): ?>
+                                <div class="text-slate-500"><span class="font-semibold">Soll:</span> <?php echo rep_h($row['expected_ip'] ?? ''); ?></div>
+                            <?php endif; ?>
+                            <?php if (trim((string)($row['current_hostname'] ?? '')) !== '' || trim((string)($row['expected_hostname'] ?? '')) !== ''): ?>
+                                <div class="mt-1 text-slate-500">
+                                    <span class="font-semibold">Host:</span>
+                                    <?php echo rep_h(trim((string)($row['current_hostname'] ?? '')) !== '' ? (string)($row['current_hostname'] ?? '') : '-'); ?>
+                                    <?php if (trim((string)($row['expected_hostname'] ?? '')) !== ''): ?>
+                                        <span class="text-slate-400"> / Soll: <?php echo rep_h($row['expected_hostname'] ?? ''); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (($row['current_dhcp_address'] ?? null) !== null || ($row['expected_dhcp_address'] ?? null) !== null): ?>
+                                <div class="mt-1 text-slate-500">
+                                    <span class="font-semibold">DHCP:</span>
+                                    <?php echo rep_h(!empty($row['current_dhcp_address']) ? 'ja' : 'nein'); ?>
+                                    <?php if (($row['expected_dhcp_address'] ?? null) !== null): ?>
+                                        <span class="text-slate-400"> / Soll: <?php echo rep_h(!empty($row['expected_dhcp_address']) ? 'ja' : 'nein'); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td class="p-2 text-xs text-slate-500"><?php echo rep_h($row['if_alias'] ?? ''); ?></td>
                         <td class="p-2 text-xs"><?php echo rep_h(rep_admin_status_label(isset($row['if_admin_status']) ? (int)$row['if_admin_status'] : null)); ?></td>
                         <td class="p-2"><?php echo rep_oper_pill(isset($row['if_oper_status']) ? (int)$row['if_oper_status'] : null); ?></td>
@@ -399,23 +835,45 @@ if ($tab === 'topology') {
                             <?php endforeach; ?>
                         </td>
                         <td class="p-2 text-right">
-                            <?php if ($canAutomationWrite && in_array('oper-down', $flags, true) && !empty($row['if_name']) && !empty($row['last_run_switch'])): ?>
-                                <form method="post" action="reports.php?tab=drift" class="inline">
-                                    <input type="hidden" name="csrf" value="<?php echo rep_h($auth->csrf()); ?>">
-                                    <input type="hidden" name="action" value="corrective_enqueue">
-                                    <input type="hidden" name="template_id" value="no_shutdown_port">
-                                    <input type="hidden" name="switch_name" value="<?php echo rep_h($row['last_run_switch']); ?>">
-                                    <input type="hidden" name="interface" value="<?php echo rep_h($row['if_name']); ?>">
-                                    <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs" title="Port aktivieren (in Warteschlange)" onclick="return confirm('Port-Aktivierung fuer <?php echo rep_h($row['if_name']); ?> auf <?php echo rep_h($row['last_run_switch']); ?> in Warteschlange einreihen?');">
-                                        <i data-lucide="wrench" class="h-3 w-3"></i><span>Fix</span>
-                                    </button>
-                                </form>
-                            <?php endif; ?>
+                            <div class="flex justify-end gap-2">
+                                <?php if ($canAutomationWrite && in_array('neighbor-mismatch', $flags, true) && $observedNeighbor !== null && !empty($observedNeighbor['managed']) && $configuredNeighbor !== null): ?>
+                                    <form method="post" action="reports.php?tab=drift" class="inline">
+                                        <input type="hidden" name="csrf" value="<?php echo rep_h($auth->csrf()); ?>">
+                                        <input type="hidden" name="action" value="accept_neighbor_expected">
+                                        <input type="hidden" name="device_port_uuid" value="<?php echo rep_h($row['device_port_uuid']); ?>">
+                                        <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 text-xs" title="Expected-Link auf beobachteten Nachbarn setzen" onclick="return confirm('Expected-Connection dieses Ports auf den beobachteten LLDP-Nachbarn angleichen?');">
+                                            <i data-lucide="git-merge" class="h-3 w-3"></i><span>Neighbor angleichen</span>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                                <?php if ($canAutomationWrite && (in_array('ip-mismatch', $flags, true) || in_array('ip-missing', $flags, true) || in_array('hostname-mismatch', $flags, true) || in_array('dhcp-mismatch', $flags, true)) && !empty($row['device_port_ip_uuid'])): ?>
+                                    <form method="post" action="reports.php?tab=drift" class="inline">
+                                        <input type="hidden" name="csrf" value="<?php echo rep_h($auth->csrf()); ?>">
+                                        <input type="hidden" name="action" value="accept_port_ip_expected">
+                                        <input type="hidden" name="device_port_uuid" value="<?php echo rep_h($row['device_port_uuid']); ?>">
+                                        <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs" title="Expected auf aktuellen IP-Stand setzen" onclick="return confirm('Expected-Werte fuer IP/Hostname/DHCP dieses Ports auf den aktuellen Scan-Stand setzen?');">
+                                            <i data-lucide="check" class="h-3 w-3"></i><span>Expected angleichen</span>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                                <?php if ($canAutomationWrite && in_array('oper-down', $flags, true) && !empty($row['if_name']) && !empty($row['last_run_switch'])): ?>
+                                    <form method="post" action="reports.php?tab=drift" class="inline">
+                                        <input type="hidden" name="csrf" value="<?php echo rep_h($auth->csrf()); ?>">
+                                        <input type="hidden" name="action" value="corrective_enqueue">
+                                        <input type="hidden" name="template_id" value="no_shutdown_port">
+                                        <input type="hidden" name="switch_name" value="<?php echo rep_h($row['last_run_switch']); ?>">
+                                        <input type="hidden" name="interface" value="<?php echo rep_h($row['if_name']); ?>">
+                                        <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs" title="Port aktivieren (in Warteschlange)" onclick="return confirm('Port-Aktivierung fuer <?php echo rep_h($row['if_name']); ?> auf <?php echo rep_h($row['last_run_switch']); ?> in Warteschlange einreihen?');">
+                                            <i data-lucide="wrench" class="h-3 w-3"></i><span>Fix</span>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($driftRows)): ?>
-                    <tr><td colspan="11" class="p-4 text-center text-sm text-slate-500">Noch keine SNMP-Daten vorhanden. Im Switch-Inventar „Scan jetzt" ausführen.</td></tr>
+                    <tr><td colspan="13" class="p-4 text-center text-sm text-slate-500">Noch keine SNMP-Daten vorhanden. Im Switch-Inventar „Scan jetzt" ausführen.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -497,6 +955,77 @@ if ($tab === 'topology') {
 
     <?php elseif ($tab === 'topology'): ?>
         <p class="mb-3 text-sm text-slate-500">LLDP-Nachbarn pro Switch-Port. Quelle: <code class="rounded bg-slate-100 px-1">LLDP-MIB::lldpRemTable</code>.</p>
+
+        <div class="mb-4 grid gap-3 md:grid-cols-3">
+            <div class="rounded-xl border border-slate-300 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Erkannte Geraete</div>
+                <div class="mt-2 text-2xl font-bold text-slate-900"><?php echo count($topologyNodes); ?></div>
+            </div>
+            <div class="rounded-xl border border-slate-300 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Uplink-Kanten</div>
+                <div class="mt-2 text-2xl font-bold text-slate-900"><?php echo count($topologyEdges); ?></div>
+            </div>
+            <div class="rounded-xl border border-slate-300 bg-slate-50 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Gemappte Portflow-Links</div>
+                <div class="mt-2 text-2xl font-bold text-slate-900"><?php echo count(array_filter($topologyEdges, static fn(array $edge): bool => !empty($edge['managed_both']))); ?></div>
+            </div>
+        </div>
+
+        <div class="mb-4 rounded-2xl border border-slate-300 bg-slate-50 p-4">
+            <div class="mb-3 flex items-center justify-between gap-2">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900">Uplink-Karte</h2>
+                    <p class="text-sm text-slate-500">Verdichtete Ansicht der erkannten Uplink-Beziehungen zwischen lokalem Switch und Nachbarn.</p>
+                </div>
+            </div>
+            <?php if (!empty($topologyEdges)): ?>
+                <div class="grid gap-3 lg:grid-cols-2">
+                    <?php foreach ($topologyEdges as $edge): ?>
+                        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="min-w-0 flex-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                                    <div class="truncate text-sm font-semibold text-blue-900"><?php echo rep_h($edge['left_label'] ?? ''); ?></div>
+                                    <div class="text-xs text-blue-700"><?php echo !empty($topologyNodes[(string)($edge['left_key'] ?? '')]['managed']) ? 'Portflow-Device' : 'Externer Nachbar'; ?></div>
+                                </div>
+                                <div class="shrink-0 text-slate-400">
+                                    <i data-lucide="arrow-right-left" class="h-5 w-5"></i>
+                                </div>
+                                <div class="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-right">
+                                    <div class="truncate text-sm font-semibold text-emerald-900"><?php echo rep_h($edge['right_label'] ?? ''); ?></div>
+                                    <div class="text-xs text-emerald-700"><?php echo !empty($topologyNodes[(string)($edge['right_key'] ?? '')]['managed']) ? 'Portflow-Device' : 'Externer Nachbar'; ?></div>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <?php foreach (($edge['links'] ?? []) as $linkLabel => $linkState): ?>
+                                    <?php
+                                        $linkClass = 'bg-slate-100 text-slate-700';
+                                        if ($linkState === 'mapped') {
+                                            $linkClass = 'bg-emerald-100 text-emerald-800';
+                                        } elseif ($linkState === 'unmapped') {
+                                            $linkClass = 'bg-amber-100 text-amber-800';
+                                        }
+                                    ?>
+                                    <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold <?php echo $linkClass; ?>"><?php echo rep_h($linkLabel); ?></span>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php if (!empty($edge['managed_both'])): ?>
+                                <div class="mt-3 text-xs <?php echo !empty($edge['unmapped_links']) ? 'text-amber-700' : 'text-emerald-700'; ?>">
+                                    <?php if (!empty($edge['unmapped_links'])): ?>
+                                        Portflow-Verbindung fehlt fuer <?php echo (int)($edge['unmapped_links'] ?? 0); ?> erkannte Uplink(s).
+                                    <?php else: ?>
+                                        Alle erkannten internen Uplinks sind bereits als Connection erfasst.
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            <div class="mt-3 text-xs text-slate-500">Last seen: <?php echo rep_h($edge['last_seen'] ?? '-'); ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php else: ?>
+                <div class="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">Noch keine verwertbaren Uplink-Beziehungen erkannt.</div>
+            <?php endif; ?>
+        </div>
+
         <div class="overflow-x-auto rounded-xl border border-slate-300 bg-white">
             <table class="w-full text-left text-sm text-slate-700">
                 <thead class="bg-slate-100 text-slate-900">

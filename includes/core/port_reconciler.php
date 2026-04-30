@@ -88,12 +88,14 @@ class PortReconciler
                 'if_alias'         => (string)($iface['if_alias'] ?? ''),
                 'speed'            => $iface['if_high_speed'] ?? null,
                 'mac'              => $this->normalizeMac((string)($iface['if_phys_address'] ?? '')),
+                'ip_address'       => (string)($iface['ip_address'] ?? ''),
                 'admin'            => $iface['if_admin_status'] ?? null,
                 'oper'             => $iface['if_oper_status'] ?? null,
                 'pvid'             => $iface['pvid'] ?? null,
             ];
 
             $this->applyInterfaceFacts($port, $iface);
+            $this->applyIpFacts($port, $iface);
             $this->applyMetadataStatus($port, $iface);
             $this->applyPortVlans($port, $iface, $vlanUuidById);
             $this->upsertSnmpState($port['uuid'], (string)$facts['run_uuid'], $iface);
@@ -215,6 +217,61 @@ class PortReconciler
         }
         $sql = 'UPDATE device_port SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid';
         $this->db->db_query($sql, $params);
+    }
+
+    private function applyIpFacts(array $port, array $iface): void
+    {
+        $ipAddress = trim((string)($iface['ip_address'] ?? ''));
+        if ($ipAddress === '' || !filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+            return;
+        }
+
+        $hostname = trim((string)($iface['ip_hostname'] ?? ''));
+        $dhcpAddress = array_key_exists('ip_dhcp_address', $iface) ? (bool)$iface['ip_dhcp_address'] : false;
+        $devicePortIpUuid = trim((string)($port['device_port_ip'] ?? ''));
+
+        if ($devicePortIpUuid === '') {
+            $existing = $this->db->db_query(
+                'SELECT device_port_ip FROM device_port WHERE uuid = :uuid LIMIT 1',
+                ['uuid' => $port['uuid']]
+            );
+            $devicePortIpUuid = trim((string)($existing[0]['device_port_ip'] ?? ''));
+        }
+
+        if ($devicePortIpUuid === '') {
+            $created = $this->db->db_query(
+                'INSERT INTO device_port_ip (ip, hostname, dhcp_address) VALUES (:ip, :hostname, :dhcp_address) RETURNING uuid',
+                [
+                    'ip' => $ipAddress,
+                    'hostname' => $hostname !== '' ? $hostname : null,
+                    'dhcp_address' => $dhcpAddress,
+                ]
+            );
+            $devicePortIpUuid = trim((string)($created[0]['uuid'] ?? ''));
+            if ($devicePortIpUuid !== '') {
+                $this->db->db_query(
+                    'UPDATE device_port SET device_port_ip = :device_port_ip WHERE uuid = :uuid',
+                    ['device_port_ip' => $devicePortIpUuid, 'uuid' => $port['uuid']]
+                );
+            }
+            return;
+        }
+
+        $updates = ['ip = :ip', 'dhcp_address = :dhcp_address'];
+        $params = [
+            'uuid' => $devicePortIpUuid,
+            'ip' => $ipAddress,
+            'dhcp_address' => $dhcpAddress,
+        ];
+        if ($hostname !== '') {
+            $updates[] = 'hostname = :hostname';
+            $params['hostname'] = $hostname;
+        }
+
+        $this->db->db_query(
+            'UPDATE device_port_ip SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid',
+            $params
+        );
     }
 
     /**

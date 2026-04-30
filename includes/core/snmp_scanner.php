@@ -25,6 +25,8 @@ class SnmpScanner
     public const OID_IF_LAST_CHANGE    = '.1.3.6.1.2.1.2.2.1.9';
     public const OID_IF_HC_IN_OCTETS   = '.1.3.6.1.2.1.31.1.1.1.6';
     public const OID_IF_HC_OUT_OCTETS  = '.1.3.6.1.2.1.31.1.1.1.10';
+    public const OID_IP_ADDR_ENTRY_ADDR = '.1.3.6.1.2.1.4.20.1.1';
+    public const OID_IP_ADDR_ENTRY_IFINDEX = '.1.3.6.1.2.1.4.20.1.2';
     public const OID_DOT1Q_PVID        = '.1.3.6.1.2.1.17.7.1.4.5.1.1';
     /** Q-BRIDGE-MIB dot1qVlanCurrentEgressPorts: index = timeMark.vlanId, value = OCTET STRING bitmap (bridge ports). */
     public const OID_DOT1Q_VLAN_CURRENT_EGRESS   = '.1.3.6.1.2.1.17.7.1.4.2.1.4';
@@ -114,6 +116,7 @@ class SnmpScanner
             $ifChangeMap = $this->walkMap($config, self::OID_IF_LAST_CHANGE);
             $ifInMap    = $this->walkMap($config, self::OID_IF_HC_IN_OCTETS);
             $ifOutMap   = $this->walkMap($config, self::OID_IF_HC_OUT_OCTETS);
+            $interfaceIps = $this->collectInterfaceIpsFromIpAddrTable($config);
 
             // BRIDGE-MIB: bridge port -> ifIndex. Required to translate Q-BRIDGE-MIB
             // tables (PVID, egress/untagged port bitmaps) which are keyed by bridge port,
@@ -324,6 +327,17 @@ class SnmpScanner
                 ];
             }
 
+            if (!empty($interfaceIps)) {
+                foreach ($interfaces as $ifIndex => $iface) {
+                    if (!isset($interfaceIps[(int)$ifIndex])) {
+                        continue;
+                    }
+                    $ipFact = $interfaceIps[(int)$ifIndex];
+                    $interfaces[$ifIndex]['ip_address'] = (string)($ipFact['ip_address'] ?? '');
+                    $interfaces[$ifIndex]['ip_source'] = (string)($ipFact['source'] ?? 'snmp');
+                }
+            }
+
             $reconciler = new PortReconciler($this->db, $this->logger);
             $result = $reconciler->reconcile([
                 'run_uuid'        => $runUuid,
@@ -354,6 +368,7 @@ class SnmpScanner
                 'nodes_persisted'    => $result['nodes_persisted'] ?? 0,
                 'neighbors'          => $neighbors,
                 'neighbors_persisted' => $result['neighbors_persisted'] ?? 0,
+                'interface_ips'      => array_values($interfaceIps),
                 'poe_ports'          => $poePorts,
                 'poe_source'         => $poeSource,
                 'poe_main_consumption' => array_values($poeMain),
@@ -484,6 +499,96 @@ class SnmpScanner
             $map[$index] = $value;
         }
         return $map;
+    }
+
+    /**
+     * Collect interface IPs from IP-MIB::ipAddrTable.
+     *
+     * @return array<int,array{if_index:int,ip_address:string,source:string}>
+     */
+    private function collectInterfaceIpsFromIpAddrTable(array $config): array
+    {
+        $addrResult = $this->client->runWalk($config, self::OID_IP_ADDR_ENTRY_ADDR);
+        $ifIndexResult = $this->client->runWalk($config, self::OID_IP_ADDR_ENTRY_IFINDEX);
+        if (!$addrResult['ok'] || !$ifIndexResult['ok']) {
+            return [];
+        }
+
+        $addrRows = SnmpClient::parseWalkLines($addrResult['lines']);
+        $ifIndexRows = SnmpClient::parseWalkLines($ifIndexResult['lines']);
+        if (empty($ifIndexRows)) {
+            return [];
+        }
+
+        $knownIps = [];
+        foreach ($addrRows as $oid => $value) {
+            $ipAddress = $this->extractIpAddressFromOidSuffix($oid, self::OID_IP_ADDR_ENTRY_ADDR);
+            if ($ipAddress === null) {
+                $candidate = trim((string)$value);
+                if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                    $ipAddress = $candidate;
+                }
+            }
+            if ($ipAddress !== null) {
+                $knownIps[$ipAddress] = true;
+            }
+        }
+
+        $interfaceIps = [];
+        foreach ($ifIndexRows as $oid => $value) {
+            $ipAddress = $this->extractIpAddressFromOidSuffix($oid, self::OID_IP_ADDR_ENTRY_IFINDEX);
+            if ($ipAddress === null) {
+                continue;
+            }
+            if (!empty($knownIps) && !isset($knownIps[$ipAddress])) {
+                continue;
+            }
+
+            $ifIndex = (int)trim((string)$value);
+            if ($ifIndex <= 0) {
+                continue;
+            }
+            if (!isset($interfaceIps[$ifIndex])) {
+                $interfaceIps[$ifIndex] = [
+                    'if_index' => $ifIndex,
+                    'ip_address' => $ipAddress,
+                    'source' => 'snmp:ipAddrTable',
+                ];
+            }
+        }
+
+        return $interfaceIps;
+    }
+
+    private function extractIpAddressFromOidSuffix(string $oid, string $baseOid): ?string
+    {
+        if (strncmp($oid, $baseOid, strlen($baseOid)) !== 0) {
+            return null;
+        }
+        $suffix = ltrim(substr($oid, strlen($baseOid)), '.');
+        if ($suffix === '') {
+            return null;
+        }
+
+        $parts = array_values(array_filter(explode('.', $suffix), static fn(string $part): bool => $part !== ''));
+        if (count($parts) !== 4) {
+            return null;
+        }
+
+        $octets = [];
+        foreach ($parts as $part) {
+            if (!ctype_digit($part)) {
+                return null;
+            }
+            $value = (int)$part;
+            if ($value < 0 || $value > 255) {
+                return null;
+            }
+            $octets[] = (string)$value;
+        }
+
+        $ipAddress = implode('.', $octets);
+        return filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $ipAddress : null;
     }
 
     /**

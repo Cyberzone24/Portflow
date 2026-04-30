@@ -75,6 +75,7 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
 - `device_port.mac_address` (read-only Befund, kein expected vorgesehen)
 - `device_port_vlan.vlan` / `expected_vlan` und `tagged` / `expected_tagged` (jetzt 1:n)
 - `device_port_ip.ip` / `expected_ip`, `hostname` / `expected_hostname`, `dhcp_address` / `expected_dhcp_address`
+  - Quelle bevorzugt SNMP; falls der Hersteller Port-IP-Daten nicht sinnvoll per SNMP liefert, ist ein read-only CLI-Fallback erlaubt (z. B. Huawei), der ebenfalls nur die `current`-Spalten schreibt.
 - `device.location` / `expected_location` (Drift, falls SNMP-Topologie abweicht; vorerst nur Report)
 - `connection.device_port_source` / `expected_device_port_source` und Pendant fuer destination (LLDP/CDP-Nachbarn)
 - `metadata.status` der Ports: vom Scan nur ueber "heute genutzt"-Heuristik gesetzt
@@ -102,10 +103,18 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
 - VLAN-Reconciliation:
   - PVID-Eintrag (untagged) wird als 0..1 Zeile gefuehrt, Trunk-Allowed-VLANs als n Zeilen mit `tagged=true`.
   - `expected_*` wird beim Drift nicht automatisch ueberschrieben.
+- Port-IP-Reconciliation:
+  - Primaer ueber `IP-MIB::ipAddrTable`, konkret `ipAdEntAddr` (`1.3.6.1.2.1.4.20.1.1`) und `ipAdEntIfIndex` (`1.3.6.1.2.1.4.20.1.2`).
+  - CLI-Fallback ist dafuer im MVP nicht mehr erforderlich und nur noch ein spaeterer Notnagel fuer Sonderfaelle, in denen `ipAddrTable` auf einem Geraet unvollstaendig ist.
+  - Importiert werden nur beobachtete Werte in `device_port_ip.*`; `expected_*` bleibt unberuehrt.
+- Topologie-Reconciliation:
+  - LLDP/CDP-Nachbarn werden als Faktenbasis fuer Uplink-Kanten gesammelt.
+  - Die Topologie-Karte ist read-only und visualisiert zuerst nur erkannte Uplink-Beziehungen; spaetere Schreibaktionen auf `connection` bleiben davon getrennt.
 
 ## SNMP OID-Sets (MVP)
 - System: `1.3.6.1.2.1.1.5.0` sysName, `1.3.6.1.2.1.1.1.0` sysDescr
 - Interfaces: `IF-MIB::ifIndex`, `ifName`, `ifAlias`, `ifAdminStatus`, `ifOperStatus`, `ifSpeed/ifHighSpeed`, `ifPhysAddress`, `ifLastChange`, `ifInOctets/ifOutOctets` (oder `ifHC*`)
+- IP-Adressen: `IP-MIB::ipAddrTable`, insbesondere `ipAdEntAddr` und `ipAdEntIfIndex`
 - Bridge/VLAN: `Q-BRIDGE-MIB::dot1qPvid`, `dot1qVlanCurrentEgressPorts`, `dot1qVlanStaticEgressPorts`, `dot1qVlanStaticUntaggedPorts`
 - LLDP: `LLDP-MIB::lldpRemTable` (chassisId, portId, sysName)
 - CDP (optional, Cisco): `CISCO-CDP-MIB::cdpCacheTable`
@@ -115,6 +124,7 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
 - `includes/core/snmp_scanner.php` (neu): Klasse `SnmpScanner` mit
   - `scanSwitch(string $switchName, string $trigger = 'manual'): array` (legt `snmp_scan_run` an, ruft Module, schreibt `device_port_snmp_state`, gibt Reconciliation-Ergebnis zurueck).
   - Helper `runSnmpWalk(...)` und `runSnmpGet(...)` mit der bereits bestehenden Algorithmus-Normalisierung.
+  - Port-IP-Import erfolgt direkt aus `ipAddrTable`; herstellerspezifische Fallback-Collector sind dafuer vorerst nicht Teil des MVP.
 - `includes/core/port_reconciler.php` (neu): Funktionen
   - `applyInterfaceFacts($db, $deviceUuid, $facts, $runUuid)`
   - `applyVlanFacts($db, $deviceUuid, $facts, $runUuid)`
@@ -123,6 +133,7 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
 - `includes/core/snmp_naming.php` (neu, Erweiterungspunkt): `normalizePortName(string $ifName, array $profile): string` (default: identity).
 - `settings.php`: pro Switch im Inventar zusaetzlicher Button "Scan jetzt" (Cyan, Icon `radar`), zusaetzlich globaler Button "Alle scannen".
 - `reports.php` (neu) ODER neuer Tab in `itam.php`: Drift-Uebersicht.
+- `reports.php` oder eigener Reports-Abschnitt: Topologie-Karte fuer erkannte Uplink-Beziehungen zwischen Switches auf Basis von LLDP/CDP und Inventar-Mapping.
 - `automation.json`: zusaetzliche Templates fuer `set_port_pvid`, `set_trunk_allowed_vlans`, `set_port_description`, `port_shutdown`, `port_no_shutdown`.
 - `scheduler.php`: Task `snmp_scan_all` mit Intervall aus `automation/settings.json -> snmp_scan.interval_minutes`.
 - `lang/de-DE.php`, `lang/en-EN.php`: neue Schluessel fuer Drift-Klassen, Buttons, Severity.
@@ -141,6 +152,11 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
   - Orange `wrench`: "Korrigieren" -> erzeugt Pending Change (Template + Variablen).
   - Grau `eye-off`: "Ignorieren" (nur fuer aktuelle Drift-Anzeige; bei naechstem Scan neu bewertet).
 
+### Topologie-Karte
+- Visualisiert erkannte Uplink-Beziehungen zwischen Switches aus LLDP/CDP-Fakten.
+- Knoten: Switch bzw. Stack-Mgmt-Device; Kanten: erkannte Uplinks inkl. lokalem Port, Remote-Port, letzter Scan.
+- Erste Ausbaustufe read-only; spaeter optional Verlinkung in Drift-Details oder Portansichten.
+
 ## Sicherheit
 - SNMP-Credentials kommen aus `AutomationStore` (verschluesselt).
 - Discovery ist read-only (snmpget/snmpwalk); Korrekturen ausschliesslich ueber bestehende SSH/Pending-Changes-Pipeline.
@@ -154,14 +170,16 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
    - Neue View `device_port_drift` (UNION ALL pro Drift-Klasse).
 3. SNMP Discovery Engine (`snmp_scanner.php` + `snmp_naming.php`).
 4. Reconciler (`port_reconciler.php`).
-5. "Scan jetzt"-Button in `settings.php` Inventar plus "Alle scannen".
-6. Reports-UI (zuerst read-only).
-7. Aktion "Expected angleichen".
-8. Aktion "Korrigieren" via `pending_changes` mit neuen Templates.
-9. Scheduler-Task `snmp_scan_all`.
-10. Folge-PR: itam-Forms/Lang fuer VLAN 1:n nachziehen.
-11. LLDP/CDP-Nachbarn und `connection`-Drift.
-12. ARP/MAC-Reports.
+5. Port-IP-Import: zuerst SNMP-basiert, bei Bedarf mit optionalem CLI-Fallback pro Hersteller (startend mit Huawei).
+6. "Scan jetzt"-Button in `settings.php` Inventar plus "Alle scannen".
+7. Reports-UI (zuerst read-only).
+8. Topologie-Karte der Uplinks auf Basis von LLDP/CDP und Inventar-Mapping.
+9. Aktion "Expected angleichen".
+10. Aktion "Korrigieren" via `pending_changes` mit neuen Templates.
+11. Scheduler-Task `snmp_scan_all`.
+12. Folge-PR: itam-Forms/Lang fuer VLAN 1:n nachziehen.
+13. LLDP/CDP-Nachbarn und `connection`-Drift.
+14. ARP/MAC-Reports.
 
 ## Qualitaetscheck pro Schritt
 - `php -l` fuer geaenderte PHP-Dateien.
