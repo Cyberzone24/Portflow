@@ -27,6 +27,7 @@ class SnmpScanner
     public const OID_IF_HC_OUT_OCTETS  = '.1.3.6.1.2.1.31.1.1.1.10';
     public const OID_IP_ADDR_ENTRY_ADDR = '.1.3.6.1.2.1.4.20.1.1';
     public const OID_IP_ADDR_ENTRY_IFINDEX = '.1.3.6.1.2.1.4.20.1.2';
+    public const OID_IP_NET_TO_PHYSICAL_PHYS_ADDRESS = '.1.3.6.1.2.1.4.35.1.4';
     public const OID_IP_NET_TO_MEDIA_PHYS_ADDRESS = '.1.3.6.1.2.1.4.22.1.2';
     public const OID_DOT1Q_PVID        = '.1.3.6.1.2.1.17.7.1.4.5.1.1';
     /** Q-BRIDGE-MIB dot1qVlanCurrentEgressPorts: index = timeMark.vlanId, value = OCTET STRING bitmap (bridge ports). */
@@ -420,6 +421,83 @@ class SnmpScanner
      * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
      */
     private function collectNodeIpsFromArpTable(array $config): array
+    {
+        $nodeIps = $this->collectNodeIpsFromIpNetToPhysicalTable($config);
+        if (!empty($nodeIps)) {
+            return $nodeIps;
+        }
+
+        return $this->collectNodeIpsFromIpNetToMediaTable($config);
+    }
+
+    /**
+     * Collect IPv4 ARP entries from IP-MIB::ipNetToPhysicalTable and map them by MAC address.
+     *
+     * Index format: ifIndex.inetAddressType.inetAddress
+     * For IPv4 this becomes: ifIndex.1.a.b.c.d
+     *
+     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
+     */
+    private function collectNodeIpsFromIpNetToPhysicalTable(array $config): array
+    {
+        $result = $this->client->runWalkHex($config, self::OID_IP_NET_TO_PHYSICAL_PHYS_ADDRESS);
+        if (!$result['ok']) {
+            return [];
+        }
+
+        $parsed = SnmpClient::parseWalkLines($result['lines']);
+        $nodeIps = [];
+        $prefix = self::OID_IP_NET_TO_PHYSICAL_PHYS_ADDRESS . '.';
+        foreach ($parsed as $oid => $value) {
+            if (strpos($oid, $prefix) !== 0) {
+                continue;
+            }
+
+            $suffix = substr($oid, strlen($prefix));
+            $parts = array_values(array_filter(explode('.', $suffix), static fn(string $part): bool => $part !== ''));
+            if (count($parts) < 6) {
+                continue;
+            }
+
+            $ifIndex = (int)array_shift($parts);
+            if ($ifIndex <= 0) {
+                continue;
+            }
+
+            $addressType = (int)array_shift($parts);
+            if ($addressType !== 1) {
+                continue;
+            }
+
+            $ipAddress = $this->buildIpv4AddressFromParts(array_slice($parts, 0, 4));
+            if ($ipAddress === null) {
+                continue;
+            }
+
+            $mac = $this->normalizeMacValue((string)$value);
+            if ($mac === '') {
+                continue;
+            }
+
+            if (!isset($nodeIps[$mac])) {
+                $nodeIps[$mac] = [
+                    'if_index' => $ifIndex,
+                    'ip' => $ipAddress,
+                    'hostname' => '',
+                    'source' => 'snmp:ipNetToPhysical',
+                ];
+            }
+        }
+
+        return $nodeIps;
+    }
+
+    /**
+     * Collect IPv4 ARP entries from legacy IP-MIB::ipNetToMediaTable and map them by MAC address.
+     *
+     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
+     */
+    private function collectNodeIpsFromIpNetToMediaTable(array $config): array
     {
         $result = $this->client->runWalkHex($config, self::OID_IP_NET_TO_MEDIA_PHYS_ADDRESS);
         if (!$result['ok']) {

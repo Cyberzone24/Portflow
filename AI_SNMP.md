@@ -118,7 +118,7 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
 - Bridge/VLAN: `Q-BRIDGE-MIB::dot1qPvid`, `dot1qVlanCurrentEgressPorts`, `dot1qVlanStaticEgressPorts`, `dot1qVlanStaticUntaggedPorts`
 - LLDP: `LLDP-MIB::lldpRemTable` (chassisId, portId, sysName)
 - CDP (optional, Cisco): `CISCO-CDP-MIB::cdpCacheTable`
-- ARP/MAC (optional, spaeter): `BRIDGE-MIB::dot1dTpFdbTable`, `IP-MIB::ipNetToPhysicalTable`
+- ARP/MAC (optional, spaeter): `BRIDGE-MIB::dot1dTpFdbTable`, primaer `IP-MIB::ipNetToPhysicalTable`, nur als Fallback `IP-MIB::ipNetToMediaTable`
 
 ## Architektur und neue Dateien
 - `includes/core/snmp_scanner.php` (neu): Klasse `SnmpScanner` mit
