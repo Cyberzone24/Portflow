@@ -2251,6 +2251,9 @@
 
                 $allowedLevels = ['off', 'minimal', 'progress', 'all'];
                 $allowedChannels = getAvailableNotificationChannels();
+                $fallbackChannel = in_array('mail', $allowedChannels, true)
+                    ? 'mail'
+                    : (string)($allowedChannels[0] ?? 'mail');
 
                 $settings = getSessionUserSettings();
                 $settings['notifications']['level'] = in_array($level, $allowedLevels, true)
@@ -2258,15 +2261,25 @@
                     : 'minimal';
                 $settings['notifications']['channel'] = in_array($channel, $allowedChannels, true)
                     ? $channel
-                    : 'mail';
+                    : $fallbackChannel;
                 if ($slackWebhook !== '' && !configIsValidSlackWebhookUrl($slackWebhook)) {
                     setSettingsFeedback('notifications', false, 'Slack Webhook URL ist ungueltig.');
                     $logger->log('notification preferences update failed: invalid slack webhook', 2, echoToWeb: true);
                     header('Location: ?site=notifications');
                     break;
                 }
-                $settings['notifications']['slack_webhook_url'] = $slackWebhook;
-                $settings['notifications']['telegram_chat_id'] = $telegramChatId;
+
+                if ($settings['notifications']['channel'] === 'slack' && in_array('slack', $allowedChannels, true)) {
+                    $settings['notifications']['slack_webhook_url'] = $slackWebhook;
+                } elseif (!isset($settings['notifications']['slack_webhook_url'])) {
+                    $settings['notifications']['slack_webhook_url'] = '';
+                }
+
+                if ($settings['notifications']['channel'] === 'telegram' && in_array('telegram', $allowedChannels, true)) {
+                    $settings['notifications']['telegram_chat_id'] = $telegramChatId;
+                } elseif (!isset($settings['notifications']['telegram_chat_id'])) {
+                    $settings['notifications']['telegram_chat_id'] = '';
+                }
 
                 saveUserSettings($db_adapter, $settings, (string)$_SESSION['uuid']);
                 setSettingsFeedback('notifications', true, 'Benachrichtigungseinstellungen gespeichert.');
@@ -4519,11 +4532,18 @@ switch ($site) {
     case 'notifications':
         $csrf = $auth->csrf();
         $userSettings = getSessionUserSettings();
+        $notificationSettings = is_array($userSettings['notifications'] ?? null) ? $userSettings['notifications'] : [];
         $notificationLevel = (string)($userSettings['notifications']['level'] ?? 'minimal');
         $notificationChannel = (string)($userSettings['notifications']['channel'] ?? 'mail');
         $notificationTelegramChatId = (string)($userSettings['notifications']['telegram_chat_id'] ?? '');
         $channelReadiness = getNotificationChannelReadiness();
         $availableChannels = getAvailableNotificationChannels();
+        $slackChannelAvailable = in_array('slack', $availableChannels, true);
+        $telegramChannelAvailable = in_array('telegram', $availableChannels, true);
+        $mailChannelAvailable = in_array('mail', $availableChannels, true);
+        if (!in_array($notificationChannel, $availableChannels, true)) {
+            $notificationChannel = $mailChannelAvailable ? 'mail' : (string)($availableChannels[0] ?? 'mail');
+        }
 
         $levelOff = $notificationLevel === 'off' ? 'selected' : '';
         $levelMinimal = $notificationLevel === 'minimal' ? 'selected' : '';
@@ -4575,6 +4595,11 @@ switch ($site) {
         $telegramLinkUsername = escapeSettingValue((string)($notificationSettings['telegram_link_username'] ?? ''));
         $telegramLinkCommand = $telegramLinkToken !== '' ? '/start ' . $telegramLinkToken : '/start <token>';
         $telegramLinkCommandSafe = escapeSettingValue($telegramLinkCommand);
+        $slackFieldHiddenClass = $notificationChannel === 'slack' && $slackChannelAvailable ? '' : ' hidden';
+        $telegramFieldHiddenClass = $notificationChannel === 'telegram' && $telegramChannelAvailable ? '' : ' hidden';
+        $mailInfoHiddenClass = $notificationChannel === 'mail' ? '' : ' hidden';
+        $slackAvailableJs = $slackChannelAvailable ? 'true' : 'false';
+        $telegramAvailableJs = $telegramChannelAvailable ? 'true' : 'false';
         $channelOptionsHtml = '';
         foreach ($availableChannels as $channelOption) {
             $selected = $notificationChannel === $channelOption ? 'selected' : '';
@@ -4593,73 +4618,75 @@ switch ($site) {
         <div class="h-fit w-full p-4">
             <div class="max-w-3xl">
                 <div class="text-xl font-bold pb-2">Benachrichtigungen</div>
-                <p class="text-sm text-gray-600 pb-6">Globales Benachrichtigungssystem mit Levels und kanalbasiertem Versand (aktuell: Mail).</p>
+                <p class="text-sm text-gray-600 pb-6">Persoenliche Benachrichtigungseinstellungen mit kanalbasiertem Versand. Slack- und Telegram-Felder erscheinen nur, wenn der Kanal global verfuegbar und von dir ausgewaehlt ist.</p>
                 {$notificationFeedbackHtml}
 
                 <form action="?set=notification_preferences" method="post" class="space-y-5">
                     <input type="hidden" name="csrf" value="$csrf">
 
-                    <div>
-                        <label class="block mb-2 text-sm font-semibold" for="notification_level">Benachrichtigungslevel</label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_level" name="notification_level">
-                            <option value="off" $levelOff>Aus</option>
-                            <option value="minimal" $levelMinimal>Minimal (fehlgeschlagene Logins)</option>
-                            <option value="progress" $levelProgress>Fortschritt (Minimal + Tageszusammenfassung + Abweichungen)</option>
-                            <option value="all" $levelAll>Alles (Fortschritt + erfolgreiche Logins)</option>
-                        </select>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="rounded-2xl border border-slate-200 p-4">
+                            <label class="block mb-2 text-sm font-semibold" for="notification_level">Benachrichtigungslevel</label>
+                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_level" name="notification_level">
+                                <option value="off" $levelOff>Aus</option>
+                                <option value="minimal" $levelMinimal>Minimal</option>
+                                <option value="progress" $levelProgress>Fortschritt</option>
+                                <option value="all" $levelAll>Alles</option>
+                            </select>
+                            <div class="pt-2 text-xs text-gray-600">Minimal: fehlgeschlagene Logins. Fortschritt: zusaetzlich Tageszusammenfassungen und Abweichungen. Alles: auch erfolgreiche Logins.</div>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 p-4">
+                            <label class="block mb-2 text-sm font-semibold" for="notification_channel">Kanal</label>
+                            <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_channel" name="notification_channel">
+                                $channelOptionsHtml
+                            </select>
+                            <div class="pt-2 text-xs text-gray-600">Es werden nur Kanaele angeboten, die global aktiviert und einsatzbereit sind.</div>
+                        </div>
                     </div>
 
-                    <div>
-                        <label class="block mb-2 text-sm font-semibold" for="notification_channel">Kanal</label>
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_channel" name="notification_channel">
-                            $channelOptionsHtml
-                        </select>
+                    <div class="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
+                        <div class="font-semibold text-gray-900 pb-2">Kanalstatus</div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div class="rounded-xl bg-slate-50 px-3 py-2">Mail: bereit</div>
+                            <div class="rounded-xl bg-slate-50 px-3 py-2">Slack: $slackStatusSafe</div>
+                            <div class="rounded-xl bg-slate-50 px-3 py-2">Telegram: $telegramStatusSafe</div>
+                        </div>
                     </div>
 
-                    <div>
+                    <div id="notification_mail_info" class="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-gray-700{$mailInfoHiddenClass}">
+                        Mail wird ueber den global konfigurierten Versand in der System-Konfiguration ausgeliefert. Fuer Mail sind keine zusaetzlichen persoenlichen Felder erforderlich.
+                    </div>
+
+                    <div id="notification_slack_fields" class="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-gray-700{$slackFieldHiddenClass}">
                         <label class="block mb-2 text-sm font-semibold" for="notification_slack_webhook_url">Slack Webhook (optional, pro Nutzer/Team)</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_slack_webhook_url" type="text" name="notification_slack_webhook_url" value="{$notificationSlackWebhookSafe}" placeholder="https://hooks.slack.com/services/...">
-                        <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Slack-Benachrichtigungen ueber deinen persoenlichen oder Team-Webhook gesendet.</div>
+                        <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Slack-Benachrichtigungen ueber deinen persoenlichen oder Team-Webhook gesendet. Ohne eigenen Webhook nutzt Portflow den globalen Slack-Kanal, sofern vorhanden.</div>
                     </div>
 
-                    <div>
-                        <label class="block mb-2 text-sm font-semibold" for="notification_telegram_chat_id">Telegram Chat-ID (optional, pro Nutzer)</label>
-                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_telegram_chat_id" type="text" name="notification_telegram_chat_id" value="{$notificationTelegramChatIdSafe}" placeholder="z.B. 123456789 oder -100...">
-                        <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Telegram-Benachrichtigungen an deine persoenliche Chat-ID gesendet.</div>
+                    <div id="notification_telegram_fields" class="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-gray-700 space-y-4{$telegramFieldHiddenClass}">
+                        <div>
+                            <label class="block mb-2 text-sm font-semibold" for="notification_telegram_chat_id">Telegram Chat-ID (optional, pro Nutzer)</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_telegram_chat_id" type="text" name="notification_telegram_chat_id" value="{$notificationTelegramChatIdSafe}" placeholder="z.B. 123456789 oder -100...">
+                            <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Telegram-Benachrichtigungen an deine persoenliche Chat-ID gesendet. Andernfalls wird die globale Chat-ID verwendet, wenn sie vorhanden ist.</div>
+                        </div>
+
+                        <div class="rounded-xl bg-slate-50 px-4 py-4 text-sm text-gray-700 space-y-3">
+                            <div class="font-semibold text-gray-900">Telegram-Onboarding</div>
+                            <div>Gefuehrter Flow: Link-Code erzeugen, dem Bot <span class="font-mono">{$telegramLinkCommandSafe}</span> schicken, dann Verknuepfung pruefen.</div>
+                            <div>Aktiver Link-Code: <span class="font-mono">{$telegramLinkToken}</span></div>
+                            <div>Link gestartet: <span class="font-mono">{$telegramLinkStartedAt}</span></div>
+                            <div>Letzte erfolgreiche Verknuepfung: <span class="font-mono">{$telegramLinkConfirmedAt}</span></div>
+                            <div>Telegram Username: <span class="font-mono">{$telegramLinkUsername}</span></div>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="submit" formaction="?set=notification_telegram_link_start" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Link-Code erzeugen</button>
+                                <button type="submit" formaction="?set=notification_telegram_link_refresh" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram-Verknuepfung pruefen</button>
+                                <button type="submit" formaction="?set=notification_telegram_disconnect" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram trennen</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
                         Versandplanung fuer Tageszusammenfassungen wird ueber <span class="font-mono">NOTIFICATION_DAILY_TIME</span> und <span class="font-mono">NOTIFICATION_TIMEZONE</span> in der .env gesteuert.
-                    </div>
-
-                    <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
-                        <div>Kanalstatus:</div>
-                        <div>Mail: bereit</div>
-                        <div>Slack: $slackStatusSafe</div>
-                        <div>Telegram: $telegramStatusSafe</div>
-                    </div>
-
-                    <div class="rounded-xl border border-slate-200 px-4 py-4 text-sm text-gray-700 space-y-3">
-                        <div class="font-semibold text-gray-900">Telegram-Onboarding</div>
-                        <div>Gefuehrter Flow: Link-Code erzeugen, dem Bot <span class="font-mono">{$telegramLinkCommandSafe}</span> schicken, dann Verknuepfung pruefen.</div>
-                        <div>Aktiver Link-Code: <span class="font-mono">{$telegramLinkToken}</span></div>
-                        <div>Link gestartet: <span class="font-mono">{$telegramLinkStartedAt}</span></div>
-                        <div>Letzte erfolgreiche Verknuepfung: <span class="font-mono">{$telegramLinkConfirmedAt}</span></div>
-                        <div>Telegram Username: <span class="font-mono">{$telegramLinkUsername}</span></div>
-                        <div class="flex flex-wrap gap-2">
-                            <form action="?set=notification_telegram_link_start" method="post" class="m-0">
-                                <input type="hidden" name="csrf" value="$csrf">
-                                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Link-Code erzeugen</button>
-                            </form>
-                            <form action="?set=notification_telegram_link_refresh" method="post" class="m-0">
-                                <input type="hidden" name="csrf" value="$csrf">
-                                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram-Verknuepfung pruefen</button>
-                            </form>
-                            <form action="?set=notification_telegram_disconnect" method="post" class="m-0">
-                                <input type="hidden" name="csrf" value="$csrf">
-                                <button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram trennen</button>
-                            </form>
-                        </div>
                     </div>
 
                     <div class="pb-2 flex justify-between items-center">
@@ -4668,6 +4695,40 @@ switch ($site) {
                 </form>
             </div>
         </div>
+        <script>
+            (function() {
+                const channelSelect = document.getElementById('notification_channel');
+                const mailInfo = document.getElementById('notification_mail_info');
+                const slackFields = document.getElementById('notification_slack_fields');
+                const telegramFields = document.getElementById('notification_telegram_fields');
+                const slackAvailable = {$slackAvailableJs};
+                const telegramAvailable = {$telegramAvailableJs};
+
+                function setHiddenState(element, hidden) {
+                    if (!element) {
+                        return;
+                    }
+                    element.classList.toggle('hidden', hidden);
+                }
+
+                function updateNotificationChannelFields() {
+                    if (!channelSelect) {
+                        return;
+                    }
+
+                    const selectedChannel = channelSelect.value;
+                    setHiddenState(mailInfo, selectedChannel !== 'mail');
+                    setHiddenState(slackFields, selectedChannel !== 'slack' || !slackAvailable);
+                    setHiddenState(telegramFields, selectedChannel !== 'telegram' || !telegramAvailable);
+                }
+
+                if (channelSelect) {
+                    channelSelect.addEventListener('change', updateNotificationChannelFields);
+                }
+
+                updateNotificationChannelFields();
+            })();
+        </script>
         HTML;
         break;
     case 'configuration':
