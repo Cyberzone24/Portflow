@@ -44,14 +44,15 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         </button>
     </div>
 
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-4">
-            <p id="count" class="text-sm font-semibold text-slate-700">Ketten: 0</p>
+    <div class="mb-3 grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
+        <div class="inline-flex flex-wrap items-center gap-4">
+            <p id="count" class="text-sm font-semibold text-slate-700">Datensätze: 0</p>
             <p id="resultSummary" class="text-sm text-slate-500">Zeige 0-0 von 0</p>
         </div>
-        <div class="flex items-center gap-2 text-sm">
+        <div id="pagination" class="flex flex-row justify-center"></div>
+        <div class="inline-flex items-center justify-end gap-2 text-sm">
             <label for="table_limit_1" class="text-slate-600">Anzahl:</label>
-            <select id="table_limit_1" name="limit" class="rounded-full border border-slate-300 px-3 py-1">
+            <select id="table_limit_1" name="limit" class="rounded-full border border-slate-300 bg-white px-3 py-1.5">
                 <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
                 <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
                 <option value="500" <?php if ($limit === 500) echo 'selected'; ?>>500</option>
@@ -60,52 +61,46 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         </div>
     </div>
 
-    <div class="mb-3 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
-        <label class="flex flex-col gap-1 text-sm text-slate-600">
-            <span>Ort</span>
-            <select id="filterRoom" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
-                <option value="">Alle Orte</option>
-            </select>
-        </label>
-        <label class="flex flex-col gap-1 text-sm text-slate-600">
-            <span>Gerätetyp</span>
-            <select id="filterEndpointType" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
-                <option value="">Alle Gerätetypen</option>
-            </select>
-        </label>
-        <label class="flex flex-col gap-1 text-sm text-slate-600">
-            <span>VLAN</span>
-            <select id="filterVlan" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
-                <option value="">Alle VLANs</option>
-            </select>
-        </label>
+    <div class="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <div class="text-sm font-semibold text-slate-900">Filter</div>
+                <div class="text-xs text-slate-500">Portketten nach Raum, Endgeraet oder VLAN eingrenzen.</div>
+            </div>
+            <button id="resetFiltersButton" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100">
+                <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                <span>Filter zuruecksetzen</span>
+            </button>
+        </div>
+        <div class="grid gap-3 md:grid-cols-3">
+            <label class="flex flex-col gap-1 text-sm text-slate-600">
+                <span>Ort</span>
+                <select id="filterRoom" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
+                    <option value="">Alle Orte</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-slate-600">
+                <span>Gerätetyp</span>
+                <select id="filterEndpointType" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
+                    <option value="">Alle Gerätetypen</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-slate-600">
+                <span>VLAN</span>
+                <select id="filterVlan" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
+                    <option value="">Alle VLANs</option>
+                </select>
+            </label>
+        </div>
     </div>
 
-    <div id="pagination" class="mb-3 flex flex-wrap items-center gap-2 text-sm"></div>
-
-    <div class="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
-        <table class="w-full min-w-[1800px] text-left text-sm text-slate-600">
-            <thead class="bg-slate-200 text-slate-900">
-                <tr>
-                    <th scope="col" class="p-2">Status</th>
-                    <th scope="col" class="p-2">Switch</th>
-                    <th scope="col" class="p-2">Switch-Port</th>
-                    <th scope="col" class="p-2">Patchpanel</th>
-                    <th scope="col" class="p-2">PP-Port</th>
-                    <th scope="col" class="p-2">Kabel</th>
-                    <th scope="col" class="p-2">Raum</th>
-                    <th scope="col" class="p-2">Wallplate</th>
-                    <th scope="col" class="p-2">WP-Port</th>
-                    <th scope="col" class="p-2">Endgerät</th>
-                    <th scope="col" class="p-2">EP-Port</th>
-                    <th scope="col" class="p-2">Hostname</th>
-                    <th scope="col" class="p-2">MAC</th>
-                    <th scope="col" class="p-2">VLAN (tagged)</th>
-                    <th scope="col" class="p-2">VLAN (untagged)</th>
-                </tr>
-            </thead>
-            <tbody id="portviewTableBody"></tbody>
-        </table>
+    <div class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+        <div class="h-full w-full overflow-x-auto overflow-y-auto">
+            <table class="w-full min-w-[1800px] table-auto text-left text-sm text-gray-500 shadow-md">
+                <thead id="portviewTableHead" class="sticky top-0 z-10 bg-white text-gray-800"></thead>
+                <tbody id="portviewTableBody"></tbody>
+            </table>
+        </div>
     </div>
 
     <div id="chainDetailDialog" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/60 p-4">
@@ -121,23 +116,28 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         </div>
     </div>
 
-    <div class="mt-3 flex items-center justify-end gap-2 text-sm">
-        <label for="table_limit_2" class="text-slate-600">Anzahl:</label>
-        <select id="table_limit_2" name="limit" class="rounded-full border border-slate-300 px-3 py-1">
-            <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
-            <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
-            <option value="500" <?php if ($limit === 500) echo 'selected'; ?>>500</option>
-            <option value="1000" <?php if ($limit === 1000) echo 'selected'; ?>>1000</option>
-        </select>
+    <div class="mt-3 grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
+        <div class="inline-flex flex-wrap items-center gap-4">
+            <p id="count_bottom" class="text-sm font-semibold text-slate-700">Datensätze: 0</p>
+            <p id="resultSummaryBottom" class="text-sm text-slate-500">Zeige 0-0 von 0</p>
+        </div>
+        <div id="pagination_bottom" class="flex flex-row justify-center"></div>
+        <div class="inline-flex items-center justify-end gap-2 text-sm">
+            <label for="table_limit_2" class="text-slate-600">Anzahl:</label>
+            <select id="table_limit_2" name="limit" class="rounded-full border border-slate-300 bg-white px-3 py-1.5">
+                <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
+                <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
+                <option value="500" <?php if ($limit === 500) echo 'selected'; ?>>500</option>
+                <option value="1000" <?php if ($limit === 1000) echo 'selected'; ?>>1000</option>
+            </select>
+        </div>
     </div>
-
-    <div id="pagination_bottom" class="mt-3 flex flex-wrap items-center gap-2 text-sm"></div>
 </div>
 
 <script>
 (function () {
-    let currentSort = 'src_device_caption';
-    let currentOrder = 'ASC';
+    let currentSort = '';
+    let currentOrder = 'asc';
     let currentQuery = '';
     let currentLimit = parseInt(document.getElementById('table_limit_1').value, 10) || 100;
     let currentPage = 1;
@@ -159,6 +159,24 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         endpointType: '',
         vlan: ''
     };
+
+    const PORTVIEW_COLUMNS = [
+        { key: 'statusValue', label: 'Status' },
+        { key: 'switchCaption', label: 'Switch' },
+        { key: 'switchPortCaption', label: 'Switch-Port' },
+        { key: 'patchpanelCaption', label: 'Patchpanel' },
+        { key: 'patchpanelPortCaption', label: 'PP-Port' },
+        { key: 'cableName', label: 'Kabel' },
+        { key: 'roomCaption', label: 'Raum' },
+        { key: 'wallplateCaption', label: 'Wallplate' },
+        { key: 'wallplatePortCaption', label: 'WP-Port' },
+        { key: 'endpointCaption', label: 'Endgerät' },
+        { key: 'endpointPortCaption', label: 'EP-Port' },
+        { key: 'endpointHostname', label: 'Hostname' },
+        { key: 'endpointMac', label: 'MAC' },
+        { key: 'vlanTaggedText', label: 'VLAN (tagged)' },
+        { key: 'vlanUntaggedText', label: 'VLAN (untagged)' }
+    ];
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -480,6 +498,144 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         };
     }
 
+    function getChainTableData(chain) {
+        const summary = summarizeChain(chain);
+        const switchConn = summary.switchConn;
+        const coreConn = summary.coreConn;
+        const endpointConn = summary.endpointConn;
+
+        const switchSideIsSrc = switchConn && String(switchConn.src_device_type || '').toLowerCase() === 'switch';
+        const coreSideIsSrc = coreConn && String(coreConn.src_device_type || '').toLowerCase() === 'patchpanel';
+        const endpointSideIsSrc = endpointConn && !['switch', 'patchpanel', 'net_outlet'].includes(String(endpointConn.src_device_type || '').toLowerCase());
+
+        const switchCaption = switchConn ? (switchSideIsSrc ? switchConn.src_device_caption : switchConn.dst_device_caption) : '--';
+        const switchPortCaption = switchConn ? (switchSideIsSrc ? switchConn.src_port_caption : switchConn.dst_port_caption) : '--';
+        const statusValue = switchConn ? (switchSideIsSrc ? switchConn.src_port_status : switchConn.dst_port_status) : '';
+        const switchVlanTagged = switchConn ? (switchSideIsSrc ? switchConn.src_vlan_tagged : switchConn.dst_vlan_tagged) : '';
+        const switchVlanUntagged = switchConn ? (switchSideIsSrc ? switchConn.src_vlan_untagged : switchConn.dst_vlan_untagged) : '';
+        const patchpanelCaption = coreConn ? (coreSideIsSrc ? coreConn.src_device_caption : coreConn.dst_device_caption) : '--';
+        const patchpanelPortCaption = coreConn ? (coreSideIsSrc ? coreConn.src_port_caption : coreConn.dst_port_caption) : '--';
+        const wallplateCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_device_caption : coreConn.src_device_caption) : '--';
+        const wallplatePortCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_port_caption : coreConn.src_port_caption) : '--';
+        const endpointCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_caption : endpointConn.dst_device_caption) : '--';
+        const endpointType = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_type : endpointConn.dst_device_type) : '';
+        const endpointPortCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_caption : endpointConn.dst_port_caption) : '--';
+        const endpointHostname = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_hostname : endpointConn.dst_port_hostname) : '--';
+        const endpointMac = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_mac : endpointConn.dst_port_mac) : '--';
+        const cableName = (switchConn && switchConn.cable_name) || (coreConn && coreConn.cable_name) || (endpointConn && endpointConn.cable_name) || '--';
+        const connectionSpeed = (switchConn && switchConn.connection_speed) || (coreConn && coreConn.connection_speed) || (endpointConn && endpointConn.connection_speed) || '';
+
+        return {
+            summary,
+            statusValue: String(statusValue || ''),
+            speedLabelText: speedLabel(connectionSpeed),
+            switchCaption: String(switchCaption || '--'),
+            switchPortCaption: String(switchPortCaption || '--'),
+            patchpanelCaption: String(patchpanelCaption || '--'),
+            patchpanelPortCaption: String(patchpanelPortCaption || '--'),
+            cableName: String(cableName || '--'),
+            roomCaption: String(summary.roomCaption || '--'),
+            wallplateCaption: String(wallplateCaption || '--'),
+            wallplatePortCaption: String(wallplatePortCaption || '--'),
+            endpointCaption: String(endpointCaption || '--'),
+            endpointType: String(endpointType || ''),
+            endpointPortCaption: String(endpointPortCaption || '--'),
+            endpointHostname: String(endpointHostname || '--'),
+            endpointMac: String(endpointMac || '--'),
+            vlanTaggedText: switchVlanTagged ? String(switchVlanTagged) : '--',
+            vlanUntaggedText: switchVlanUntagged ? String(switchVlanUntagged) : '--'
+        };
+    }
+
+    function compareSortValues(left, right) {
+        const leftValue = String(left ?? '').trim();
+        const rightValue = String(right ?? '').trim();
+
+        if (leftValue === rightValue) {
+            return 0;
+        }
+
+        const numberPattern = /^-?\d+(?:[.,]\d+)?$/;
+        if (numberPattern.test(leftValue) && numberPattern.test(rightValue)) {
+            return Number(leftValue.replace(',', '.')) - Number(rightValue.replace(',', '.'));
+        }
+
+        if (leftValue === '' || leftValue === '--') {
+            return 1;
+        }
+        if (rightValue === '' || rightValue === '--') {
+            return -1;
+        }
+
+        return leftValue.localeCompare(rightValue, 'de', { numeric: true, sensitivity: 'base' });
+    }
+
+    function sortChains(chains) {
+        if (!currentSort) {
+            return Array.isArray(chains) ? chains.slice() : [];
+        }
+
+        const direction = currentOrder === 'desc' ? -1 : 1;
+        return (Array.isArray(chains) ? chains.slice() : []).sort((leftChain, rightChain) => {
+            const leftData = getChainTableData(leftChain);
+            const rightData = getChainTableData(rightChain);
+            const result = compareSortValues(leftData[currentSort], rightData[currentSort]);
+            if (result !== 0) {
+                return result * direction;
+            }
+            return compareSortValues(leftData.switchCaption, rightData.switchCaption);
+        });
+    }
+
+    function renderTableHeader() {
+        const head = document.getElementById('portviewTableHead');
+        if (!head) {
+            return;
+        }
+
+        const cells = PORTVIEW_COLUMNS.map((column) => {
+            const isActive = currentSort === column.key;
+            const icon = isActive
+                ? (currentOrder === 'asc' ? 'arrow-up' : 'arrow-down')
+                : 'chevrons-up-down';
+            const iconClass = isActive ? 'text-slate-700' : 'text-slate-400';
+
+            return `
+                <th scope="col" class="border-b border-slate-200 bg-white p-0">
+                    <button type="button" class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm font-semibold text-slate-800 transition hover:bg-slate-100" data-sort-key="${escapeHtml(column.key)}">
+                        <span>${escapeHtml(column.label)}</span>
+                        <i data-lucide="${icon}" class="h-4 w-4 ${iconClass}"></i>
+                    </button>
+                </th>
+            `;
+        }).join('');
+
+        head.innerHTML = `<tr class="border-b bg-gray-200">${cells}</tr>`;
+
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+    }
+
+    function toggleColumnSort(sortKey) {
+        if (!sortKey) {
+            return;
+        }
+
+        if (currentSort !== sortKey) {
+            currentSort = sortKey;
+            currentOrder = 'asc';
+        } else if (currentOrder === 'asc') {
+            currentOrder = 'desc';
+        } else {
+            currentSort = '';
+            currentOrder = 'asc';
+        }
+
+        currentPage = 1;
+        loadTable();
+    }
+
     function chainMatchesFilters(chain) {
         const summary = summarizeChain(chain);
 
@@ -504,71 +660,27 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     }
 
     function buildRowForChain(chain, index) {
-        let switchConn = null;
-        let coreConn = null;
-        let endpointConn = null;
-
-        for (let conn of chain) {
-            const srcType = String(conn.src_device_type || '').toLowerCase();
-            const dstType = String(conn.dst_device_type || '').toLowerCase();
-
-            if ((srcType === 'switch' && dstType === 'patchpanel') || (srcType === 'patchpanel' && dstType === 'switch')) {
-                switchConn = conn;
-            } else if ((srcType === 'patchpanel' && dstType === 'net_outlet') || (srcType === 'net_outlet' && dstType === 'patchpanel')) {
-                coreConn = conn;
-            } else if (!['switch', 'patchpanel', 'net_outlet'].includes(srcType) || !['switch', 'patchpanel', 'net_outlet'].includes(dstType)) {
-                endpointConn = conn;
-            }
-        }
-
-        const switchSideIsSrc = switchConn && String(switchConn.src_device_type || '').toLowerCase() === 'switch';
-        const coreSideIsSrc = coreConn && String(coreConn.src_device_type || '').toLowerCase() === 'patchpanel';
-        const endpointSideIsSrc = endpointConn && !['switch', 'patchpanel', 'net_outlet'].includes(String(endpointConn.src_device_type || '').toLowerCase());
-
-        const switchCaption = switchConn ? (switchSideIsSrc ? switchConn.src_device_caption : switchConn.dst_device_caption) : '--';
-        const switchPortCaption = switchConn ? (switchSideIsSrc ? switchConn.src_port_caption : switchConn.dst_port_caption) : '--';
-        const switchPortStatus = switchConn ? (switchSideIsSrc ? switchConn.src_port_status : switchConn.dst_port_status) : '';
-        const switchVlanTagged = switchConn ? (switchSideIsSrc ? switchConn.src_vlan_tagged : switchConn.dst_vlan_tagged) : '';
-        const switchVlanUntagged = switchConn ? (switchSideIsSrc ? switchConn.src_vlan_untagged : switchConn.dst_vlan_untagged) : '';
-
-        const patchpanelCaption = coreConn ? (coreSideIsSrc ? coreConn.src_device_caption : coreConn.dst_device_caption) : '--';
-        const patchpanelPortCaption = coreConn ? (coreSideIsSrc ? coreConn.src_port_caption : coreConn.dst_port_caption) : '--';
-        const roomCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_location_caption : coreConn.src_location_caption) : '--';
-        const wallplateCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_device_caption : coreConn.src_device_caption) : '--';
-        const wallplatePortCaption = coreConn ? (coreSideIsSrc ? coreConn.dst_port_caption : coreConn.src_port_caption) : '--';
-
-        const endpointCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_caption : endpointConn.dst_device_caption) : '--';
-        const endpointType = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_type : endpointConn.dst_device_type) : '';
-        const endpointPortCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_caption : endpointConn.dst_port_caption) : '--';
-        const endpointHostname = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_hostname : endpointConn.dst_port_hostname) : '--';
-        const endpointMac = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_mac : endpointConn.dst_port_mac) : '--';
-
-        const cableName = (switchConn && switchConn.cable_name) || (coreConn && coreConn.cable_name) || (endpointConn && endpointConn.cable_name) || '--';
-        const connectionSpeed = (switchConn && switchConn.connection_speed) || (coreConn && coreConn.connection_speed) || (endpointConn && endpointConn.connection_speed) || '';
-        const speedLabelText = speedLabel(connectionSpeed);
-        const statusValue = switchPortStatus || '';
-        const iconClass = deviceIcon(endpointType);
-        const vlanTaggedText = switchVlanTagged ? String(switchVlanTagged) : '--';
-        const vlanUntaggedText = switchVlanUntagged ? String(switchVlanUntagged) : '--';
-        const statusCell = `<span class="inline-flex items-center gap-2 ${statusClass(statusValue)}">${iconClass}<span class="text-slate-700">${escapeHtml(speedLabelText)}</span></span>`;
+        const row = getChainTableData(chain);
+        const iconClass = deviceIcon(row.endpointType);
+        const statusCell = `<span class="inline-flex items-center gap-2 ${statusClass(row.statusValue)}">${iconClass}<span class="text-slate-700">${escapeHtml(row.speedLabelText)}</span></span>`;
 
         return `
-            <tr class="border-t border-slate-200 hover:bg-slate-50 cursor-pointer" data-chain-index="${index}" onclick="window.portViewApp.openChainDetail(${index})">
-                <td class="p-2 font-medium">${statusCell}</td>
-                <td class="p-2">${escapeHtml(switchCaption)}</td>
-                <td class="p-2">${escapeHtml(switchPortCaption)}</td>
-                <td class="p-2">${escapeHtml(patchpanelCaption)}</td>
-                <td class="p-2">${escapeHtml(patchpanelPortCaption)}</td>
-                <td class="p-2">${escapeHtml(cableName)}</td>
-                <td class="p-2">${escapeHtml(roomCaption)}</td>
-                <td class="p-2">${escapeHtml(wallplateCaption)}</td>
-                <td class="p-2">${escapeHtml(wallplatePortCaption)}</td>
-                <td class="p-2">${escapeHtml(endpointCaption)}</td>
-                <td class="p-2">${escapeHtml(endpointPortCaption)}</td>
-                <td class="p-2">${escapeHtml(endpointHostname)}</td>
-                <td class="p-2">${escapeHtml(endpointMac)}</td>
-                <td class="p-2 text-xs">${escapeHtml(vlanTaggedText)}</td>
-                <td class="p-2 text-xs">${escapeHtml(vlanUntaggedText)}</td>
+            <tr class="cursor-pointer border-b border-slate-200 transition hover:bg-slate-50" data-chain-index="${index}" onclick="window.portViewApp.openChainDetail(${index})">
+                <td class="px-3 py-2.5 font-medium align-top whitespace-nowrap">${statusCell}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.switchCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.switchPortCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.patchpanelCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.patchpanelPortCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.cableName)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.roomCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.wallplateCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.wallplatePortCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointPortCaption)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointHostname)}</td>
+                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointMac)}</td>
+                <td class="px-3 py-2.5 text-xs align-top whitespace-nowrap">${escapeHtml(row.vlanTaggedText)}</td>
+                <td class="px-3 py-2.5 text-xs align-top whitespace-nowrap">${escapeHtml(row.vlanUntaggedText)}</td>
             </tr>
         `;
     }
@@ -581,6 +693,21 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         const notice = detailNotice ? `
             <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 ${escapeHtml(detailNotice)}
+            </div>
+        ` : '';
+
+        const tracePanel = currentDetailConnectionUuid ? `
+            <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <div class="text-sm font-semibold text-slate-900">Kabel-Trace</div>
+                        <div class="text-xs text-slate-500">Verfolgt den aktuellen Verbindungsweg ueber den vorhandenen Trace-Endpunkt.</div>
+                    </div>
+                    <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100" data-action="reload-trace" title="Trace neu laden">
+                        <i data-lucide="route"></i><span>Neu laden</span>
+                    </button>
+                </div>
+                <div id="chainDetailTrace" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">Lade Kabelverlauf ...</div>
             </div>
         ` : '';
 
@@ -619,7 +746,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             </div>
         `;
 
-        return notice + addPanel + chain.map((conn, index) => {
+        return notice + tracePanel + addPanel + chain.map((conn, index) => {
             const isEditing = editingConnectionUuid === String(conn.connection_uuid || '');
             const canDeleteConnection = !isCorePatchpanelOutletConnection(conn);
             const srcCaption = escapeHtml(conn.src_device_caption || '--');
@@ -727,6 +854,105 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
             window.lucide.createIcons();
         }
+        loadCurrentChainTrace();
+    }
+
+    async function loadConnectionTrace(connectionUuid) {
+        const target = document.getElementById('chainDetailTrace');
+        if (!target || !connectionUuid) {
+            return;
+        }
+
+        target.innerHTML = '<div class="text-sm text-slate-500">Lade Kabelverlauf ...</div>';
+        try {
+            const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/cable_trace?from=' + encodeURIComponent(connectionUuid) + '&kind=connection', {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            });
+            const result = await response.json();
+            target.innerHTML = renderTraceInlineHtml(result);
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
+        } catch (error) {
+            target.innerHTML = '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">Fehler: ' + escapeHtml(error.message || error) + '</div>';
+        }
+    }
+
+    function loadCurrentChainTrace() {
+        if (!currentDetailConnectionUuid) {
+            return;
+        }
+        loadConnectionTrace(currentDetailConnectionUuid);
+    }
+
+    function renderTraceInlineHtml(result) {
+        if (!result || result.error) {
+            return '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml((result && result.error) || 'Fehler') + '</div>';
+        }
+
+        if (result.kind === 'device') {
+            const ports = Array.isArray(result.ports) ? result.ports : [];
+            if (!ports.length) {
+                return '<div class="text-xs text-slate-500">Keine verbundenen Ports.</div>';
+            }
+            return ports.map((portTrace) => '<div class="mb-3">' + renderTraceInlineHtml(portTrace) + '</div>').join('');
+        }
+
+        const startLabel = result.start && (result.start.cable_name || result.start.caption)
+            ? '<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Start: ' + escapeHtml(result.start.cable_name || result.start.caption) + '</div>'
+            : '';
+        const branches = Array.isArray(result.branches) ? result.branches : [];
+        if (!branches.length) {
+            return startLabel + '<div class="text-xs text-slate-500">Keine weiteren Verbindungen ab diesem Punkt.</div>';
+        }
+
+        return startLabel + branches.map((branch, index) => {
+            const items = [];
+            if (result.kind === 'device_port' && result.start) {
+                items.push(traceNodePill(result.start));
+            }
+            branch.forEach((hop) => {
+                items.push(traceCableArrow(hop.cable || {}));
+                items.push(traceNodePill(hop.port));
+            });
+            return '<div class="mb-2"><div class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pfad ' + (index + 1) + '</div><div class="flex flex-wrap items-stretch gap-1">' + items.join('') + '</div></div>';
+        }).join('');
+    }
+
+    function traceNodePill(node) {
+        if (!node || node.type !== 'port') {
+            return '<div class="rounded-lg border border-slate-300 bg-slate-100 p-2 text-xs text-slate-700">Unbekannt</div>';
+        }
+        const device = node.device || {};
+        const location = node.location || {};
+        const status = node.snmp && node.snmp.oper_status === 1 ? 'up' : node.snmp && node.snmp.admin_status === 2 ? 'admin_down' : node.snmp && node.snmp.oper_status === 2 ? 'down' : 'unknown';
+        const statusClassName = {
+            up: 'bg-emerald-100 text-emerald-800',
+            down: 'bg-amber-100 text-amber-800',
+            admin_down: 'bg-red-100 text-red-800',
+            unknown: 'bg-slate-100 text-slate-700'
+        }[status];
+        const endpointBadge = node.endpoint ? '<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-blue-700">Endpunkt</span>' : '';
+        const truncated = node.truncated_reason ? '<div class="mt-1 text-[10px] text-amber-700">Hinweis: ' + escapeHtml(node.truncated_reason) + '</div>' : '';
+        return '<div class="min-w-[170px] rounded-lg border border-slate-300 bg-white p-2 text-xs shadow-sm">'
+            + '<div class="flex items-center justify-between gap-1"><div class="font-bold text-slate-900">' + escapeHtml(device.caption || 'Device') + endpointBadge + '</div>'
+            + '<span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase ' + statusClassName + '">' + escapeHtml(device.type || '') + '</span></div>'
+            + (location.caption ? '<div class="text-[10px] text-slate-500">Ort: ' + escapeHtml(location.caption) + '</div>' : '')
+            + '<div class="mt-1 rounded bg-slate-50 px-1.5 py-0.5"><span class="font-semibold">Port:</span> ' + escapeHtml(node.caption || '—') + '</div>'
+            + (node.ip ? '<div class="text-[10px] text-slate-600">IP: ' + escapeHtml(node.ip) + '</div>' : '')
+            + truncated
+            + '</div>';
+    }
+
+    function traceCableArrow(edge) {
+        const parts = [];
+        if (edge.cable_name) parts.push(escapeHtml(edge.cable_name));
+        if (edge.cable_type) parts.push(escapeHtml(edge.cable_type));
+        if (edge.length) parts.push(escapeHtml(edge.length) + ' m');
+        const label = parts.length ? parts.join(' · ') : 'Kabel';
+        return '<div class="flex flex-col items-center justify-center px-1 text-slate-500"><div class="text-[9px] uppercase tracking-wider">' + label + '</div>'
+            + '<svg viewBox="0 0 60 12" width="60" height="12" class="my-0.5"><line x1="2" y1="6" x2="58" y2="6" stroke="#64748b" stroke-width="2" stroke-dasharray="4 3"/><polygon points="58,6 52,3 52,9" fill="#64748b"/></svg></div>';
     }
 
     async function saveConnectionEdit(form, extraPayload = {}) {
@@ -966,11 +1192,19 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
     function renderPagination(totalCount) {
         const totalPages = Math.ceil(totalCount / currentLimit);
-        if (totalPages <= 1) return;
-
         const container = document.getElementById('pagination');
         const containerBottom = document.getElementById('pagination_bottom');
-        let html = '';
+        if (!container || !containerBottom) {
+            return;
+        }
+
+        if (totalPages <= 1) {
+            container.innerHTML = '';
+            containerBottom.innerHTML = '';
+            return;
+        }
+
+        let html = '<div class="inline-flex flex-wrap items-center gap-2"><span class="mr-1 text-sm text-slate-500">Seite:</span>';
 
         const groupSize = 10;
         const currentGroup = Math.floor((currentPage - 1) / groupSize);
@@ -978,17 +1212,19 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         const groupEnd = Math.min(groupStart + groupSize - 1, totalPages);
 
         if (currentGroup > 0) {
-            html += `<button class="rounded-full border border-slate-300 px-3 py-1 hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupStart - 1})">←</button>`;
+            html += `<button type="button" class="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupStart - 1})">←</button>`;
         }
 
         for (let i = groupStart; i <= groupEnd; i++) {
             const isActive = i === currentPage;
-            html += `<button class="rounded-full ${isActive ? 'bg-blue-500 text-white' : 'border border-slate-300 hover:bg-slate-100'} px-3 py-1" onclick="window.portViewApp.goToPage(${i})">${i}</button>`;
+            html += `<button type="button" class="inline-flex h-9 min-w-9 items-center justify-center rounded-full px-3 text-sm font-semibold transition ${isActive ? 'bg-blue-500 text-white shadow-sm' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'}" onclick="window.portViewApp.goToPage(${i})">${i}</button>`;
         }
 
         if (groupEnd < totalPages) {
-            html += `<button class="rounded-full border border-slate-300 px-3 py-1 hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupEnd + 1})">→</button>`;
+            html += `<button type="button" class="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupEnd + 1})">→</button>`;
         }
+
+        html += '</div>';
 
         container.innerHTML = html;
         containerBottom.innerHTML = html;
@@ -1323,6 +1559,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         const roomSelect = document.getElementById('filterRoom');
         const endpointSelect = document.getElementById('filterEndpointType');
         const vlanSelect = document.getElementById('filterVlan');
+        const resetButton = document.getElementById('resetFiltersButton');
 
         roomSelect.addEventListener('change', () => {
             filterState.room = roomSelect.value;
@@ -1341,9 +1578,26 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             currentPage = 1;
             loadTable();
         });
+
+        if (resetButton) {
+            resetButton.addEventListener('click', () => {
+                filterState = {
+                    room: '',
+                    endpointType: '',
+                    vlan: ''
+                };
+                roomSelect.value = '';
+                endpointSelect.value = '';
+                vlanSelect.value = '';
+                currentPage = 1;
+                loadTable();
+            });
+        }
     }
 
     async function loadTable() {
+        renderTableHeader();
+
         const params = new URLSearchParams({
             table: 'portview',
             limit: '5000',
@@ -1374,9 +1628,10 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             const filteredChains = allChainsCache
                 .filter(chain => chainMatchesQuery(chain, currentQuery))
                 .filter(chain => chainMatchesFilters(chain));
-            const totalCount = filteredChains.length;
+            const sortedChains = sortChains(filteredChains);
+            const totalCount = sortedChains.length;
             const start = (currentPage - 1) * currentLimit;
-            const chains = filteredChains.slice(start, start + currentLimit);
+            const chains = sortedChains.slice(start, start + currentLimit);
 
             visibleChainsCache = chains;
 
@@ -1390,8 +1645,11 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
             const startIdx = (currentPage - 1) * currentLimit + 1;
             const endIdx = Math.min(currentPage * currentLimit, totalCount);
-            document.getElementById('count').textContent = `Ketten: ${totalCount}`;
-            document.getElementById('resultSummary').textContent = `Zeige ${totalCount === 0 ? 0 : startIdx}-${endIdx} von ${totalCount}`;
+            const summaryText = `Zeige ${totalCount === 0 ? 0 : startIdx}-${endIdx} von ${totalCount}`;
+            document.getElementById('count').textContent = `Datensätze: ${totalCount}`;
+            document.getElementById('count_bottom').textContent = `Datensätze: ${totalCount}`;
+            document.getElementById('resultSummary').textContent = summaryText;
+            document.getElementById('resultSummaryBottom').textContent = summaryText;
 
             renderPagination(totalCount);
 
@@ -1423,6 +1681,16 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         loadTable();
     });
 
+    let searchInputDebounce = null;
+    document.querySelector('input[name="search"]').addEventListener('input', (e) => {
+        window.clearTimeout(searchInputDebounce);
+        searchInputDebounce = window.setTimeout(() => {
+            currentQuery = e.target.value;
+            currentPage = 1;
+            loadTable();
+        }, 180);
+    });
+
     document.querySelector('input[name="search"]').addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             e.target.value = '';
@@ -1446,6 +1714,15 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         document.cookie = `table_limit=${currentLimit}; path=/`;
         currentPage = 1;
         loadTable();
+    });
+
+    document.getElementById('portviewTableHead').addEventListener('click', (e) => {
+        const button = e.target.closest('[data-sort-key]');
+        if (!button) {
+            return;
+        }
+
+        toggleColumnSort(String(button.dataset.sortKey || ''));
     });
 
     document.getElementById('chainDetailDialog').addEventListener('click', (e) => {
@@ -1516,6 +1793,11 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             if (action === 'add-connection') {
                 const form = actionButton.closest('[data-connection-add-form="1"]');
                 addConnectionFromForm(form);
+                return;
+            }
+
+            if (action === 'reload-trace') {
+                loadCurrentChainTrace();
                 return;
             }
         }
