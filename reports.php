@@ -1075,6 +1075,8 @@ if ($tab === 'topology') {
                 $ifaces = is_array($det['interfaces'] ?? null) ? $det['interfaces'] : [];
                 $interfaceIps = is_array($det['interface_ips'] ?? null) ? $det['interface_ips'] : [];
                 $nodeIps = is_array($det['node_ips'] ?? null) ? $det['node_ips'] : [];
+                $nodeIpMatchCount = (int)($det['node_ip_match_count'] ?? 0);
+                $nodeIpUnmatchedCount = (int)($det['node_ip_unmatched_count'] ?? 0);
                 $mappedIpCount = count(array_filter($matched, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $unknownIpCount = count(array_filter($unknown, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $vlanSrc = (string)($det['vlan_source'] ?? '-');
@@ -1270,7 +1272,7 @@ if ($tab === 'topology') {
 
             <?php if (!empty($nodeIps)): ?>
             <details class="mt-3 rounded-xl border border-slate-300 bg-white" open>
-                <summary class="cursor-pointer border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">Rohe ARP-/Neighbor-IPs (<?php echo count($nodeIps); ?>)</summary>
+                <summary class="cursor-pointer border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">Rohe ARP-/Neighbor-IPs (<?php echo count($nodeIps); ?>) · FDB-Matches: <?php echo $nodeIpMatchCount; ?> · Ohne FDB-Match: <?php echo $nodeIpUnmatchedCount; ?></summary>
                 <div class="max-h-72 overflow-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-slate-50 text-slate-700"><tr><th class="px-3 py-1">ifIndex</th><th class="px-3 py-1">MAC</th><th class="px-3 py-1">IP</th><th class="px-3 py-1">Hostname</th><th class="px-3 py-1">Quelle</th></tr></thead>

@@ -227,12 +227,14 @@ class SnmpScanner
             // FDB / Node Tracking: walk Q-BRIDGE / BRIDGE FDB using earlier bridge-port map.
             $nodes = $this->walkFdb($config, $bridgePortToIfIndex);
             $nodeIps = $this->collectNodeIpsFromArpTable($config);
+            $nodeIpMatchedMacs = [];
             if (!empty($nodeIps) && !empty($nodes)) {
                 foreach ($nodes as $idx => $node) {
                     $mac = strtolower((string)($node['mac'] ?? ''));
                     if ($mac === '' || !isset($nodeIps[$mac])) {
                         continue;
                     }
+                    $nodeIpMatchedMacs[$mac] = true;
                     $nodes[$idx]['ip'] = (string)($nodeIps[$mac]['ip'] ?? '');
                     $nodes[$idx]['hostname'] = (string)($nodeIps[$mac]['hostname'] ?? '');
                     $nodes[$idx]['ip_source'] = (string)($nodeIps[$mac]['source'] ?? 'snmp:arp');
@@ -388,6 +390,8 @@ class SnmpScanner
                 'nodes_seen'         => count($nodes),
                 'nodes_persisted'    => $result['nodes_persisted'] ?? 0,
                 'node_ips'           => array_values($nodeIps),
+                'node_ip_match_count' => count($nodeIpMatchedMacs),
+                'node_ip_unmatched_count' => max(0, count($nodeIps) - count($nodeIpMatchedMacs)),
                 'neighbors'          => $neighbors,
                 'neighbors_persisted' => $result['neighbors_persisted'] ?? 0,
                 'interface_ips'      => array_values($interfaceIps),
