@@ -5099,6 +5099,7 @@ switch ($site) {
             'last_sent_by_channel' => [],
             'errors_by_channel' => [],
             'recent_sent' => [],
+            'recent_retry_pending' => [],
             'recent_failed' => [],
             'last_sent_at' => '',
             'last_daily_date' => '',
@@ -5470,6 +5471,32 @@ switch ($site) {
             echo '</tbody></table></div>';
         } else {
             echo '<div class="text-sm text-gray-500">Noch keine versendeten Benachrichtigungen vorhanden.</div>';
+        }
+        echo '</div>';
+
+        echo '<div class="mt-4">';
+        echo '<div class="text-sm font-semibold pb-2">Ausstehende Retries</div>';
+        $recentRetryPending = is_array($notificationOverview['recent_retry_pending'] ?? null) ? $notificationOverview['recent_retry_pending'] : [];
+        if (!empty($recentRetryPending)) {
+            echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Naechster Versuch</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Letzter Fehler</th><th class="p-2">Versuche</th></tr></thead><tbody>';
+            foreach ($recentRetryPending as $entry) {
+                $nextAttemptAt = escapeSettingValue((string)($entry['next_attempt_at'] ?? $entry['updated_at'] ?? '-'));
+                $eventType = escapeSettingValue((string)($entry['event_type'] ?? '-'));
+                $channel = escapeSettingValue((string)($entry['channel'] ?? 'mail'));
+                $recipientUser = escapeSettingValue((string)($entry['recipient_username'] ?? ''));
+                $recipientEmail = escapeSettingValue((string)($entry['recipient_email'] ?? ''));
+                $recipient = trim($recipientUser . ' <' . $recipientEmail . '>');
+                if ($recipient === '<>' || $recipient === '') {
+                    $recipient = '-';
+                }
+                $error = escapeSettingValue((string)($entry['error'] ?? '-'));
+                $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $nextAttemptAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td></tr>';
+            }
+            echo '</tbody></table></div>';
+        } else {
+            echo '<div class="text-sm text-gray-500">Keine pending Retries mit Fehlerhistorie vorhanden.</div>';
         }
         echo '</div>';
 

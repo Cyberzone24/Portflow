@@ -303,6 +303,7 @@ class NotificationCenter {
 
         $latestSentAt = null;
         $recentSent = [];
+        $recentRetryPending = [];
         $recentFailed = [];
         $byChannel = [];
         $lastSentByChannel = [];
@@ -334,6 +335,26 @@ class NotificationCenter {
             }
 
             if ($status !== 'sent') {
+                if ($status === 'pending') {
+                    $attempts = (int)($entry['attempts'] ?? 0);
+                    $errorText = trim((string)($entry['error'] ?? ''));
+                    if ($attempts > 0 || $errorText !== '') {
+                        $recentRetryPending[] = [
+                            'id' => (string)($entry['id'] ?? ''),
+                            'updated_at' => (string)($entry['next_attempt_at'] ?? $entry['created_at'] ?? ''),
+                            'next_attempt_at' => (string)($entry['next_attempt_at'] ?? ''),
+                            'created_at' => (string)($entry['created_at'] ?? ''),
+                            'event_type' => (string)($entry['event_type'] ?? ''),
+                            'title' => (string)($entry['title'] ?? ''),
+                            'recipient_username' => (string)($recipient['username'] ?? ''),
+                            'recipient_email' => (string)($recipient['email'] ?? ''),
+                            'channel' => $channel,
+                            'error' => $errorText !== '' ? $errorText : 'letzter Send fehlgeschlagen, Fehlertext fehlt',
+                            'attempts' => $attempts,
+                        ];
+                    }
+                }
+
                 if ($status === 'failed') {
                     $errorText = (string)($entry['error'] ?? 'unknown error');
                     if (!isset($errorsByChannel[$channel])) {
@@ -397,12 +418,16 @@ class NotificationCenter {
         usort($recentSent, static function (array $a, array $b): int {
             return strcmp((string)($b['sent_at'] ?? ''), (string)($a['sent_at'] ?? ''));
         });
+        usort($recentRetryPending, static function (array $a, array $b): int {
+            return strcmp((string)($b['updated_at'] ?? ''), (string)($a['updated_at'] ?? ''));
+        });
         usort($recentFailed, static function (array $a, array $b): int {
             return strcmp((string)($b['updated_at'] ?? ''), (string)($a['updated_at'] ?? ''));
         });
 
         $recentLimit = max(1, $recentLimit);
         $recentSent = array_slice($recentSent, 0, $recentLimit);
+        $recentRetryPending = array_slice($recentRetryPending, 0, $recentLimit);
         $recentFailed = array_slice($recentFailed, 0, $recentLimit);
 
         return [
@@ -411,6 +436,7 @@ class NotificationCenter {
             'last_sent_by_channel' => $lastSentByChannel,
             'errors_by_channel' => $errorsByChannel,
             'recent_sent' => $recentSent,
+            'recent_retry_pending' => $recentRetryPending,
             'recent_failed' => $recentFailed,
             'last_sent_at' => $latestSentAt?->format('c'),
             'last_daily_date' => (string)($state['last_daily_date'] ?? ''),
