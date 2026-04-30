@@ -164,6 +164,9 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         $parsed = SnmpClient::parseWalkLines($result['lines']);
         $map = [];
         foreach ($parsed as $oid => $value) {
+            if (SnmpClient::isUnsupportedResponseValue((string)$value)) {
+                continue;
+            }
             $lastDot = strrpos($oid, '.');
             if ($lastDot === false) {
                 continue;

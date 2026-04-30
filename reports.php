@@ -1305,7 +1305,7 @@ if ($tab === 'topology') {
                         <tbody>
                         <?php foreach ($rPoe as $p): ?>
                             <tr class="border-t border-slate-100">
-                                <td class="px-3 py-1 font-mono text-xs"><?php echo rep_h($p['port_idx'] ?? ''); ?></td>
+                                <td class="px-3 py-1 font-mono text-xs"><?php echo rep_h($p['port_idx'] ?? ''); ?><?php if (trim((string)($p['if_name'] ?? '')) !== ''): ?><div class="font-sans text-[11px] text-slate-500"><?php echo rep_h($p['if_name'] ?? ''); ?></div><?php endif; ?></td>
                                 <td class="px-3 py-1 text-xs"><?php echo (int)($p['admin'] ?? 0) === 1 ? 'enabled' : 'disabled'; ?></td>
                                 <td class="px-3 py-1 text-xs"><?php
                                     $det_label = match ((int)($p['detection'] ?? 0)) { 1 => 'disabled', 2 => 'searching', 3 => 'deliveringPower', 4 => 'fault', 5 => 'test', 6 => 'otherFault', default => '-' };

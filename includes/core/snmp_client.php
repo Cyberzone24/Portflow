@@ -213,6 +213,16 @@ class SnmpClient
         return $result;
     }
 
+    public static function isUnsupportedResponseValue(string $value): bool
+    {
+        $normalized = trim($value);
+        if ($normalized === '') {
+            return false;
+        }
+
+        return preg_match('/^(No Such Object|No Such Instance|End of MIB|No more variables left in this MIB View)/i', $normalized) === 1;
+    }
+
     public static function normalizeAuthProtocol(string $protocol): string
     {
         $trimmed = trim($protocol);

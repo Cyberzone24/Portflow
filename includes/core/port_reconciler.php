@@ -330,6 +330,14 @@ class PortReconciler
             $params['mac_address'] = $mac;
         }
 
+        if (array_key_exists('poe', $iface) && $iface['poe'] !== null) {
+            $poeEnabled = (bool)$iface['poe'];
+            if ((bool)($port['poe'] ?? false) !== $poeEnabled) {
+                $updates[] = 'poe = :poe';
+                $params['poe'] = $poeEnabled;
+            }
+        }
+
         if ($updates === []) {
             return;
         }

@@ -321,9 +321,20 @@ class SnmpScanner
                 }
             }
             $poePorts = [];
+            $poeByIfIndex = [];
             foreach ($poeAdmin as $idx => $admin) {
+                $ifName = '';
+                if (ctype_digit((string)$idx) && isset($ifNameMap[(int)$idx])) {
+                    $ifName = (string)$ifNameMap[(int)$idx];
+                    $poeByIfIndex[(int)$idx] = [
+                        'admin' => (int)$admin,
+                        'detection' => isset($poeDetection[$idx]) ? (int)$poeDetection[$idx] : null,
+                        'class' => isset($poeClass[$idx]) ? (int)$poeClass[$idx] : null,
+                    ];
+                }
                 $poePorts[] = [
                     'port_idx'  => (string)$idx,
+                    'if_name'   => $ifName,
                     'admin'     => (int)$admin,
                     'detection' => isset($poeDetection[$idx]) ? (int)$poeDetection[$idx] : null,
                     'class'     => isset($poeClass[$idx]) ? (int)$poeClass[$idx] : null,
@@ -395,6 +406,18 @@ class SnmpScanner
                     'tagged_vlans'          => $taggedVlans,
                     'vlan_membership_known' => $vlanMembershipKnown,
                 ];
+
+                if (isset($poeByIfIndex[$ifIdx])) {
+                    $poeState = $poeByIfIndex[$ifIdx];
+                    $interfaces[$ifIndex]['poe_admin'] = $poeState['admin'];
+                    $interfaces[$ifIndex]['poe_detection'] = $poeState['detection'];
+                    $interfaces[$ifIndex]['poe_class'] = $poeState['class'];
+                    if ($poeState['detection'] !== null) {
+                        $interfaces[$ifIndex]['poe'] = ((int)$poeState['detection'] === 3);
+                    } elseif ($poeState['admin'] !== null) {
+                        $interfaces[$ifIndex]['poe'] = ((int)$poeState['admin'] === 1);
+                    }
+                }
             }
 
             if (!empty($interfaceIps)) {
@@ -815,6 +838,9 @@ class SnmpScanner
         $parsed = SnmpClient::parseWalkLines($result['lines']);
         $map = [];
         foreach ($parsed as $oid => $value) {
+            if (SnmpClient::isUnsupportedResponseValue((string)$value)) {
+                continue;
+            }
             // Last dot-segment is the index for IF-MIB (single-key) tables.
             $lastDot = strrpos($oid, '.');
             if ($lastDot === false) {
@@ -939,6 +965,9 @@ class SnmpScanner
         $map = [];
         $baseLen = strlen($baseOid);
         foreach ($parsed as $oid => $value) {
+            if (SnmpClient::isUnsupportedResponseValue((string)$value)) {
+                continue;
+            }
             // Strip the base OID prefix and a leading dot, keep the remainder as compound index.
             if (strncmp($oid, $baseOid, $baseLen) === 0) {
                 $rest = substr($oid, $baseLen);
