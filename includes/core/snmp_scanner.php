@@ -311,19 +311,25 @@ class SnmpScanner
             $poeDetection = $this->walkMapCompound($config, self::OID_PETH_DETECTION, 2);
             $poeClass     = $this->walkMapCompound($config, self::OID_PETH_POWER_CLASS, 2);
             $poeSource    = 'POWER-ETHERNET-MIB';
-            if (empty($poeAdmin) && $scannerExtension !== null) {
+            $poeMain      = $this->walkMap($config, self::OID_PETH_MAIN_CONSUMPTION);
+            $extensionPoeData = null;
+            if ($scannerExtension !== null) {
                 $extensionPoeData = $scannerExtension->collectPoeSnapshot($this->client, $this->logger, $config);
-                if ($extensionPoeData !== null) {
+                if ($extensionPoeData !== null && !empty($extensionPoeData['admin'])) {
                     $poeAdmin = $extensionPoeData['admin'];
                     $poeDetection = $extensionPoeData['detection'];
                     $poeClass = $extensionPoeData['class'];
                     $poeSource = (string)($extensionPoeData['source'] ?? $scannerExtension->getId());
+                    if (!empty($extensionPoeData['main_consumption']) && empty($poeMain)) {
+                        $poeMain = array_values((array)$extensionPoeData['main_consumption']);
+                    }
                 }
             }
             $poePorts = [];
             $poeByIfIndex = [];
             foreach ($poeAdmin as $idx => $admin) {
                 $ifName = '';
+                $powerConsumption = null;
                 if (ctype_digit((string)$idx) && isset($ifNameMap[(int)$idx])) {
                     $ifName = (string)$ifNameMap[(int)$idx];
                     $poeByIfIndex[(int)$idx] = [
@@ -332,15 +338,21 @@ class SnmpScanner
                         'class' => isset($poeClass[$idx]) ? (int)$poeClass[$idx] : null,
                     ];
                 }
+                if ($ifName === '' && isset($extensionPoeData['port_name'][$idx])) {
+                    $ifName = trim((string)$extensionPoeData['port_name'][$idx]);
+                }
+                if (isset($extensionPoeData['consumption'][$idx])) {
+                    $powerConsumption = (int)$extensionPoeData['consumption'][$idx];
+                }
                 $poePorts[] = [
                     'port_idx'  => (string)$idx,
                     'if_name'   => $ifName,
                     'admin'     => (int)$admin,
                     'detection' => isset($poeDetection[$idx]) ? (int)$poeDetection[$idx] : null,
                     'class'     => isset($poeClass[$idx]) ? (int)$poeClass[$idx] : null,
+                    'consumption' => $powerConsumption,
                 ];
             }
-            $poeMain = $this->walkMap($config, self::OID_PETH_MAIN_CONSUMPTION);
 
             // ENTITY-MIB physical inventory (modules, SFPs, chassis).
             $entDescr  = $this->walkMap($config, self::OID_ENT_DESCR);
@@ -412,11 +424,8 @@ class SnmpScanner
                     $interfaces[$ifIndex]['poe_admin'] = $poeState['admin'];
                     $interfaces[$ifIndex]['poe_detection'] = $poeState['detection'];
                     $interfaces[$ifIndex]['poe_class'] = $poeState['class'];
-                    if ($poeState['detection'] !== null) {
-                        $interfaces[$ifIndex]['poe'] = ((int)$poeState['detection'] === 3);
-                    } elseif ($poeState['admin'] !== null) {
-                        $interfaces[$ifIndex]['poe'] = ((int)$poeState['admin'] === 1);
-                    }
+                    $interfaces[$ifIndex]['poe'] = ((int)($poeState['admin'] ?? 0) === 1)
+                        || ((int)($poeState['detection'] ?? 0) === 3);
                 }
             }
 

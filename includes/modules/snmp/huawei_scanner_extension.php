@@ -11,9 +11,14 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
 {
     private const OID_HUAWEI_VLAN_DESC = '.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.5';
     private const OID_HUAWEI_VLAN_NAME = '.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.4';
-    private const OID_HW_POE_ENABLE = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.2';
-    private const OID_HW_POE_POWER_STATUS = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.5';
-    private const OID_HW_POE_PD_CLASS = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.10';
+    private const OID_HW_POE_PORT_NAME = '.1.3.6.1.4.1.2011.5.25.195.3.1.2';
+    private const OID_HW_POE_PORT_ENABLE = '.1.3.6.1.4.1.2011.5.25.195.3.1.3';
+    private const OID_HW_POE_PORT_POWER_STATUS = '.1.3.6.1.4.1.2011.5.25.195.3.1.7';
+    private const OID_HW_POE_PORT_PD_CLASS = '.1.3.6.1.4.1.2011.5.25.195.3.1.8';
+    private const OID_HW_POE_PORT_CONSUMING_POWER = '.1.3.6.1.4.1.2011.5.25.195.3.1.10';
+    private const OID_HW_POE_SLOT_CONSUMING_POWER = '.1.3.6.1.4.1.2011.5.25.195.2.1.5';
+    private const OID_HW_POE_DEVICE_USED_POWER = '.1.3.6.1.4.1.2011.5.25.195.5.1.6';
+    private const OID_HW_POE_GLOBAL_POWER = '.1.3.6.1.4.1.2011.5.25.195.1.1';
 
     /** @var array<string,mixed> */
     private array $lastDiagnostics = [];
@@ -57,28 +62,50 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
 
     public function collectPoeSnapshot(SnmpClient $client, Logger $logger, array $config): ?array
     {
-        $hwEnable = $this->walkMap($client, $config, self::OID_HW_POE_ENABLE);
+        $hwEnable = $this->walkMap($client, $config, self::OID_HW_POE_PORT_ENABLE);
         if (empty($hwEnable)) {
             return null;
         }
 
-        $hwStatus = $this->walkMap($client, $config, self::OID_HW_POE_POWER_STATUS);
-        $hwClass = $this->walkMap($client, $config, self::OID_HW_POE_PD_CLASS);
+        $hwPortName = $this->walkMap($client, $config, self::OID_HW_POE_PORT_NAME);
+        $hwStatus = $this->walkMap($client, $config, self::OID_HW_POE_PORT_POWER_STATUS);
+        $hwClass = $this->walkMap($client, $config, self::OID_HW_POE_PORT_PD_CLASS);
+        $hwConsumingPower = $this->walkMap($client, $config, self::OID_HW_POE_PORT_CONSUMING_POWER);
+        $hwDeviceUsedPower = $this->walkMap($client, $config, self::OID_HW_POE_DEVICE_USED_POWER);
+        $hwSlotConsumingPower = $this->walkMap($client, $config, self::OID_HW_POE_SLOT_CONSUMING_POWER);
+        $hwGlobalPower = $this->walkMap($client, $config, self::OID_HW_POE_GLOBAL_POWER);
         $admin = [];
         $detection = [];
         $class = [];
+        $consumption = [];
+        $portNames = [];
         foreach ($hwEnable as $ifIndex => $enable) {
             $key = (string)$ifIndex;
-            $admin[$key] = (int)$enable;
-            $detection[$key] = isset($hwStatus[$ifIndex]) ? (int)$hwStatus[$ifIndex] : null;
-            $class[$key] = isset($hwClass[$ifIndex]) ? (int)$hwClass[$ifIndex] : null;
+            $adminValue = $this->normalizeHuaweiEnabledStatus($enable);
+            $powerStatus = (string)($hwStatus[$ifIndex] ?? '');
+            $powerMw = $this->normalizeHuaweiInteger($hwConsumingPower[$ifIndex] ?? null);
+
+            $admin[$key] = $adminValue;
+            $detection[$key] = $this->normalizeHuaweiPoeDetection($adminValue, $powerStatus, $powerMw);
+            $class[$key] = $this->normalizeHuaweiInteger($hwClass[$ifIndex] ?? null);
+            if ($powerMw !== null) {
+                $consumption[$key] = $powerMw;
+            }
+            if (isset($hwPortName[$ifIndex]) && trim((string)$hwPortName[$ifIndex]) !== '') {
+                $portNames[$key] = trim((string)$hwPortName[$ifIndex]);
+            }
         }
+
+        $mainConsumption = $this->collectHuaweiMainConsumption($hwDeviceUsedPower, $hwSlotConsumingPower, $hwGlobalPower);
 
         return [
             'admin' => $admin,
             'detection' => $detection,
             'class' => $class,
-            'source' => 'HUAWEI-POE-MIB',
+            'consumption' => $consumption,
+            'port_name' => $portNames,
+            'main_consumption' => $mainConsumption,
+            'source' => 'HUAWEI-POE-MIB::hwPoePortTable',
         ];
     }
 
@@ -179,6 +206,101 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         return $map;
+    }
+
+    private function normalizeHuaweiEnabledStatus(mixed $value): int
+    {
+        $normalized = strtolower(trim((string)$value));
+        if ($normalized === '' || $normalized === '2' || str_contains($normalized, 'disable')) {
+            return 2;
+        }
+
+        if ($normalized === '1' || str_contains($normalized, 'enable')) {
+            return 1;
+        }
+
+        return ctype_digit($normalized) ? (int)$normalized : 2;
+    }
+
+    private function normalizeHuaweiInteger(mixed $value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = trim((string)$value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/-?\d+/', $normalized, $matches) !== 1) {
+            return null;
+        }
+
+        return (int)$matches[0];
+    }
+
+    private function normalizeHuaweiPoeDetection(int $adminValue, string $powerStatus, ?int $powerMw): ?int
+    {
+        if ($adminValue !== 1) {
+            return 1;
+        }
+
+        if ($powerMw !== null && $powerMw > 0) {
+            return 3;
+        }
+
+        $normalizedStatus = strtolower(trim($powerStatus));
+        if ($normalizedStatus === '') {
+            return 2;
+        }
+
+        if (preg_match('/fault|error|deny|abnormal|overload|short/i', $normalizedStatus) === 1) {
+            return 4;
+        }
+
+        if (preg_match('/deliver|supply|power-?on|on\b/i', $normalizedStatus) === 1) {
+            return 3;
+        }
+
+        if (preg_match('/search|detect|idle|wait|off\b|open/i', $normalizedStatus) === 1) {
+            return 2;
+        }
+
+        $statusInt = $this->normalizeHuaweiInteger($powerStatus);
+        if ($statusInt !== null) {
+            if ($statusInt <= 1) {
+                return 2;
+            }
+            return 3;
+        }
+
+        return 2;
+    }
+
+    /**
+     * @param array<int|string,string> $deviceUsedPower
+     * @param array<int|string,string> $slotConsumingPower
+     * @param array<int|string,string> $globalPower
+     * @return array<int,int>
+     */
+    private function collectHuaweiMainConsumption(array $deviceUsedPower, array $slotConsumingPower, array $globalPower): array
+    {
+        $values = [];
+        foreach ([$deviceUsedPower, $slotConsumingPower, $globalPower] as $source) {
+            foreach ($source as $rawValue) {
+                $normalized = $this->normalizeHuaweiInteger($rawValue);
+                if ($normalized === null) {
+                    continue;
+                }
+                $values[] = $normalized;
+            }
+            if (!empty($values)) {
+                break;
+            }
+        }
+
+        return array_values($values);
     }
 
     /**

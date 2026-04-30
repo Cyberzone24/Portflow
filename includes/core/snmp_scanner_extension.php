@@ -20,7 +20,7 @@ interface SnmpScannerExtensionInterface
 
     /**
      * @param array<string,mixed> $config
-     * @return array{admin:array<string,int>,detection:array<string,int|null>,class:array<string,int|null>,source:string}|null
+    * @return array{admin:array<string,int>,detection:array<string,int|null>,class:array<string,int|null>,source:string,consumption?:array<string,int>,port_name?:array<string,string>,main_consumption?:array<int,int>}|null
      */
     public function collectPoeSnapshot(SnmpClient $client, Logger $logger, array $config): ?array;
 
