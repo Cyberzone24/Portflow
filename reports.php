@@ -1074,6 +1074,7 @@ if ($tab === 'topology') {
                 $unknown = is_array($det['unknown_interfaces'] ?? null) ? $det['unknown_interfaces'] : [];
                 $ifaces = is_array($det['interfaces'] ?? null) ? $det['interfaces'] : [];
                 $interfaceIps = is_array($det['interface_ips'] ?? null) ? $det['interface_ips'] : [];
+                $nodeIps = is_array($det['node_ips'] ?? null) ? $det['node_ips'] : [];
                 $mappedIpCount = count(array_filter($matched, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $unknownIpCount = count(array_filter($unknown, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $vlanSrc = (string)($det['vlan_source'] ?? '-');
@@ -1090,10 +1091,11 @@ if ($tab === 'topology') {
                         &nbsp;·&nbsp; <?php echo rep_run_status_pill((string)($selectedRun['status'] ?? '')); ?>
                     </p>
                 </div>
-                <div class="grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-5">
+                <div class="grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-6">
                     <div class="rounded-lg bg-slate-100 px-3 py-2"><div class="text-lg font-bold text-slate-900"><?php echo (int)($selectedRun['interfaces_seen'] ?? 0); ?></div><div class="text-slate-500">Interfaces</div></div>
                     <div class="rounded-lg bg-slate-100 px-3 py-2"><div class="text-lg font-bold text-slate-900"><?php echo (int)($selectedRun['vlans_seen'] ?? 0); ?></div><div class="text-slate-500">VLANs</div></div>
                     <div class="rounded-lg bg-cyan-50 px-3 py-2"><div class="text-lg font-bold text-cyan-800"><?php echo count($interfaceIps); ?></div><div class="text-cyan-700">IPs entdeckt</div></div>
+                    <div class="rounded-lg bg-sky-50 px-3 py-2"><div class="text-lg font-bold text-sky-800"><?php echo count($nodeIps); ?></div><div class="text-sky-700">Node-IPs roh</div></div>
                     <div class="rounded-lg bg-emerald-50 px-3 py-2"><div class="text-lg font-bold text-emerald-800"><?php echo $mappedIpCount; ?></div><div class="text-emerald-700">IPs gemappt</div></div>
                     <div class="rounded-lg bg-amber-50 px-3 py-2"><div class="text-lg font-bold text-amber-800"><?php echo (int)($selectedRun['findings_total'] ?? 0); ?></div><div class="text-amber-700">Findings</div></div>
                 </div>
@@ -1258,6 +1260,28 @@ if ($tab === 'topology') {
                                 <td class="px-3 py-1 text-xs"><?php echo rep_h($e['model'] ?? ''); ?></td>
                                 <td class="px-3 py-1 font-mono text-xs"><?php echo rep_h($e['serial'] ?? ''); ?></td>
                                 <td class="px-3 py-1 text-xs text-slate-500"><?php echo rep_h($e['descr'] ?? ''); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            <?php endif; ?>
+
+            <?php if (!empty($nodeIps)): ?>
+            <details class="mt-3 rounded-xl border border-slate-300 bg-white" open>
+                <summary class="cursor-pointer border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">Rohe ARP-/Neighbor-IPs (<?php echo count($nodeIps); ?>)</summary>
+                <div class="max-h-72 overflow-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-700"><tr><th class="px-3 py-1">ifIndex</th><th class="px-3 py-1">MAC</th><th class="px-3 py-1">IP</th><th class="px-3 py-1">Hostname</th><th class="px-3 py-1">Quelle</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($nodeIps as $nodeIp): ?>
+                            <tr class="border-t border-slate-100">
+                                <td class="px-3 py-1 font-mono text-xs"><?php echo (int)($nodeIp['if_index'] ?? 0); ?></td>
+                                <td class="px-3 py-1 font-mono text-xs"><?php echo rep_h($nodeIp['mac'] ?? ''); ?></td>
+                                <td class="px-3 py-1 font-mono text-xs text-sky-700"><?php echo rep_h($nodeIp['ip'] ?? ''); ?></td>
+                                <td class="px-3 py-1 text-xs text-slate-500"><?php echo rep_h($nodeIp['hostname'] ?? ''); ?></td>
+                                <td class="px-3 py-1 text-xs"><?php echo rep_h($nodeIp['source'] ?? ''); ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>

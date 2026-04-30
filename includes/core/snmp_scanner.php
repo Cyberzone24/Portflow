@@ -418,7 +418,7 @@ class SnmpScanner
     /**
      * Collect IPv4 ARP entries and map them by MAC address.
      *
-     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
+    * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string}>
      */
     private function collectNodeIpsFromArpTable(array $config): array
     {
@@ -436,7 +436,7 @@ class SnmpScanner
      * Index format: ifIndex.inetAddressType.inetAddress
      * For IPv4 this becomes: ifIndex.1.a.b.c.d
      *
-     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
+    * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string}>
      */
     private function collectNodeIpsFromIpNetToPhysicalTable(array $config): array
     {
@@ -469,7 +469,16 @@ class SnmpScanner
                 continue;
             }
 
-            $ipAddress = $this->buildIpv4AddressFromParts(array_slice($parts, 0, 4));
+            if (empty($parts)) {
+                continue;
+            }
+
+            $addressLength = (int)array_shift($parts);
+            if ($addressLength !== 4 || count($parts) < $addressLength) {
+                continue;
+            }
+
+            $ipAddress = $this->buildIpv4AddressFromParts(array_slice($parts, 0, $addressLength));
             if ($ipAddress === null) {
                 continue;
             }
@@ -485,6 +494,7 @@ class SnmpScanner
                     'ip' => $ipAddress,
                     'hostname' => '',
                     'source' => 'snmp:ipNetToPhysical',
+                    'mac' => $mac,
                 ];
             }
         }
@@ -495,7 +505,7 @@ class SnmpScanner
     /**
      * Collect IPv4 ARP entries from legacy IP-MIB::ipNetToMediaTable and map them by MAC address.
      *
-     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
+    * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string}>
      */
     private function collectNodeIpsFromIpNetToMediaTable(array $config): array
     {
@@ -539,6 +549,7 @@ class SnmpScanner
                     'ip' => $ipAddress,
                     'hostname' => '',
                     'source' => 'snmp:ipNetToMedia',
+                    'mac' => $mac,
                 ];
             }
         }
