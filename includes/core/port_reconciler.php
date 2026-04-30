@@ -778,6 +778,7 @@ class PortReconciler
         if (empty($ifIndexToPortUuid)) {
             return 0;
         }
+        $mirrorTargets = $this->loadConnectedNodeMirrorTargets(array_values($ifIndexToPortUuid));
         $persisted = 0;
         foreach ($nodes as $node) {
             $ifIndex = $node['if_index'] ?? null;
@@ -795,46 +796,153 @@ class PortReconciler
                 $ipAddress = '';
             }
             $hostname = trim((string)($node['hostname'] ?? ''));
+            $targetPortUuids = [$portUuid];
+            if (isset($mirrorTargets[$portUuid]) && $mirrorTargets[$portUuid] !== $portUuid) {
+                $targetPortUuids[] = $mirrorTargets[$portUuid];
+            }
 
-            try {
-                $existing = $this->db->db_query(
-                    'SELECT uuid FROM device_port_node WHERE device_port = :dp AND mac_address = :mac LIMIT 1',
-                    ['dp' => $portUuid, 'mac' => $mac]
-                );
-                if (!empty($existing)) {
-                    $updates = ['last_seen = CURRENT_TIMESTAMP', 'vlan = COALESCE(:vlan, vlan)', 'last_scan_run = :run'];
-                    $params = ['vlan' => $vlan, 'run' => $runUuid !== '' ? $runUuid : null, 'uuid' => $existing[0]['uuid']];
-                    if ($ipAddress !== '') {
-                        $updates[] = 'ip = :ip';
-                        $params['ip'] = $ipAddress;
-                    }
-                    if ($hostname !== '') {
-                        $updates[] = 'hostname = :hostname';
-                        $params['hostname'] = $hostname;
-                    }
-                    $this->db->db_query(
-                        'UPDATE device_port_node SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid',
-                        $params
-                    );
-                } else {
-                    $this->db->db_query(
-                        'INSERT INTO device_port_node (device_port, mac_address, vlan, ip, hostname, last_scan_run) VALUES (:dp, :mac, :vlan, :ip, :hostname, :run)',
-                        [
-                            'dp' => $portUuid,
-                            'mac' => $mac,
-                            'vlan' => $vlan,
-                            'ip' => $ipAddress !== '' ? $ipAddress : null,
-                            'hostname' => $hostname !== '' ? $hostname : null,
-                            'run' => $runUuid !== '' ? $runUuid : null,
-                        ]
-                    );
+            foreach (array_values(array_unique($targetPortUuids)) as $targetPortUuid) {
+                if ($this->persistNodeObservation($targetPortUuid, $mac, $vlan, $ipAddress, $hostname, $runUuid)) {
+                    $persisted++;
                 }
-                $persisted++;
-            } catch (\Throwable $e) {
-                $this->logger->log('PortReconciler: node upsert failed for ' . $mac . ' on port ' . $portUuid . ': ' . $e->getMessage(), 2);
             }
         }
         return $persisted;
+    }
+
+    /**
+     * @param array<int,string> $portUuids
+     * @return array<string,string> observed switch port uuid -> connected endpoint port uuid
+     */
+    private function loadConnectedNodeMirrorTargets(array $portUuids): array
+    {
+        $portUuids = array_values(array_filter(array_map(static fn($value): string => trim((string)$value), $portUuids), static fn(string $value): bool => $value !== ''));
+        if (empty($portUuids)) {
+            return [];
+        }
+
+        $params = [];
+        $placeholders = [];
+        foreach ($portUuids as $index => $portUuid) {
+            $key = 'p' . $index;
+            $params[$key] = $portUuid;
+            $placeholders[] = ':' . $key;
+        }
+
+        $sql = "SELECT c.device_port_source AS observed_port_uuid,
+                       c.device_port_destination AS peer_port_uuid,
+                       d_peer.type AS peer_device_type,
+                       COALESCE(m_peer.caption, '') AS peer_device_caption,
+                       CASE WHEN s_peer.device_port IS NULL THEN 0 ELSE 1 END AS peer_has_snmp_state
+                FROM connection c
+                JOIN device_port dp_peer ON dp_peer.uuid = c.device_port_destination
+                JOIN device d_peer ON d_peer.uuid = dp_peer.device
+                LEFT JOIN metadata m_peer ON m_peer.uuid = d_peer.metadata
+                LEFT JOIN device_port_snmp_state s_peer ON s_peer.device_port = dp_peer.uuid
+                WHERE c.device_port_source IN (" . implode(',', $placeholders) . ")
+                  AND c.device_port_destination IS NOT NULL
+                UNION ALL
+                SELECT c.device_port_destination AS observed_port_uuid,
+                       c.device_port_source AS peer_port_uuid,
+                       d_peer.type AS peer_device_type,
+                       COALESCE(m_peer.caption, '') AS peer_device_caption,
+                       CASE WHEN s_peer.device_port IS NULL THEN 0 ELSE 1 END AS peer_has_snmp_state
+                FROM connection c
+                JOIN device_port dp_peer ON dp_peer.uuid = c.device_port_source
+                JOIN device d_peer ON d_peer.uuid = dp_peer.device
+                LEFT JOIN metadata m_peer ON m_peer.uuid = d_peer.metadata
+                LEFT JOIN device_port_snmp_state s_peer ON s_peer.device_port = dp_peer.uuid
+                WHERE c.device_port_destination IN (" . implode(',', $placeholders) . ")
+                  AND c.device_port_source IS NOT NULL";
+
+        $rows = $this->db->db_query($sql, $params);
+        if (!is_array($rows) || empty($rows)) {
+            return [];
+        }
+
+        $grouped = [];
+        foreach ($rows as $row) {
+            $observedPortUuid = trim((string)($row['observed_port_uuid'] ?? ''));
+            $peerPortUuid = trim((string)($row['peer_port_uuid'] ?? ''));
+            if ($observedPortUuid === '' || $peerPortUuid === '') {
+                continue;
+            }
+            $grouped[$observedPortUuid][] = [
+                'peer_port_uuid' => $peerPortUuid,
+                'peer_device_type' => trim((string)($row['peer_device_type'] ?? '')),
+                'peer_device_caption' => trim((string)($row['peer_device_caption'] ?? '')),
+                'peer_has_snmp_state' => !empty($row['peer_has_snmp_state']),
+            ];
+        }
+
+        $targets = [];
+        foreach ($grouped as $observedPortUuid => $candidates) {
+            if (count($candidates) !== 1) {
+                continue;
+            }
+            $candidate = $candidates[0];
+            if (!empty($candidate['peer_has_snmp_state'])) {
+                continue;
+            }
+            if ($this->isLikelyInfrastructureDevice((string)$candidate['peer_device_type'], (string)$candidate['peer_device_caption'])) {
+                continue;
+            }
+            $targets[$observedPortUuid] = (string)$candidate['peer_port_uuid'];
+        }
+
+        return $targets;
+    }
+
+    private function isLikelyInfrastructureDevice(string $deviceType, string $deviceCaption): bool
+    {
+        $haystack = strtolower(trim($deviceType . ' ' . $deviceCaption));
+        if ($haystack === '') {
+            return false;
+        }
+
+        return preg_match('/\b(switch|router|firewall|patch\s*panel|patchpanel|uplink|trunk|access\s*point|ap\b|bridge|gateway|distribution|core)\b/i', $haystack) === 1;
+    }
+
+    private function persistNodeObservation(string $portUuid, string $mac, ?int $vlan, string $ipAddress, string $hostname, string $runUuid): bool
+    {
+        try {
+            $existing = $this->db->db_query(
+                'SELECT uuid FROM device_port_node WHERE device_port = :dp AND mac_address = :mac LIMIT 1',
+                ['dp' => $portUuid, 'mac' => $mac]
+            );
+            if (!empty($existing)) {
+                $updates = ['last_seen = CURRENT_TIMESTAMP', 'vlan = COALESCE(:vlan, vlan)', 'last_scan_run = :run'];
+                $params = ['vlan' => $vlan, 'run' => $runUuid !== '' ? $runUuid : null, 'uuid' => $existing[0]['uuid']];
+                if ($ipAddress !== '') {
+                    $updates[] = 'ip = :ip';
+                    $params['ip'] = $ipAddress;
+                }
+                if ($hostname !== '') {
+                    $updates[] = 'hostname = :hostname';
+                    $params['hostname'] = $hostname;
+                }
+                $this->db->db_query(
+                    'UPDATE device_port_node SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid',
+                    $params
+                );
+            } else {
+                $this->db->db_query(
+                    'INSERT INTO device_port_node (device_port, mac_address, vlan, ip, hostname, last_scan_run) VALUES (:dp, :mac, :vlan, :ip, :hostname, :run)',
+                    [
+                        'dp' => $portUuid,
+                        'mac' => $mac,
+                        'vlan' => $vlan,
+                        'ip' => $ipAddress !== '' ? $ipAddress : null,
+                        'hostname' => $hostname !== '' ? $hostname : null,
+                        'run' => $runUuid !== '' ? $runUuid : null,
+                    ]
+                );
+            }
+            return true;
+        } catch (\Throwable $e) {
+            $this->logger->log('PortReconciler: node upsert failed for ' . $mac . ' on port ' . $portUuid . ': ' . $e->getMessage(), 2);
+            return false;
+        }
     }
 
     /**
