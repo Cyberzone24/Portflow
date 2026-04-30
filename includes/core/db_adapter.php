@@ -469,6 +469,274 @@ class DatabaseAdapter {
         return array_column($results, 'column_name');
     }
 
+    private function determineExpectedViewName(string $definition): string {
+        $trimmedDefinition = trim($definition);
+        if ($trimmedDefinition === '') {
+            return '';
+        }
+
+        if (stripos($trimmedDefinition, 'SQL:') === 0) {
+            $sql = trim(substr($trimmedDefinition, 4));
+            return $sql === '' ? '' : $this->extractViewNameFromSql($sql);
+        }
+
+        $joins = explode(', ', $trimmedDefinition);
+        $firstJoinParts = explode(' ', $joins[0]);
+        $baseTable = explode('.', $firstJoinParts[0])[0] ?? '';
+        if ($baseTable === '') {
+            return '';
+        }
+
+        if (strpos($trimmedDefinition, ',') !== false) {
+            return $baseTable . '_details';
+        }
+
+        preg_match('/join\s+([a-zA-Z0-9_]+)\./', $trimmedDefinition, $targetMatches);
+        $targetTable = $targetMatches[1] ?? '';
+        if ($targetTable === '') {
+            return '';
+        }
+
+        return $baseTable . '_join_' . $targetTable;
+    }
+
+    private function buildGeneratedViewQuery(string $definition, array $dbTables): array {
+        $trimmedDefinition = trim($definition);
+        if ($trimmedDefinition === '' || strpos($trimmedDefinition, '#') === 0) {
+            return ['name' => '', 'sql' => ''];
+        }
+
+        if (stripos($trimmedDefinition, 'SQL:') === 0) {
+            $sql = trim(substr($trimmedDefinition, 4));
+            if ($sql === '') {
+                throw new \Exception('Empty SQL view definition');
+            }
+
+            if (!$this->isAllowedSqlViewDefinition($sql)) {
+                throw new \Exception('Unsupported SQL definition. Only CREATE OR REPLACE VIEW is allowed.');
+            }
+
+            return [
+                'name' => $this->extractViewNameFromSql($sql),
+                'sql' => rtrim($sql, "; \t\n\r\0\x0B") . ';'
+            ];
+        }
+
+        $joins = explode(', ', $trimmedDefinition);
+        $firstJoinParts = explode(' ', $joins[0]);
+        $baseTable = explode('.', $firstJoinParts[0])[0] ?? '';
+
+        if ($baseTable === '' || !isset($dbTables[$baseTable])) {
+            throw new \Exception("Could not determine base table for view definition: '$trimmedDefinition'");
+        }
+
+        $viewName = $this->determineExpectedViewName($trimmedDefinition);
+        if ($viewName === '') {
+            throw new \Exception("Could not determine view name from definition: '$trimmedDefinition'");
+        }
+
+        $selects = [];
+        $joinClauses = [];
+        $aliases = [$baseTable => 't0'];
+
+        foreach (array_keys($dbTables[$baseTable]) as $column) {
+            if ($column === 'PRIMARY KEY') {
+                continue;
+            }
+            $selects[] = "t0.\"$column\" AS \"{$baseTable}_{$column}\"";
+        }
+
+        $aliasCounter = 1;
+        foreach ($joins as $join) {
+            preg_match('/(.+?)\s+join\s+([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)/', $join, $matches);
+            if (count($matches) !== 4) {
+                continue;
+            }
+
+            $sourcePathString = $matches[1];
+            $targetTable = $matches[2];
+            $targetColumn = $matches[3];
+            $sourceTableAlias = null;
+            $sourceColumn = null;
+            $pathParts = explode('.', $sourcePathString);
+
+            for ($i = count($pathParts); $i >= 1; $i--) {
+                $potentialTablePath = implode('.', array_slice($pathParts, 0, $i));
+                if (isset($aliases[$potentialTablePath])) {
+                    $sourceTableAlias = $aliases[$potentialTablePath];
+                    $sourceColumn = $pathParts[$i] ?? null;
+                    break;
+                }
+            }
+
+            if ($sourceTableAlias === null) {
+                $sourceTableAlias = $aliases[$baseTable];
+                $sourceColumn = $sourcePathString;
+            }
+
+            if ($sourceTableAlias === null || $sourceColumn === null) {
+                throw new \Exception("Could not resolve join path for '$sourcePathString' in view '$viewName'");
+            }
+
+            $newAlias = 't' . $aliasCounter++;
+            $aliases[$sourcePathString] = $newAlias;
+
+            $joinClauses[] = "LEFT JOIN \"$targetTable\" AS $newAlias ON $sourceTableAlias.\"$sourceColumn\" = $newAlias.\"$targetColumn\"";
+
+            $columnPrefix = str_replace('.', '_', $sourcePathString);
+            if (!empty($dbTables[$targetTable])) {
+                foreach (array_keys($dbTables[$targetTable]) as $column) {
+                    if ($column === 'PRIMARY KEY') {
+                        continue;
+                    }
+                    $selects[] = "$newAlias.\"$column\" AS \"{$columnPrefix}_{$column}\"";
+                }
+            }
+        }
+
+        $selectClause = "SELECT\n    " . implode(",\n    ", $selects);
+        $fromClause = "\nFROM \"$baseTable\" AS t0";
+        $joinClauseStr = "\n" . implode("\n", $joinClauses);
+        $query = "CREATE OR REPLACE VIEW \"$viewName\" AS $selectClause$fromClause$joinClauseStr;";
+
+        return ['name' => $viewName, 'sql' => $query];
+    }
+
+    private function getExpectedViewDefinitions(array $dbTables): array {
+        $viewDefinitions = file(__DIR__ . '/db_views.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($viewDefinitions)) {
+            return [];
+        }
+
+        $views = [];
+        foreach ($viewDefinitions as $definition) {
+            $trimmedDefinition = trim((string)$definition);
+            if ($trimmedDefinition === '' || strpos($trimmedDefinition, '#') === 0) {
+                continue;
+            }
+
+            $generated = $this->buildGeneratedViewQuery($trimmedDefinition, $dbTables);
+            if (($generated['name'] ?? '') === '' || ($generated['sql'] ?? '') === '') {
+                continue;
+            }
+
+            $views[(string)$generated['name']] = (string)$generated['sql'];
+        }
+
+        return $views;
+    }
+
+    private function getExpectedViewNames(array $dbTables): array {
+        return array_keys($this->getExpectedViewDefinitions($dbTables));
+    }
+
+    private function viewExists(string $viewName): bool {
+        if ($viewName === '') {
+            return false;
+        }
+
+        try {
+            $results = $this->db_query(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.views WHERE table_schema = 'public' AND table_name = :view_name) AS exists",
+                ['view_name' => $viewName]
+            );
+
+            return !empty($results[0]['exists']);
+        } catch (\Throwable $e) {
+            $this->logger->log('error checking view existence: ' . $e->getMessage(), 1);
+            return false;
+        }
+    }
+
+    private function getCurrentViewDefinition(string $viewName): string {
+        if ($viewName === '') {
+            return '';
+        }
+
+        try {
+            $results = $this->db_query(
+                "SELECT pg_get_viewdef(:view_name::regclass, true) AS view_definition",
+                ['view_name' => 'public.' . $viewName]
+            );
+
+            return trim((string)($results[0]['view_definition'] ?? ''));
+        } catch (\Throwable $e) {
+            $this->logger->log('error reading view definition: ' . $e->getMessage(), 1);
+            return '';
+        }
+    }
+
+    private function extractViewBodyFromSql(string $sql): string {
+        $trimmed = trim($sql);
+        $trimmed = rtrim($trimmed, "; \t\n\r\0\x0B");
+
+        if (preg_match('/^CREATE\s+OR\s+REPLACE\s+VIEW\s+.+?\s+AS\s+(.*)$/is', $trimmed, $matches)) {
+            return trim((string)$matches[1]);
+        }
+
+        return $trimmed;
+    }
+
+    private function normalizeViewDefinition(string $sql): string {
+        $normalized = strtolower(trim($sql));
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+        return rtrim($normalized, '; ');
+    }
+
+    public function getPendingSchemaChanges(): array {
+        $changes = [
+            'missing_tables' => [],
+            'missing_columns' => [],
+            'missing_views' => [],
+            'outdated_views' => [],
+        ];
+
+        $dbTables = $this->getDbTablesConfiguration();
+
+        foreach ($dbTables as $dbTable => $columns) {
+            $tableExists = $this->checkDatabaseAndTableExistence($dbTable);
+            if (!$tableExists) {
+                $changes['missing_tables'][] = $dbTable;
+                continue;
+            }
+
+            $existingColumns = $this->getExistingColumns($dbTable);
+            foreach ($columns as $column => $columnType) {
+                if ($column === 'PRIMARY KEY' || $column === 'UNIQUE') {
+                    continue;
+                }
+
+                if (!in_array($column, $existingColumns, true)) {
+                    $changes['missing_columns'][$dbTable][] = $column;
+                }
+            }
+        }
+
+        foreach ($this->getExpectedViewDefinitions($dbTables) as $viewName => $expectedSql) {
+            if (!$this->viewExists($viewName)) {
+                $changes['missing_views'][] = $viewName;
+                continue;
+            }
+
+            $currentDefinition = $this->getCurrentViewDefinition($viewName);
+            $expectedDefinition = $this->extractViewBodyFromSql($expectedSql);
+
+            if ($currentDefinition === '' || $this->normalizeViewDefinition($currentDefinition) !== $this->normalizeViewDefinition($expectedDefinition)) {
+                $changes['outdated_views'][] = $viewName;
+            }
+        }
+
+        return $changes;
+    }
+
+    public function schemaUpdateNeeded(): bool {
+        $changes = $this->getPendingSchemaChanges();
+        return !empty($changes['missing_tables'])
+            || !empty($changes['missing_columns'])
+            || !empty($changes['missing_views'])
+            || !empty($changes['outdated_views']);
+    }
+
     private function isAllowedSqlViewDefinition(string $sql): bool {
         return (bool)preg_match('/^CREATE\s+OR\s+REPLACE\s+VIEW\s+/i', ltrim($sql));
     }
@@ -495,108 +763,12 @@ class DatabaseAdapter {
                     continue;
                 }
 
-                if (stripos($trimmed_definition, 'SQL:') === 0) {
-                    $sql = trim(substr($trimmed_definition, 4));
-                    if ($sql === '') {
-                        throw new \Exception('Empty SQL view definition');
-                    }
-
-                    if (!$this->isAllowedSqlViewDefinition($sql)) {
-                        throw new \Exception('Unsupported SQL definition. Only CREATE OR REPLACE VIEW is allowed.');
-                    }
-
-                    $viewName = $this->extractViewNameFromSql($sql);
-                    $this->db_query('DROP VIEW IF EXISTS "' . $viewName . '" CASCADE;');
-                    $this->db_query($sql);
-                    $this->logger->log("Successfully created or replaced SQL view: \"$viewName\"");
-                    $this->pdo->commit();
-                    continue;
+                $generatedView = $this->buildGeneratedViewQuery($trimmed_definition, $dbTables);
+                $viewName = (string)($generatedView['name'] ?? '');
+                $query = (string)($generatedView['sql'] ?? '');
+                if ($viewName === '' || $query === '') {
+                    throw new \Exception("Could not generate SQL for view definition: '$trimmed_definition'");
                 }
-
-                $joins = explode(', ', $trimmed_definition);
-                $firstJoinParts = explode(' ', $joins[0]);
-                $baseTable = explode('.', $firstJoinParts[0])[0];
-
-                // naming logic for views
-                $viewName = '';
-                if (strpos($trimmed_definition, ',') !== false) {
-                    // Complex view with multiple joins gets '_details' suffix
-                    $viewName = $baseTable . '_details';
-                } else {
-                    // Simple view with a single join gets 'table1_join_table2' name
-                    preg_match('/join\s+([a-zA-Z0-9_]+)\./', $trimmed_definition, $targetMatches);
-                    $targetTable = $targetMatches[1] ?? null;
-                    if ($baseTable && $targetTable) {
-                        $viewName = "{$baseTable}_join_{$targetTable}";
-                    } else {
-                        // Fallback or error if the simple view name cannot be determined
-                        throw new \Exception("Could not determine simple view name from definition: '$trimmed_definition'");
-                    }
-                }
-
-                $selects = [];
-                $joinClauses = [];
-                $aliases = [$baseTable => 't0'];
-
-                foreach (array_keys($dbTables[$baseTable]) as $column) {
-                    if ($column === 'PRIMARY KEY') continue;
-                    $selects[] = "t0.\"$column\" AS \"{$baseTable}_{$column}\"";
-                }
-
-                $aliasCounter = 1;
-                foreach ($joins as $join) {
-                    preg_match('/(.+?)\s+join\s+([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)/', $join, $matches);
-                    if (count($matches) !== 4) continue;
-
-                    // vars
-                    $sourcePathString = $matches[1];
-                    $targetTable = $matches[2];
-                    $targetColumn = $matches[3];
-                    $sourceTableAlias = null;
-                    $sourceColumn = null;
-                    $pathParts = explode('.', $sourcePathString);
-
-                    // Find the longest prefix of the source path that we have an alias for.
-                    for ($i = count($pathParts); $i >= 1; $i--) {
-                        $potentialTablePath = implode('.', array_slice($pathParts, 0, $i));
-                        if (isset($aliases[$potentialTablePath])) {
-                            $sourceTableAlias = $aliases[$potentialTablePath];
-                            // The source column is the next part of the path, if it exists.
-                            $sourceColumn = $pathParts[$i] ?? null;
-                            break;
-                        }
-                    }
-
-                    // If no prefix path was found, assume it's a column on the base table.
-                    if ($sourceTableAlias === null) {
-                        $sourceTableAlias = $aliases[$baseTable];
-                        $sourceColumn = $sourcePathString;
-                    }
-
-                    if ($sourceTableAlias === null || $sourceColumn === null) {
-                        throw new \Exception("Could not resolve join path for '$sourcePathString' in view '$viewName'");
-                    }
-
-                    $newAlias = 't' . $aliasCounter++;
-                    $aliases[$sourcePathString] = $newAlias;
-
-                    $joinClauses[] = "LEFT JOIN \"$targetTable\" AS $newAlias ON $sourceTableAlias.\"$sourceColumn\" = $newAlias.\"$targetColumn\"";
-
-                    $columnPrefix = str_replace('.', '_', $sourcePathString);
-                    if (!empty($dbTables[$targetTable])) {
-                        foreach (array_keys($dbTables[$targetTable]) as $column) {
-                            if ($column === 'PRIMARY KEY') continue;
-                            $selects[] = "$newAlias.\"$column\" AS \"{$columnPrefix}_{$column}\"";
-                        }
-                    }
-                }
-
-                $selectClause = "SELECT\n    " . implode(",\n    ", $selects);
-                $fromClause = "\nFROM \"$baseTable\" AS t0";
-                $joinClauseStr = "\n" . implode("\n", $joinClauses);
-
-                // Note the added quotes around the view name for safety
-                $query = "CREATE OR REPLACE VIEW \"$viewName\" AS $selectClause$fromClause$joinClauseStr;";
 
                 // Replacing an existing view cannot remove columns in PostgreSQL;
                 // drop first to allow structural changes during schema migrations.

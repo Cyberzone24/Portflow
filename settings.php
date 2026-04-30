@@ -1582,20 +1582,34 @@
                 return $statusBefore + ['ok' => false, 'message' => 'Update fehlgeschlagen: Git-Reset auf ' . $upstream . ' war nicht erfolgreich.'];
             }
 
-            $dbAdapter = new DatabaseAdapter();
-            $dbAdapter->db_update_schema();
+            $dbAdapter = new \Portflow\Core\DatabaseAdapter();
+            $pendingSchemaChanges = $dbAdapter->getPendingSchemaChanges();
+            $schemaUpdateNeeded = !empty($pendingSchemaChanges['missing_tables'])
+                || !empty($pendingSchemaChanges['missing_columns'])
+                || !empty($pendingSchemaChanges['missing_views'])
+                || !empty($pendingSchemaChanges['outdated_views']);
+
+            if ($schemaUpdateNeeded) {
+                $dbAdapter->db_update_schema();
+            }
 
             $statusAfter = configGetUpdateStatus(false);
             $statusAfter['ok'] = true;
-            $statusAfter['message'] = 'Update erfolgreich: ' . ($previousVersion !== '' ? $previousVersion : 'alter Stand unbekannt') . ' -> ' . ($targetVersion !== '' ? $targetVersion : ($statusAfter['current_version'] ?? 'neuer Stand unbekannt')) . '. Datenbankschema wurde aktualisiert.';
+            $statusAfter['message'] = 'Update erfolgreich: ' . ($previousVersion !== '' ? $previousVersion : 'alter Stand unbekannt') . ' -> ' . ($targetVersion !== '' ? $targetVersion : ($statusAfter['current_version'] ?? 'neuer Stand unbekannt')) . ($schemaUpdateNeeded
+                ? '. Datenbankschema wurde aktualisiert.'
+                : '. Kein Datenbank-Upgrade erforderlich.');
             $statusAfter['previous_version'] = $previousVersion;
             $statusAfter['previous_commit'] = $previousCommit;
             $statusAfter['target_version'] = $targetVersion;
             $statusAfter['target_commit'] = $targetCommit;
+            $statusAfter['schema_update_needed'] = $schemaUpdateNeeded;
+            $statusAfter['pending_schema_changes'] = $pendingSchemaChanges;
             configWriteUpdaterState($updateState + [
                 'status' => 'success',
                 'finished_at' => date('Y-m-d H:i:s'),
                 'message' => $statusAfter['message'],
+                'schema_update_needed' => $schemaUpdateNeeded,
+                'pending_schema_changes' => $pendingSchemaChanges,
                 'rollback_candidate' => [
                     'available' => true,
                     'commit' => $previousCommit,
