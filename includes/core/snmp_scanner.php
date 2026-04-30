@@ -232,6 +232,45 @@ class SnmpScanner
                 }
                 $scannerExtensionDiagnostics = $scannerExtension->getLastDiagnostics();
             }
+
+            $ifNameToIndex = [];
+            foreach ($ifNameMap as $ifIndex => $ifName) {
+                $normalizedName = strtolower(trim((string)$ifName));
+                if ($normalizedName !== '') {
+                    $ifNameToIndex[$normalizedName] = (int)$ifIndex;
+                }
+            }
+            foreach ($nodeIps as $mac => $nodeIp) {
+                $ifIndex = (int)($nodeIp['if_index'] ?? 0);
+                $ifName = strtolower(trim((string)($nodeIp['if_name'] ?? '')));
+                if ($ifIndex > 0 || $ifName === '' || !isset($ifNameToIndex[$ifName])) {
+                    continue;
+                }
+                $nodeIps[$mac]['if_index'] = $ifNameToIndex[$ifName];
+            }
+
+            $nodeMacs = [];
+            foreach ($nodes as $node) {
+                $mac = strtolower((string)($node['mac'] ?? ''));
+                if ($mac !== '') {
+                    $nodeMacs[$mac] = true;
+                }
+            }
+            foreach ($nodeIps as $mac => $nodeIp) {
+                $resolvedIfIndex = (int)($nodeIp['if_index'] ?? 0);
+                if ($resolvedIfIndex <= 0 || isset($nodeMacs[$mac])) {
+                    continue;
+                }
+                $nodes[] = [
+                    'mac' => $mac,
+                    'vlan' => null,
+                    'if_index' => $resolvedIfIndex,
+                    'bridge_port' => 0,
+                    'ip' => (string)($nodeIp['ip'] ?? ''),
+                    'hostname' => (string)($nodeIp['hostname'] ?? ''),
+                ];
+                $nodeMacs[$mac] = true;
+            }
             $nodeIpMatchedMacs = [];
             $nodeIpSources = [];
             foreach ($nodeIps as $nodeIp) {

@@ -119,19 +119,29 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
 
         $result = $this->runReadOnlySshCommands($connection, $commands, $logger, (string)($config['switch_name'] ?? ''));
         $this->lastDiagnostics['node_ip_collection']['execution'] = $result['diagnostics'] ?? [];
+        $source = $mode === 'cli-dhcp-snooping' ? 'cli:dhcp-snooping' : ($mode === 'cli-arp' ? 'cli:arp' : 'cli:huawei');
+        $parsed = $this->parseNodeIpsFromCliOutput((string)($result['output'] ?? ''), $source);
+        $this->lastDiagnostics['node_ip_collection']['parsed_count'] = count($parsed);
+        $this->lastDiagnostics['node_ip_collection']['output_preview'] = $this->buildOutputPreview((string)($result['output'] ?? ''));
+
         if (!$result['ok']) {
+            if (!empty($parsed)) {
+                $this->lastDiagnostics['node_ip_collection']['status'] = 'ok-with-nonzero-exit';
+                $this->lastDiagnostics['node_ip_collection']['warning'] = 'CLI-Output wurde trotz SSH-Exit-Code ' . (string)($result['diagnostics']['exit_code'] ?? '?') . ' erfolgreich geparst.';
+                $logger->log(
+                    'HuaweiScannerExtension: CLI node-IP collection for ' . (string)($config['switch_name'] ?? '?') . ' produced parsable output despite exit=' . (string)($result['diagnostics']['exit_code'] ?? '?'),
+                    2
+                );
+                return $parsed;
+            }
+
             $this->lastDiagnostics['node_ip_collection']['status'] = 'failed';
             $this->lastDiagnostics['node_ip_collection']['error'] = (string)($result['output'] ?? '');
-            $this->lastDiagnostics['node_ip_collection']['output_preview'] = $this->buildOutputPreview((string)($result['output'] ?? ''));
             $logger->log('HuaweiScannerExtension: CLI node-IP collection failed for ' . (string)($config['switch_name'] ?? '?') . ': ' . (string)($result['output'] ?? ''), 2);
             return [];
         }
 
-        $source = $mode === 'cli-dhcp-snooping' ? 'cli:dhcp-snooping' : ($mode === 'cli-arp' ? 'cli:arp' : 'cli:huawei');
-        $parsed = $this->parseNodeIpsFromCliOutput((string)($result['output'] ?? ''), $source);
-        $this->lastDiagnostics['node_ip_collection']['parsed_count'] = count($parsed);
         $this->lastDiagnostics['node_ip_collection']['status'] = empty($parsed) ? 'parsed-empty' : 'ok';
-        $this->lastDiagnostics['node_ip_collection']['output_preview'] = $this->buildOutputPreview((string)($result['output'] ?? ''));
         return $parsed;
     }
 
@@ -386,7 +396,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     }
 
     /**
-     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string}>
+     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string,if_name?:string}>
      */
     private function parseNodeIpsFromCliOutput(string $output, string $source): array
     {
@@ -399,6 +409,8 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
                 continue;
             }
 
+            $interfaceName = $this->extractInterfaceName($line);
+
             if (!isset($nodeIps[$mac])) {
                 $nodeIps[$mac] = [
                     'if_index' => 0,
@@ -406,6 +418,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
                     'hostname' => '',
                     'source' => $source,
                     'mac' => $mac,
+                    'if_name' => $interfaceName,
                 ];
             }
         }
@@ -433,5 +446,14 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         return implode(':', str_split($hex, 2));
+    }
+
+    private function extractInterfaceName(string $line): string
+    {
+        if (!preg_match('/\b((?:MultiGE|XGigabitEthernet|GigabitEthernet|GE|Eth-Trunk|Vlanif|MEth|25GE|100GE|40GE)\S*)\b/i', $line, $matches)) {
+            return '';
+        }
+
+        return trim((string)$matches[1]);
     }
 }
