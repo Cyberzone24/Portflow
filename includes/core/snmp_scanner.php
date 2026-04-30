@@ -8,6 +8,7 @@ include_once __DIR__ . '/logger.php';
 include_once __DIR__ . '/snmp_client.php';
 include_once __DIR__ . '/snmp_naming.php';
 include_once __DIR__ . '/port_reconciler.php';
+include_once __DIR__ . '/snmp_scanner_extension.php';
 
 /**
  * Walks a switch via SNMP and feeds the discovered facts into PortReconciler.
@@ -15,6 +16,9 @@ include_once __DIR__ . '/port_reconciler.php';
  */
 class SnmpScanner
 {
+    /** @var array<string,SnmpScannerExtensionInterface>|null */
+    private static ?array $availableExtensions = null;
+
     /** Numeric IF-MIB / Q-BRIDGE-MIB OIDs used by the MVP scanner. */
     public const OID_IF_NAME           = '.1.3.6.1.2.1.31.1.1.1.1';
     public const OID_IF_ALIAS          = '.1.3.6.1.2.1.31.1.1.1.18';
@@ -40,10 +44,6 @@ class SnmpScanner
     public const OID_DOT1Q_VLAN_STATIC_UNTAGGED  = '.1.3.6.1.2.1.17.7.1.4.3.1.4';
     /** Q-BRIDGE-MIB dot1qVlanStaticName: index = vlan-id, value = name. */
     public const OID_DOT1Q_VLAN_STATIC_NAME = '.1.3.6.1.2.1.17.7.1.4.3.1.1';
-    /** Huawei VRP fallback: hwL2VlanDescription (.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.5). */
-    public const OID_HUAWEI_VLAN_DESC  = '.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.5';
-    /** Huawei legacy alt: hwVlanName. */
-    public const OID_HUAWEI_VLAN_NAME  = '.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.4';
     /** BRIDGE-MIB dot1dBasePortIfIndex: bridge port -> ifIndex. */
     public const OID_DOT1D_BASE_PORT_IFINDEX = '.1.3.6.1.2.1.17.1.4.1.2';
     /** Q-BRIDGE-MIB dot1qTpFdbPort: index = vlanId.mac(6 oct) -> bridge port. */
@@ -60,11 +60,6 @@ class SnmpScanner
     public const OID_PETH_DETECTION      = '.1.3.6.1.2.1.105.1.1.1.6';
     public const OID_PETH_POWER_CLASS    = '.1.3.6.1.2.1.105.1.1.1.10';
     public const OID_PETH_MAIN_CONSUMPTION = '.1.3.6.1.2.1.105.1.3.1.1.4';
-    /** HUAWEI-POE-MIB hwPoePortTable columns (indexed by ifIndex). */
-    public const OID_HW_POE_ENABLE       = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.2';
-    public const OID_HW_POE_POWER_STATUS = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.5';
-    public const OID_HW_POE_CONSUMING    = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.7';
-    public const OID_HW_POE_PD_CLASS     = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.10';
     /** ENTITY-MIB entPhysicalTable columns. */
     public const OID_ENT_DESCR           = '.1.3.6.1.2.1.47.1.1.1.1.2';
     public const OID_ENT_CLASS           = '.1.3.6.1.2.1.47.1.1.1.1.5';
@@ -86,7 +81,7 @@ class SnmpScanner
     /**
      * Scan one switch and reconcile its port facts.
      *
-     * @return array{ok:bool,run_uuid?:string,error?:string,findings:int,interfaces:int,vlans:int,discovered_ips:int,mapped_ips:int,debug?:array}
+    * @return array{ok:bool,run_uuid?:string,error?:string,findings:int,interfaces:int,vlans:int,discovered_ips:int,mapped_ips:int,node_ip_sources?:array<string,int>,debug?:array}
      */
     public function scanSwitch(string $switchName, string $trigger = 'manual', ?string $userUuid = null): array
     {
@@ -95,8 +90,10 @@ class SnmpScanner
             return ['ok' => false, 'error' => $resolution['error'] ?? 'unbekannter SNMP-Konfigurationsfehler', 'findings' => 0, 'interfaces' => 0, 'vlans' => 0, 'discovered_ips' => 0, 'mapped_ips' => 0];
         }
         $config = $resolution['config'];
+        $switchItem = is_array($resolution['switch'] ?? null) ? $resolution['switch'] : [];
         $deviceUuid = $config['device_uuid'] !== '' ? $config['device_uuid'] : null;
         $itemGroupUuid = ($config['item_group_uuid'] ?? '') !== '' ? $config['item_group_uuid'] : null;
+        $scannerExtension = $this->resolveScannerExtension($config, $switchItem);
 
         $runUuid = $this->createRun($switchName, $deviceUuid, $trigger, $userUuid);
 
@@ -189,16 +186,15 @@ class SnmpScanner
                 }
             }
 
-            // VLAN list: try standard Q-BRIDGE-MIB first, fall back to Huawei MIBs.
+            // VLAN list: try standard Q-BRIDGE-MIB first, then optional vendor extension logic.
             $vlanNameMap = $this->walkMap($config, self::OID_DOT1Q_VLAN_STATIC_NAME);
             $vlanSource  = 'Q-BRIDGE-MIB';
-            if (empty($vlanNameMap)) {
-                $vlanNameMap = $this->walkMap($config, self::OID_HUAWEI_VLAN_DESC);
-                $vlanSource  = 'HUAWEI-VLAN-MIB::hwL2VlanDescription';
-            }
-            if (empty($vlanNameMap)) {
-                $vlanNameMap = $this->walkMap($config, self::OID_HUAWEI_VLAN_NAME);
-                $vlanSource  = 'HUAWEI-VLAN-MIB::hwVlanName';
+            if (empty($vlanNameMap) && $scannerExtension !== null) {
+                $extensionVlanData = $scannerExtension->collectVlanNames($this->client, $this->logger, $config);
+                if ($extensionVlanData !== null) {
+                    $vlanNameMap = $extensionVlanData['map'];
+                    $vlanSource = (string)($extensionVlanData['source'] ?? $scannerExtension->getId());
+                }
             }
             // Add PVIDs as implicit VLAN ids (covers cases where VLAN table is hidden behind a different MIB).
             $vlanIds = [];
@@ -227,7 +223,22 @@ class SnmpScanner
             // FDB / Node Tracking: walk Q-BRIDGE / BRIDGE FDB using earlier bridge-port map.
             $nodes = $this->walkFdb($config, $bridgePortToIfIndex);
             $nodeIps = $this->collectNodeIpsFromArpTable($config);
+            if ($scannerExtension !== null) {
+                foreach ($scannerExtension->collectNodeIps($this->client, $this->logger, $config) as $mac => $nodeIp) {
+                    if (!isset($nodeIps[$mac])) {
+                        $nodeIps[$mac] = $nodeIp;
+                    }
+                }
+            }
             $nodeIpMatchedMacs = [];
+            $nodeIpSources = [];
+            foreach ($nodeIps as $nodeIp) {
+                $source = trim((string)($nodeIp['source'] ?? 'snmp:arp'));
+                if ($source === '') {
+                    $source = 'snmp:arp';
+                }
+                $nodeIpSources[$source] = (int)($nodeIpSources[$source] ?? 0) + 1;
+            }
             if (!empty($nodeIps) && !empty($nodes)) {
                 foreach ($nodes as $idx => $node) {
                     $mac = strtolower((string)($node['mac'] ?? ''));
@@ -250,20 +261,13 @@ class SnmpScanner
             $poeDetection = $this->walkMapCompound($config, self::OID_PETH_DETECTION, 2);
             $poeClass     = $this->walkMapCompound($config, self::OID_PETH_POWER_CLASS, 2);
             $poeSource    = 'POWER-ETHERNET-MIB';
-            // If standard MIB is empty (common on Huawei), fall back to HUAWEI-POE-MIB (indexed by ifIndex).
-            if (empty($poeAdmin)) {
-                $hwEnable    = $this->walkMap($config, self::OID_HW_POE_ENABLE);
-                $hwStatus    = $this->walkMap($config, self::OID_HW_POE_POWER_STATUS);
-                $hwConsuming = $this->walkMap($config, self::OID_HW_POE_CONSUMING);
-                $hwClass     = $this->walkMap($config, self::OID_HW_POE_PD_CLASS);
-                if (!empty($hwEnable)) {
-                    $poeSource = 'HUAWEI-POE-MIB';
-                    foreach ($hwEnable as $ifIndex => $enable) {
-                        $key = (string)$ifIndex;
-                        $poeAdmin[$key]     = (int)$enable; // 1=enable, 2=disable (Huawei)
-                        $poeDetection[$key] = isset($hwStatus[$ifIndex]) ? (int)$hwStatus[$ifIndex] : null;
-                        $poeClass[$key]     = isset($hwClass[$ifIndex]) ? (int)$hwClass[$ifIndex] : null;
-                    }
+            if (empty($poeAdmin) && $scannerExtension !== null) {
+                $extensionPoeData = $scannerExtension->collectPoeSnapshot($this->client, $this->logger, $config);
+                if ($extensionPoeData !== null) {
+                    $poeAdmin = $extensionPoeData['admin'];
+                    $poeDetection = $extensionPoeData['detection'];
+                    $poeClass = $extensionPoeData['class'];
+                    $poeSource = (string)($extensionPoeData['source'] ?? $scannerExtension->getId());
                 }
             }
             $poePorts = [];
@@ -392,6 +396,7 @@ class SnmpScanner
                 'node_ips'           => array_values($nodeIps),
                 'node_ip_match_count' => count($nodeIpMatchedMacs),
                 'node_ip_unmatched_count' => max(0, count($nodeIps) - count($nodeIpMatchedMacs)),
+                'node_ip_sources'    => $nodeIpSources,
                 'neighbors'          => $neighbors,
                 'neighbors_persisted' => $result['neighbors_persisted'] ?? 0,
                 'interface_ips'      => array_values($interfaceIps),
@@ -411,6 +416,7 @@ class SnmpScanner
                 'vlans' => $vlanCount,
                 'discovered_ips' => count($interfaceIps),
                 'mapped_ips' => $mappedIpCount,
+                'node_ip_sources' => $nodeIpSources,
             ];
         } catch (\Throwable $e) {
             $this->logger->log('SNMP scan failed for ' . $switchName . ': ' . $e->getMessage(), 3);
@@ -559,6 +565,66 @@ class SnmpScanner
         }
 
         return $nodeIps;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<string,mixed> $switchItem
+     */
+    private function resolveScannerExtension(array $config, array $switchItem): ?SnmpScannerExtensionInterface
+    {
+        $extensionId = strtolower(trim((string)($config['snmp_extension'] ?? '')));
+        if ($extensionId === '') {
+            return null;
+        }
+
+        foreach ($this->loadScannerExtensions() as $extension) {
+            if (strtolower($extension->getId()) !== $extensionId) {
+                continue;
+            }
+            if ($extension->supports($config, $switchItem)) {
+                return $extension;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string,SnmpScannerExtensionInterface>
+     */
+    private function loadScannerExtensions(): array
+    {
+        if (self::$availableExtensions !== null) {
+            return self::$availableExtensions;
+        }
+
+        self::$availableExtensions = [];
+        $moduleGlobs = [
+            dirname(__DIR__) . '/modules/snmp/*.php',
+            dirname(__DIR__, 2) . '/data/automation/snmp_modules/*.php',
+        ];
+
+        $knownClasses = get_declared_classes();
+        foreach ($moduleGlobs as $pattern) {
+            $files = glob($pattern) ?: [];
+            sort($files, SORT_STRING);
+            foreach ($files as $filePath) {
+                require_once $filePath;
+            }
+        }
+
+        $newClasses = array_diff(get_declared_classes(), $knownClasses);
+        foreach ($newClasses as $className) {
+            if (!is_subclass_of($className, SnmpScannerExtensionInterface::class)) {
+                continue;
+            }
+
+            $extension = new $className();
+            self::$availableExtensions[strtolower($extension->getId())] = $extension;
+        }
+
+        return self::$availableExtensions;
     }
 
     /**

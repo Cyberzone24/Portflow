@@ -12,6 +12,9 @@
         "huawei_core_commit": {
         "label": "Huawei Core",
         "description": "Core switches use commit and save after configuration changes.",
+        "snmp": {
+            "extension": "huawei"
+        },
         "supports_commit": true,
         "enter_config": "system-view",
         "commit": "commit",
@@ -22,6 +25,10 @@
         "huawei_access_no_commit": {
         "label": "Huawei Access",
         "description": "Access switches apply configuration directly without a commit step.",
+        "snmp": {
+            "extension": "huawei",
+            "node_ip_collection": "cli-dhcp-snooping"
+        },
         "supports_commit": false,
         "enter_config": "system-view",
         "commit": "",

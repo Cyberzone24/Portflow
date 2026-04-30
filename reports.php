@@ -1077,9 +1077,19 @@ if ($tab === 'topology') {
                 $nodeIps = is_array($det['node_ips'] ?? null) ? $det['node_ips'] : [];
                 $nodeIpMatchCount = (int)($det['node_ip_match_count'] ?? 0);
                 $nodeIpUnmatchedCount = (int)($det['node_ip_unmatched_count'] ?? 0);
+                $nodeIpSources = is_array($det['node_ip_sources'] ?? null) ? $det['node_ip_sources'] : [];
                 $mappedIpCount = count(array_filter($matched, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $unknownIpCount = count(array_filter($unknown, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $vlanSrc = (string)($det['vlan_source'] ?? '-');
+                $nodeIpSourceSummary = '-';
+                if (!empty($nodeIpSources)) {
+                    ksort($nodeIpSources);
+                    $parts = [];
+                    foreach ($nodeIpSources as $source => $count) {
+                        $parts[] = rep_h((string)$source) . ': ' . (int)$count;
+                    }
+                    $nodeIpSourceSummary = implode(' · ', $parts);
+                }
             ?>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1190,6 +1200,13 @@ if ($tab === 'topology') {
                         <?php endif; ?>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <div class="mt-3 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div><span class="font-semibold text-slate-900">Node-IP-Quellen:</span> <?php echo $nodeIpSourceSummary; ?></div>
+                    <div class="text-xs text-slate-500">FDB-Matches: <?php echo $nodeIpMatchCount; ?> · Ohne FDB-Match: <?php echo $nodeIpUnmatchedCount; ?></div>
                 </div>
             </div>
 

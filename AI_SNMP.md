@@ -13,6 +13,7 @@ Abweichungen werden als Drift-Reports angezeigt; pro Abweichung kann der Operato
 - Drift wird live aus `*` vs `expected_*` per View berechnet.
 - Korrekturen laufen ausschliesslich ueber die bestehende `pending_changes` Pipeline und Templates aus `automation.json`.
 - Schreibzugriffe vom Scan auf Konfigurationsdaten ausschliesslich auf "current"-Spalten.
+- Herstellerspezifische Scanner-Fallbacks gehoeren nicht in den generischen Core, sondern in optionale Module/Extensions, die nur bei installiertem Modul und passendem Profil aktiv werden.
 
 ## Vereinbarte Antworten
 - VLAN-Modell wird auf 1:n umgestellt: `device_port_vlan` referenziert direkt `device_port`.
@@ -110,6 +111,8 @@ Begruendung: Counter-Differenz braucht den letzten Wert. `metadata.status` und R
 - Topologie-Reconciliation:
   - LLDP/CDP-Nachbarn werden als Faktenbasis fuer Uplink-Kanten gesammelt.
   - Die Topologie-Karte ist read-only und visualisiert zuerst nur erkannte Uplink-Beziehungen; spaetere Schreibaktionen auf `connection` bleiben davon getrennt.
+- Hersteller-Module:
+  - Huawei-spezifische Client-IP-Ermittlung darf als optionales Modul erfolgen, z. B. ueber read-only CLI-Ausgaben wie DHCP-Snooping-Bindings oder ARP, sofern das Modul explizit ueber das Profil aktiviert wird.
 
 ## SNMP OID-Sets (MVP)
 - System: `1.3.6.1.2.1.1.5.0` sysName, `1.3.6.1.2.1.1.1.0` sysDescr

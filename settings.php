@@ -4570,13 +4570,24 @@
                     $r = $scanner->scanSwitch($name, $set === 'automation_snmp_scan' ? 'manual' : 'manual_all', $userUuid);
                     if ($r['ok']) {
                         $okCount++;
+                        $nodeIpSources = is_array($r['node_ip_sources'] ?? null) ? $r['node_ip_sources'] : [];
+                        $sourceSummary = '-';
+                        if (!empty($nodeIpSources)) {
+                            ksort($nodeIpSources);
+                            $parts = [];
+                            foreach ($nodeIpSources as $source => $count) {
+                                $parts[] = $source . '=' . (int)$count;
+                            }
+                            $sourceSummary = implode(', ', $parts);
+                        }
                         $reports[] = sprintf(
-                            'OK   %s -- interfaces=%d findings=%d ips=%d mapped=%d run=%s',
+                            'OK   %s -- interfaces=%d findings=%d ips=%d mapped=%d node_ip_sources=%s run=%s',
                             $name,
                             (int)($r['interfaces'] ?? 0),
                             (int)($r['findings'] ?? 0),
                             (int)($r['discovered_ips'] ?? 0),
                             (int)($r['mapped_ips'] ?? 0),
+                            $sourceSummary,
                             substr((string)($r['run_uuid'] ?? ''), 0, 8)
                         );
                     } else {
