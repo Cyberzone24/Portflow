@@ -730,6 +730,7 @@ install_repository() {
 
 configure_postgresql() {
     local escaped_password
+    local db_exists
 
     run_root_cmd "PostgreSQL aktivieren" systemctl enable --now postgresql
 
@@ -740,7 +741,7 @@ configure_postgresql() {
 
     escaped_password=${PG_PASSWORD//\'/\'\'}
 
-    info "PostgreSQL Benutzer und Datenbank werden angelegt oder aktualisiert"
+    info "PostgreSQL Benutzer wird angelegt oder aktualisiert"
     if run_psql_as_postgres -v ON_ERROR_STOP=1 postgres >>"$LOG_FILE" 2>&1 <<EOF
 DO \
 \$\$ \
@@ -752,20 +753,26 @@ BEGIN
     END IF;
 END
 \$\$;
-
-DO \
-\$\$ \
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$PG_DBNAME') THEN
-        EXECUTE 'CREATE DATABASE "$PG_DBNAME" OWNER "$PG_USERNAME"';
-    END IF;
-END
-\$\$;
 EOF
     then
-        success "PostgreSQL Benutzer und Datenbank bereitgestellt"
+        success "PostgreSQL Benutzer bereitgestellt"
     else
-        fail "PostgreSQL Konfiguration fehlgeschlagen."
+        fail "PostgreSQL Benutzer konnte nicht konfiguriert werden."
+    fi
+
+    info "PostgreSQL Datenbank wird angelegt oder aktualisiert"
+    db_exists=$(run_psql_as_postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$PG_DBNAME'" postgres 2>>"$LOG_FILE" | tr -d '[:space:]' || true)
+
+    if [[ "$db_exists" == '1' ]]; then
+        if run_psql_as_postgres -v ON_ERROR_STOP=1 postgres -c "ALTER DATABASE \"$PG_DBNAME\" OWNER TO \"$PG_USERNAME\"" >>"$LOG_FILE" 2>&1; then
+            success "PostgreSQL Datenbankbesitzer aktualisiert"
+        else
+            fail "PostgreSQL Datenbank konnte nicht aktualisiert werden."
+        fi
+    elif run_psql_as_postgres -v ON_ERROR_STOP=1 postgres -c "CREATE DATABASE \"$PG_DBNAME\" OWNER \"$PG_USERNAME\"" >>"$LOG_FILE" 2>&1; then
+        success "PostgreSQL Datenbank bereitgestellt"
+    else
+        fail "PostgreSQL Datenbank konnte nicht angelegt werden."
     fi
 }
 
