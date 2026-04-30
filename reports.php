@@ -1078,6 +1078,11 @@ if ($tab === 'topology') {
                 $nodeIpMatchCount = (int)($det['node_ip_match_count'] ?? 0);
                 $nodeIpUnmatchedCount = (int)($det['node_ip_unmatched_count'] ?? 0);
                 $nodeIpSources = is_array($det['node_ip_sources'] ?? null) ? $det['node_ip_sources'] : [];
+                $scannerExtensionId = trim((string)($det['scanner_extension'] ?? ''));
+                $scannerExtensionDiagnostics = is_array($det['scanner_extension_diagnostics'] ?? null) ? $det['scanner_extension_diagnostics'] : [];
+                $nodeIpCollectionDiagnostics = is_array($scannerExtensionDiagnostics['node_ip_collection'] ?? null) ? $scannerExtensionDiagnostics['node_ip_collection'] : [];
+                $nodeIpCollectionConnection = is_array($nodeIpCollectionDiagnostics['connection'] ?? null) ? $nodeIpCollectionDiagnostics['connection'] : [];
+                $nodeIpCollectionExecution = is_array($nodeIpCollectionDiagnostics['execution'] ?? null) ? $nodeIpCollectionDiagnostics['execution'] : [];
                 $mappedIpCount = count(array_filter($matched, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $unknownIpCount = count(array_filter($unknown, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $vlanSrc = (string)($det['vlan_source'] ?? '-');
@@ -1090,6 +1095,19 @@ if ($tab === 'topology') {
                     }
                     $nodeIpSourceSummary = implode(' · ', $parts);
                 }
+                $scannerExtensionStatus = trim((string)($nodeIpCollectionDiagnostics['status'] ?? ''));
+                $scannerExtensionMode = trim((string)($nodeIpCollectionDiagnostics['mode'] ?? ''));
+                $scannerExtensionError = trim((string)($nodeIpCollectionDiagnostics['error'] ?? ''));
+                $scannerExtensionPreview = trim((string)($nodeIpCollectionDiagnostics['output_preview'] ?? ($nodeIpCollectionExecution['output_preview'] ?? '')));
+                $scannerExtensionCommands = is_array($nodeIpCollectionExecution['commands'] ?? null) ? $nodeIpCollectionExecution['commands'] : [];
+                $scannerExtensionCommandSummary = empty($scannerExtensionCommands) ? '-' : implode(' | ', array_map(static fn($command): string => (string)$command, $scannerExtensionCommands));
+                $scannerExtensionParsedCount = (int)($nodeIpCollectionDiagnostics['parsed_count'] ?? 0);
+                $scannerExtensionExitCode = isset($nodeIpCollectionExecution['exit_code']) ? (string)$nodeIpCollectionExecution['exit_code'] : '-';
+                $scannerExtensionHostSet = !empty($nodeIpCollectionConnection['host_set']) ? 'ja' : 'nein';
+                $scannerExtensionUserSet = !empty($nodeIpCollectionConnection['username_set']) ? 'ja' : 'nein';
+                $scannerExtensionPasswordSet = !empty($nodeIpCollectionConnection['password_set']) ? 'ja' : 'nein';
+                $scannerExtensionKeySet = !empty($nodeIpCollectionConnection['private_key_set']) ? 'ja' : 'nein';
+                $scannerExtensionSshpassFound = array_key_exists('sshpass_found', $nodeIpCollectionExecution) ? (!empty($nodeIpCollectionExecution['sshpass_found']) ? 'ja' : 'nein') : '-';
             ?>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1209,6 +1227,40 @@ if ($tab === 'topology') {
                     <div class="text-xs text-slate-500">FDB-Matches: <?php echo $nodeIpMatchCount; ?> · Ohne FDB-Match: <?php echo $nodeIpUnmatchedCount; ?></div>
                 </div>
             </div>
+
+            <?php if ($scannerExtensionId !== ''): ?>
+                <div class="mt-3 rounded-xl border border-slate-300 bg-white">
+                    <div class="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                        <h3 class="text-sm font-semibold text-slate-900">Scanner-Extension</h3>
+                        <span class="text-xs text-slate-500"><?php echo rep_h($scannerExtensionId); ?></span>
+                    </div>
+                    <div class="grid grid-cols-1 gap-2 px-3 py-2 text-sm md:grid-cols-2">
+                        <div><span class="font-semibold text-slate-900">Node-IP-Modus:</span> <?php echo rep_h($scannerExtensionMode !== '' ? $scannerExtensionMode : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">Status:</span> <?php echo rep_h($scannerExtensionStatus !== '' ? $scannerExtensionStatus : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">Credential-Mode:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['credential_mode'] ?? '-')); ?></div>
+                        <div><span class="font-semibold text-slate-900">SSH Auth:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['auth_method'] ?? '-')); ?></div>
+                        <div><span class="font-semibold text-slate-900">Host gesetzt:</span> <?php echo $scannerExtensionHostSet; ?></div>
+                        <div><span class="font-semibold text-slate-900">Username gesetzt:</span> <?php echo $scannerExtensionUserSet; ?></div>
+                        <div><span class="font-semibold text-slate-900">Passwort gesetzt:</span> <?php echo $scannerExtensionPasswordSet; ?></div>
+                        <div><span class="font-semibold text-slate-900">SSH-Key gesetzt:</span> <?php echo $scannerExtensionKeySet; ?></div>
+                        <div><span class="font-semibold text-slate-900">sshpass vorhanden:</span> <?php echo $scannerExtensionSshpassFound; ?></div>
+                        <div><span class="font-semibold text-slate-900">Exit-Code:</span> <?php echo rep_h($scannerExtensionExitCode); ?></div>
+                        <div><span class="font-semibold text-slate-900">CLI-Kommandos:</span> <?php echo rep_h($scannerExtensionCommandSummary); ?></div>
+                        <div><span class="font-semibold text-slate-900">Geparste CLI-IPs:</span> <?php echo $scannerExtensionParsedCount; ?></div>
+                    </div>
+                    <?php if ($scannerExtensionError !== ''): ?>
+                        <div class="border-t border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                            <span class="font-semibold">Fehler:</span> <?php echo rep_h($scannerExtensionError); ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($scannerExtensionPreview !== ''): ?>
+                        <div class="border-t border-slate-100 px-3 py-2">
+                            <div class="pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">CLI-Output Preview</div>
+                            <pre class="whitespace-pre-wrap text-xs leading-5 text-slate-700"><?php echo rep_h($scannerExtensionPreview); ?></pre>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
 
             <!-- Neighbors / PoE / Entity -->
             <?php

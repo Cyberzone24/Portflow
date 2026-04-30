@@ -15,6 +15,9 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     private const OID_HW_POE_POWER_STATUS = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.5';
     private const OID_HW_POE_PD_CLASS = '.1.3.6.1.4.1.2011.5.25.195.4.1.1.10';
 
+    /** @var array<string,mixed> */
+    private array $lastDiagnostics = [];
+
     public function getId(): string
     {
         return 'huawei';
@@ -82,15 +85,29 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     public function collectNodeIps(SnmpClient $client, Logger $logger, array $config): array
     {
         $mode = strtolower(trim((string)($config['node_ip_collection'] ?? '')));
+        $this->lastDiagnostics = [
+            'extension' => $this->getId(),
+            'switch_name' => (string)($config['switch_name'] ?? ''),
+            'node_ip_collection' => [
+                'mode' => $mode,
+                'status' => 'disabled',
+            ],
+        ];
         if (!in_array($mode, ['cli', 'cli-dhcp-snooping', 'cli-arp'], true)) {
             return [];
         }
 
+        $this->lastDiagnostics['node_ip_collection']['status'] = 'starting';
+
         $connection = $this->resolveSshConnection($config);
         if ($connection === null) {
+            $this->lastDiagnostics['node_ip_collection']['status'] = 'switch-not-found';
+            $this->lastDiagnostics['node_ip_collection']['error'] = 'Switch konnte fuer CLI-Zugangsdaten nicht im Inventar gefunden werden.';
             $logger->log('HuaweiScannerExtension: no SSH connection data available for ' . (string)($config['switch_name'] ?? '?'), 2);
             return [];
         }
+
+        $this->lastDiagnostics['node_ip_collection']['connection'] = $this->describeConnection($connection);
 
         $commands = [];
         if ($mode === 'cli' || $mode === 'cli-dhcp-snooping') {
@@ -101,13 +118,26 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         $result = $this->runReadOnlySshCommands($connection, $commands, $logger, (string)($config['switch_name'] ?? ''));
+        $this->lastDiagnostics['node_ip_collection']['execution'] = $result['diagnostics'] ?? [];
         if (!$result['ok']) {
+            $this->lastDiagnostics['node_ip_collection']['status'] = 'failed';
+            $this->lastDiagnostics['node_ip_collection']['error'] = (string)($result['output'] ?? '');
+            $this->lastDiagnostics['node_ip_collection']['output_preview'] = $this->buildOutputPreview((string)($result['output'] ?? ''));
             $logger->log('HuaweiScannerExtension: CLI node-IP collection failed for ' . (string)($config['switch_name'] ?? '?') . ': ' . (string)($result['output'] ?? ''), 2);
             return [];
         }
 
         $source = $mode === 'cli-dhcp-snooping' ? 'cli:dhcp-snooping' : ($mode === 'cli-arp' ? 'cli:arp' : 'cli:huawei');
-        return $this->parseNodeIpsFromCliOutput((string)($result['output'] ?? ''), $source);
+        $parsed = $this->parseNodeIpsFromCliOutput((string)($result['output'] ?? ''), $source);
+        $this->lastDiagnostics['node_ip_collection']['parsed_count'] = count($parsed);
+        $this->lastDiagnostics['node_ip_collection']['status'] = empty($parsed) ? 'parsed-empty' : 'ok';
+        $this->lastDiagnostics['node_ip_collection']['output_preview'] = $this->buildOutputPreview((string)($result['output'] ?? ''));
+        return $parsed;
+    }
+
+    public function getLastDiagnostics(): array
+    {
+        return $this->lastDiagnostics;
     }
 
     /**
@@ -186,6 +216,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         return [
             'mgmt_ip' => trim((string)($switchItem['mgmt_ip'] ?? $config['host'] ?? '')),
             'ssh_port' => (int)($settings['ssh_port'] ?? 22),
+            'credential_mode' => $credentialMode,
             'ssh_auth_method' => $authMethod,
             'ssh_username' => $username,
             'ssh_password' => $password,
@@ -196,7 +227,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     /**
      * @param array<string,mixed> $connection
      * @param array<int,string> $commands
-     * @return array{ok:bool,output:string}
+     * @return array{ok:bool,output:string,diagnostics:array<string,mixed>}
      */
     private function runReadOnlySshCommands(array $connection, array $commands, Logger $logger, string $switchName): array
     {
@@ -206,21 +237,34 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         $username = trim((string)($connection['ssh_username'] ?? ''));
         $password = (string)($connection['ssh_password'] ?? '');
         $privateKey = (string)($connection['ssh_private_key'] ?? '');
+        $diagnostics = [
+            'credential_mode' => (string)($connection['credential_mode'] ?? ''),
+            'auth_method' => $authMethod,
+            'host_set' => $host !== '',
+            'username_set' => $username !== '',
+            'password_set' => $password !== '',
+            'private_key_set' => trim($privateKey) !== '',
+            'command_count' => count($commands),
+            'commands' => array_values($commands),
+        ];
 
         if ($host === '' || $username === '') {
-            return ['ok' => false, 'output' => 'Host oder SSH-Benutzer fehlen.'];
+            return ['ok' => false, 'output' => 'Host oder SSH-Benutzer fehlen.', 'diagnostics' => $diagnostics];
         }
 
         $sshPath = trim((string)shell_exec('command -v ssh 2>/dev/null'));
+        $diagnostics['ssh_binary_found'] = $sshPath !== '';
         if ($sshPath === '') {
-            return ['ok' => false, 'output' => 'ssh Binary wurde nicht gefunden.'];
+            return ['ok' => false, 'output' => 'ssh Binary wurde nicht gefunden.', 'diagnostics' => $diagnostics];
         }
 
         $timeoutPath = trim((string)shell_exec('command -v timeout 2>/dev/null'));
         $sshpassPath = trim((string)shell_exec('command -v sshpass 2>/dev/null'));
+        $diagnostics['timeout_found'] = $timeoutPath !== '';
+        $diagnostics['sshpass_found'] = $sshpassPath !== '';
         $knownHostsFile = $this->ensureKnownHostsFile();
         if ($knownHostsFile === null) {
-            return ['ok' => false, 'output' => 'Known-Hosts-Datei konnte nicht angelegt werden.'];
+            return ['ok' => false, 'output' => 'Known-Hosts-Datei konnte nicht angelegt werden.', 'diagnostics' => $diagnostics];
         }
 
         $sshOptions = '-F /dev/null -tt -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=' . escapeshellarg($knownHostsFile) . ' -o ConnectTimeout=8';
@@ -233,11 +277,11 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
 
         if ($authMethod === 'key') {
             if (trim($privateKey) === '') {
-                return ['ok' => false, 'output' => 'SSH-Key ist leer.'];
+                return ['ok' => false, 'output' => 'SSH-Key ist leer.', 'diagnostics' => $diagnostics];
             }
             $keyFile = tempnam(sys_get_temp_dir(), 'portflow-huawei-key-');
             if ($keyFile === false) {
-                return ['ok' => false, 'output' => 'Temporäre Key-Datei konnte nicht erstellt werden.'];
+                return ['ok' => false, 'output' => 'Temporäre Key-Datei konnte nicht erstellt werden.', 'diagnostics' => $diagnostics];
             }
             file_put_contents($keyFile, rtrim($privateKey) . "\n");
             @chmod($keyFile, 0600);
@@ -249,7 +293,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
             if ($keyFile !== null) {
                 @unlink($keyFile);
             }
-            return ['ok' => false, 'output' => 'Temporäre Kommando-Datei konnte nicht erstellt werden.'];
+            return ['ok' => false, 'output' => 'Temporäre Kommando-Datei konnte nicht erstellt werden.', 'diagnostics' => $diagnostics];
         }
 
         $commandLines = ['screen-length 0 temporary'];
@@ -270,7 +314,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
                 if ($keyFile !== null) {
                     @unlink($keyFile);
                 }
-                return ['ok' => false, 'output' => 'sshpass wurde fuer Passwortauthentifizierung nicht gefunden.'];
+                return ['ok' => false, 'output' => 'sshpass wurde fuer Passwortauthentifizierung nicht gefunden.', 'diagnostics' => $diagnostics];
             }
             putenv('SSHPASS=' . $password);
             $sshCommand = $sshpassPath . ' -e ' . $sshCommand;
@@ -289,10 +333,40 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         $logger->log('HuaweiScannerExtension CLI collector for ' . $switchName . ' returned exit=' . $exitCode, $exitCode === 0 ? 1 : 2);
+        $diagnostics['exit_code'] = $exitCode;
+        $diagnostics['output_preview'] = $this->buildOutputPreview(implode("\n", $lines));
         return [
             'ok' => $exitCode === 0,
             'output' => implode("\n", $lines),
+            'diagnostics' => $diagnostics,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $connection
+     * @return array<string,mixed>
+     */
+    private function describeConnection(array $connection): array
+    {
+        return [
+            'credential_mode' => (string)($connection['credential_mode'] ?? ''),
+            'auth_method' => (string)($connection['ssh_auth_method'] ?? ''),
+            'host_set' => trim((string)($connection['mgmt_ip'] ?? '')) !== '',
+            'username_set' => trim((string)($connection['ssh_username'] ?? '')) !== '',
+            'password_set' => (string)($connection['ssh_password'] ?? '') !== '',
+            'private_key_set' => trim((string)($connection['ssh_private_key'] ?? '')) !== '',
+            'ssh_port' => (int)($connection['ssh_port'] ?? 22),
+        ];
+    }
+
+    private function buildOutputPreview(string $output): string
+    {
+        $normalized = trim((string)preg_replace("/\r\n?|\r/", "\n", $output));
+        if ($normalized === '') {
+            return '';
+        }
+
+        return mb_substr($normalized, 0, 1200);
     }
 
     private function ensureKnownHostsFile(): ?string
