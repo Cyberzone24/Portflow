@@ -136,7 +136,7 @@ class NotificationCenter {
         return 0;
     }
 
-    public function processQueue(int $maxEntries = 100): array {
+    public function processQueue(int $maxEntries = 100, bool $ignoreSchedule = false): array {
         $queue = $this->readQueue();
         if (empty($queue)) {
             return ['processed' => 0, 'sent' => 0, 'failed' => 0, 'remaining' => 0];
@@ -158,7 +158,7 @@ class NotificationCenter {
 
             $nextAttemptRaw = (string)($entry['next_attempt_at'] ?? '');
             $nextAttemptAt = $this->safeDate($nextAttemptRaw);
-            if ($nextAttemptAt !== null && $nextAttemptAt > $now) {
+            if (!$ignoreSchedule && $nextAttemptAt !== null && $nextAttemptAt > $now) {
                 continue;
             }
 
@@ -472,6 +472,44 @@ class NotificationCenter {
         }
 
         return ['ok' => false, 'message' => 'queue entry not found'];
+    }
+
+    public function deleteQueueEntry(string $entryId): array {
+        $targetId = trim($entryId);
+        if ($targetId === '') {
+            return ['ok' => false, 'message' => 'queue entry id missing'];
+        }
+
+        $queue = $this->readQueue();
+        $kept = [];
+        $deletedEntry = null;
+
+        foreach ($queue as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            if ($deletedEntry === null && (string)($entry['id'] ?? '') === $targetId) {
+                $deletedEntry = $entry;
+                continue;
+            }
+
+            $kept[] = $entry;
+        }
+
+        if ($deletedEntry === null) {
+            return ['ok' => false, 'message' => 'queue entry not found'];
+        }
+
+        $this->writeQueue($kept);
+
+        return [
+            'ok' => true,
+            'message' => 'queue entry deleted',
+            'id' => $targetId,
+            'status' => (string)($deletedEntry['status'] ?? ''),
+            'remaining' => count($kept)
+        ];
     }
 
     public function cleanupQueue(int $retentionDays = 30): array {

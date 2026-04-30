@@ -3117,6 +3117,37 @@
 
                 header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
+            case 'config_notification_delete_entry':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification delete', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=notifications');
+                    die();
+                }
+
+                $queueEntryId = trim((string)($_POST['notification_queue_entry_id'] ?? ''));
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $deleteResult = $notificationCenter->deleteQueueEntry($queueEntryId);
+                    $message = (string)($deleteResult['message'] ?? 'Queue-Eintrag geloescht.');
+                    if (!empty($deleteResult['ok'])) {
+                        $message = 'Queue-Eintrag geloescht. remaining=' . (int)($deleteResult['remaining'] ?? 0);
+                    }
+                    configSetFeedback('notification', !empty($deleteResult['ok']), $message);
+                    $logger->log('notification queue delete executed: ' . $message, !empty($deleteResult['ok']) ? 1 : 2, echoToWeb: true);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Queue-Loeschen fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('notification queue delete failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
+                break;
             case 'config_notification_enqueue_test':
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -3188,14 +3219,18 @@
                 if ($maxEntries < 1 || $maxEntries > 500) {
                     $maxEntries = 100;
                 }
+                $ignoreSchedule = !empty($_POST['notification_process_ignore_schedule']);
 
                 try {
                     $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
-                    $result = $notificationCenter->processQueue($maxEntries);
+                    $result = $notificationCenter->processQueue($maxEntries, $ignoreSchedule);
                     $message = 'Queue verarbeitet: processed=' . (int)($result['processed'] ?? 0)
                         . ', sent=' . (int)($result['sent'] ?? 0)
                         . ', failed=' . (int)($result['failed'] ?? 0)
                         . ', remaining=' . (int)($result['remaining'] ?? 0);
+                    if ($ignoreSchedule) {
+                        $message .= ' (Retry-Backoff ignoriert)';
+                    }
                     configSetFeedback(
                         'notification',
                         true,
@@ -5479,8 +5514,9 @@ switch ($site) {
         $recentRetryPending = is_array($notificationOverview['recent_retry_pending'] ?? null) ? $notificationOverview['recent_retry_pending'] : [];
         if (!empty($recentRetryPending)) {
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
-            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Naechster Versuch</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Letzter Fehler</th><th class="p-2">Versuche</th></tr></thead><tbody>';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Naechster Versuch</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Letzter Fehler</th><th class="p-2">Versuche</th><th class="p-2">Aktion</th></tr></thead><tbody>';
             foreach ($recentRetryPending as $entry) {
+                $entryId = escapeSettingValue((string)($entry['id'] ?? ''));
                 $nextAttemptAt = escapeSettingValue((string)($entry['next_attempt_at'] ?? $entry['updated_at'] ?? '-'));
                 $eventType = escapeSettingValue((string)($entry['event_type'] ?? '-'));
                 $channel = escapeSettingValue((string)($entry['channel'] ?? 'mail'));
@@ -5492,7 +5528,11 @@ switch ($site) {
                 }
                 $error = escapeSettingValue((string)($entry['error'] ?? '-'));
                 $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
-                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $nextAttemptAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td></tr>';
+                $deleteAction = '-';
+                if ($entryId !== '') {
+                    $deleteAction = '<form action="?set=config_notification_delete_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white">Loeschen</button></form>';
+                }
+                echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $nextAttemptAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td><td class="p-2 border-b">' . $deleteAction . '</td></tr>';
             }
             echo '</tbody></table></div>';
         } else {
@@ -5521,7 +5561,7 @@ switch ($site) {
                 $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
                 $retryAction = '-';
                 if ($entryId !== '') {
-                    $retryAction = '<form action="?set=config_notification_retry_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Retry</button></form>';
+                    $retryAction = '<div class="flex gap-2"><form action="?set=config_notification_retry_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Retry</button></form><form action="?set=config_notification_delete_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white">Loeschen</button></form></div>';
                 }
                 echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $updatedAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td><td class="p-2 border-b">' . $retryAction . '</td></tr>';
             }
@@ -5541,6 +5581,7 @@ switch ($site) {
         echo '<form action="?set=config_notification_process_queue" method="post" class="m-0 flex items-center gap-2">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<input name="notification_process_limit" type="number" min="1" max="500" value="100" class="w-24 py-2 px-3" title="Maximal zu verarbeitende Queue-Eintraege">';
+        echo '<label class="inline-flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="notification_process_ignore_schedule" value="1"> Retry-Backoff ignorieren</label>';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Queue jetzt verarbeiten</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_cleanup_queue" method="post" class="m-0 flex items-center gap-2">';
