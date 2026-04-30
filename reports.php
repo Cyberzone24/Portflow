@@ -547,7 +547,7 @@ if ($tab === 'nodes') {
         $where = '';
         $params = [];
         if ($nodeSearch !== '') {
-            $where = 'WHERE n.mac_address ILIKE :q OR dp_cap.caption ILIKE :q OR d_cap.caption ILIKE :q';
+            $where = 'WHERE n.mac_address ILIKE :q OR COALESCE(n.ip, \'\') ILIKE :q OR COALESCE(n.hostname, \'\') ILIKE :q OR dp_cap.caption ILIKE :q OR d_cap.caption ILIKE :q';
             $params['q'] = '%' . $nodeSearch . '%';
         }
         $nodeRows = $db_adapter->db_query(
@@ -910,7 +910,7 @@ if ($tab === 'topology') {
         </div>
 
     <?php elseif ($tab === 'nodes'): ?>
-        <p class="mb-3 text-sm text-slate-500">MAC-Adressen, die per FDB an Switch-Ports beobachtet wurden. Sucht in MAC, Port-Caption und Geräte-Caption.</p>
+        <p class="mb-3 text-sm text-slate-500">MAC-Adressen und erkannte IPs von Endgeraeten, die per FDB und ARP an Switch-Ports beobachtet wurden. Sucht in MAC, IP, Hostname, Port-Caption und Geraete-Caption.</p>
         <form method="get" action="reports.php" class="mb-3 flex flex-wrap items-center gap-2">
             <input type="hidden" name="tab" value="nodes">
             <input type="text" name="mac" value="<?php echo rep_h($nodeSearch); ?>" placeholder="MAC, Port oder Gerät suchen…" class="w-72 rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
@@ -926,6 +926,7 @@ if ($tab === 'topology') {
                 <thead class="bg-slate-100 text-slate-900">
                     <tr>
                         <th class="p-2">MAC</th>
+                        <th class="p-2">IP / Hostname</th>
                         <th class="p-2 text-right">VLAN</th>
                         <th class="p-2">Gerät</th>
                         <th class="p-2">Port</th>
@@ -938,6 +939,12 @@ if ($tab === 'topology') {
                 <?php foreach ($nodeRows as $row): ?>
                     <tr class="border-t border-slate-100">
                         <td class="p-2 font-mono text-xs"><?php echo rep_h($row['mac_address'] ?? ''); ?></td>
+                        <td class="p-2 text-xs">
+                            <div class="font-mono text-cyan-700"><?php echo rep_h(trim((string)($row['ip'] ?? '')) !== '' ? (string)($row['ip'] ?? '') : '-'); ?></div>
+                            <?php if (trim((string)($row['hostname'] ?? '')) !== ''): ?>
+                                <div class="text-slate-500"><?php echo rep_h($row['hostname'] ?? ''); ?></div>
+                            <?php endif; ?>
+                        </td>
                         <td class="p-2 text-right text-xs"><?php echo $row['vlan'] !== null ? (int)$row['vlan'] : '-'; ?></td>
                         <td class="p-2"><?php echo rep_h($row['device_caption'] ?? ''); ?></td>
                         <td class="p-2 font-mono text-xs"><?php echo rep_h($row['port_caption'] ?? ''); ?></td>
@@ -947,7 +954,7 @@ if ($tab === 'topology') {
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($nodeRows)): ?>
-                    <tr><td colspan="7" class="p-4 text-center text-sm text-slate-500"><?php echo $nodeSearch === '' ? 'Noch keine FDB-Nodes erfasst. Im nächsten Scan werden MAC-Adressen pro Port gesammelt.' : 'Keine Treffer.'; ?></td></tr>
+                    <tr><td colspan="8" class="p-4 text-center text-sm text-slate-500"><?php echo $nodeSearch === '' ? 'Noch keine FDB-/ARP-Nodes erfasst. Im nächsten Scan werden MAC-Adressen und, falls vorhanden, Endgeraete-IPs gesammelt.' : 'Keine Treffer.'; ?></td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

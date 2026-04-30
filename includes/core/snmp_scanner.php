@@ -27,6 +27,7 @@ class SnmpScanner
     public const OID_IF_HC_OUT_OCTETS  = '.1.3.6.1.2.1.31.1.1.1.10';
     public const OID_IP_ADDR_ENTRY_ADDR = '.1.3.6.1.2.1.4.20.1.1';
     public const OID_IP_ADDR_ENTRY_IFINDEX = '.1.3.6.1.2.1.4.20.1.2';
+    public const OID_IP_NET_TO_MEDIA_PHYS_ADDRESS = '.1.3.6.1.2.1.4.22.1.2';
     public const OID_DOT1Q_PVID        = '.1.3.6.1.2.1.17.7.1.4.5.1.1';
     /** Q-BRIDGE-MIB dot1qVlanCurrentEgressPorts: index = timeMark.vlanId, value = OCTET STRING bitmap (bridge ports). */
     public const OID_DOT1Q_VLAN_CURRENT_EGRESS   = '.1.3.6.1.2.1.17.7.1.4.2.1.4';
@@ -224,6 +225,18 @@ class SnmpScanner
 
             // FDB / Node Tracking: walk Q-BRIDGE / BRIDGE FDB using earlier bridge-port map.
             $nodes = $this->walkFdb($config, $bridgePortToIfIndex);
+            $nodeIps = $this->collectNodeIpsFromArpTable($config);
+            if (!empty($nodeIps) && !empty($nodes)) {
+                foreach ($nodes as $idx => $node) {
+                    $mac = strtolower((string)($node['mac'] ?? ''));
+                    if ($mac === '' || !isset($nodeIps[$mac])) {
+                        continue;
+                    }
+                    $nodes[$idx]['ip'] = (string)($nodeIps[$mac]['ip'] ?? '');
+                    $nodes[$idx]['hostname'] = (string)($nodeIps[$mac]['hostname'] ?? '');
+                    $nodes[$idx]['ip_source'] = (string)($nodeIps[$mac]['source'] ?? 'snmp:arp');
+                }
+            }
 
             // LLDP topology neighbors.
             $neighbors = $this->walkLldp($config);
@@ -373,6 +386,7 @@ class SnmpScanner
                 'unknown_interfaces' => $result['unknown_details'] ?? [],
                 'nodes_seen'         => count($nodes),
                 'nodes_persisted'    => $result['nodes_persisted'] ?? 0,
+                'node_ips'           => array_values($nodeIps),
                 'neighbors'          => $neighbors,
                 'neighbors_persisted' => $result['neighbors_persisted'] ?? 0,
                 'interface_ips'      => array_values($interfaceIps),
@@ -398,6 +412,100 @@ class SnmpScanner
             $this->finalizeRun($runUuid, 'failed', $e->getMessage(), 0, 0, 0, ['error' => $e->getMessage()]);
             return ['ok' => false, 'run_uuid' => $runUuid, 'error' => $e->getMessage(), 'findings' => 0, 'interfaces' => 0, 'vlans' => 0, 'discovered_ips' => 0, 'mapped_ips' => 0];
         }
+    }
+
+    /**
+     * Collect IPv4 ARP entries and map them by MAC address.
+     *
+     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string}>
+     */
+    private function collectNodeIpsFromArpTable(array $config): array
+    {
+        $result = $this->client->runWalkHex($config, self::OID_IP_NET_TO_MEDIA_PHYS_ADDRESS);
+        if (!$result['ok']) {
+            return [];
+        }
+
+        $parsed = SnmpClient::parseWalkLines($result['lines']);
+        $nodeIps = [];
+        $prefix = self::OID_IP_NET_TO_MEDIA_PHYS_ADDRESS . '.';
+        foreach ($parsed as $oid => $value) {
+            if (strpos($oid, $prefix) !== 0) {
+                continue;
+            }
+
+            $suffix = substr($oid, strlen($prefix));
+            $parts = array_values(array_filter(explode('.', $suffix), static fn(string $part): bool => $part !== ''));
+            if (count($parts) !== 5) {
+                continue;
+            }
+
+            $ifIndex = (int)array_shift($parts);
+            if ($ifIndex <= 0) {
+                continue;
+            }
+
+            $ipAddress = $this->buildIpv4AddressFromParts($parts);
+            if ($ipAddress === null) {
+                continue;
+            }
+
+            $mac = $this->normalizeMacValue((string)$value);
+            if ($mac === '') {
+                continue;
+            }
+
+            if (!isset($nodeIps[$mac])) {
+                $nodeIps[$mac] = [
+                    'if_index' => $ifIndex,
+                    'ip' => $ipAddress,
+                    'hostname' => '',
+                    'source' => 'snmp:ipNetToMedia',
+                ];
+            }
+        }
+
+        return $nodeIps;
+    }
+
+    /**
+     * @param array<int,string> $parts
+     */
+    private function buildIpv4AddressFromParts(array $parts): ?string
+    {
+        if (count($parts) !== 4) {
+            return null;
+        }
+
+        $octets = [];
+        foreach ($parts as $part) {
+            if (!ctype_digit($part)) {
+                return null;
+            }
+            $value = (int)$part;
+            if ($value < 0 || $value > 255) {
+                return null;
+            }
+            $octets[] = (string)$value;
+        }
+
+        $ipAddress = implode('.', $octets);
+        return filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $ipAddress : null;
+    }
+
+    private function normalizeMacValue(string $raw): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        $hex = strtolower(preg_replace('/[^0-9a-fA-F]/', '', $raw) ?? '');
+        if (strlen($hex) !== 12) {
+            return '';
+        }
+
+        return implode(':', str_split($hex, 2));
     }
 
     /**

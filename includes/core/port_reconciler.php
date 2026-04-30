@@ -645,10 +645,10 @@ class PortReconciler
     }
 
     /**
-     * Persist FDB nodes (MAC-Adressen pro Port) mit upsert-Semantik.
-     * Insert bei (device_port, mac) erstmals; Update last_seen + vlan + last_scan_run sonst.
+    * Persist FDB nodes (MAC-Adressen pro Port) mit upsert-Semantik.
+    * Insert bei (device_port, mac) erstmals; Update last_seen + vlan + last_scan_run sonst.
      *
-     * @param array<int,array{mac:string,vlan:?int,if_index:?int,bridge_port:int}> $nodes
+    * @param array<int,array{mac:string,vlan:?int,if_index:?int,bridge_port:int,ip?:string,hostname?:string}> $nodes
      * @param array<int,string> $ifIndexToPortUuid
      */
     private function applyNodeFacts(array $nodes, array $ifIndexToPortUuid, string $runUuid): int
@@ -668,6 +668,11 @@ class PortReconciler
                 continue;
             }
             $vlan = isset($node['vlan']) && $node['vlan'] !== null ? (int)$node['vlan'] : null;
+            $ipAddress = trim((string)($node['ip'] ?? ''));
+            if ($ipAddress !== '' && !filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+                $ipAddress = '';
+            }
+            $hostname = trim((string)($node['hostname'] ?? ''));
 
             try {
                 $existing = $this->db->db_query(
@@ -675,14 +680,31 @@ class PortReconciler
                     ['dp' => $portUuid, 'mac' => $mac]
                 );
                 if (!empty($existing)) {
+                    $updates = ['last_seen = CURRENT_TIMESTAMP', 'vlan = COALESCE(:vlan, vlan)', 'last_scan_run = :run'];
+                    $params = ['vlan' => $vlan, 'run' => $runUuid !== '' ? $runUuid : null, 'uuid' => $existing[0]['uuid']];
+                    if ($ipAddress !== '') {
+                        $updates[] = 'ip = :ip';
+                        $params['ip'] = $ipAddress;
+                    }
+                    if ($hostname !== '') {
+                        $updates[] = 'hostname = :hostname';
+                        $params['hostname'] = $hostname;
+                    }
                     $this->db->db_query(
-                        'UPDATE device_port_node SET last_seen = CURRENT_TIMESTAMP, vlan = COALESCE(:vlan, vlan), last_scan_run = :run WHERE uuid = :uuid',
-                        ['vlan' => $vlan, 'run' => $runUuid !== '' ? $runUuid : null, 'uuid' => $existing[0]['uuid']]
+                        'UPDATE device_port_node SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid',
+                        $params
                     );
                 } else {
                     $this->db->db_query(
-                        'INSERT INTO device_port_node (device_port, mac_address, vlan, last_scan_run) VALUES (:dp, :mac, :vlan, :run)',
-                        ['dp' => $portUuid, 'mac' => $mac, 'vlan' => $vlan, 'run' => $runUuid !== '' ? $runUuid : null]
+                        'INSERT INTO device_port_node (device_port, mac_address, vlan, ip, hostname, last_scan_run) VALUES (:dp, :mac, :vlan, :ip, :hostname, :run)',
+                        [
+                            'dp' => $portUuid,
+                            'mac' => $mac,
+                            'vlan' => $vlan,
+                            'ip' => $ipAddress !== '' ? $ipAddress : null,
+                            'hostname' => $hostname !== '' ? $hostname : null,
+                            'run' => $runUuid !== '' ? $runUuid : null,
+                        ]
                     );
                 }
                 $persisted++;
