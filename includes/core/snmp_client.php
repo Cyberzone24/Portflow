@@ -364,18 +364,33 @@ class SnmpClient
         if ($profileId === '') {
             return [];
         }
-        $path = __DIR__ . '/../../data/automation/automation.json';
+        $coreProfiles = $this->readAutomationProfiles(__DIR__ . '/automation.json');
+        $dataProfiles = $this->readAutomationProfiles(__DIR__ . '/../../data/automation/automation.json');
+
+        $coreProfile = is_array($coreProfiles[$profileId] ?? null) ? $coreProfiles[$profileId] : [];
+        $dataProfile = is_array($dataProfiles[$profileId] ?? null) ? $dataProfiles[$profileId] : [];
+        $mergedProfile = array_replace_recursive($coreProfile, $dataProfile);
+
+        return is_array($mergedProfile['snmp'] ?? null) ? $mergedProfile['snmp'] : [];
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    private function readAutomationProfiles(string $path): array
+    {
         if (!is_readable($path)) {
             return [];
         }
+
         $raw = (string)file_get_contents($path);
         $parsed = json_decode($raw, true);
         if (!is_array($parsed)) {
             return [];
         }
+
         $profiles = is_array($parsed['profiles'] ?? null) ? $parsed['profiles'] : $parsed;
-        $profile = is_array($profiles[$profileId] ?? null) ? $profiles[$profileId] : [];
-        return is_array($profile['snmp'] ?? null) ? $profile['snmp'] : [];
+        return is_array($profiles) ? $profiles : [];
     }
 
     private function decodeJson(string $raw, array $fallback = []): array
