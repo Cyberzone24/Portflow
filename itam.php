@@ -5833,6 +5833,21 @@ function resolveDetailsLabel(fieldKey, tableConfig) {
     return columns[fieldKey] || fieldKey;
 }
 
+function resolveStatusTitle(status) {
+    switch (Number(status)) {
+        case 0:
+            return 'Aktiv';
+        case 2:
+            return 'Deaktiviert';
+        case 4:
+            return 'Offline';
+        case 6:
+            return 'Ungenutzt';
+        default:
+            return 'Unbekannt';
+    }
+}
+
 function resolveDetailsValue(fieldKey, rowData) {
     const value = rowData[fieldKey];
     if (value === null || value === undefined) {
@@ -5854,7 +5869,7 @@ function resolveDetailsValue(fieldKey, rowData) {
     }
 
     if (isStatusField && /^\d+$/.test(normalized)) {
-        return getStatusTitle(Number(normalized));
+        return resolveStatusTitle(Number(normalized));
     }
 
     if (normalized === 'true' || normalized === 't' || normalized === '1') {
