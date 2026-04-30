@@ -9,13 +9,18 @@ use Portflow\Core\SnmpScannerExtensionInterface;
 
 class HuaweiScannerExtension implements SnmpScannerExtensionInterface
 {
+    private const OID_IF_NAME = '.1.3.6.1.2.1.31.1.1.1.1';
     private const OID_HUAWEI_VLAN_DESC = '.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.5';
     private const OID_HUAWEI_VLAN_NAME = '.1.3.6.1.4.1.2011.5.25.42.1.4.1.1.4';
+    private const OID_HW_POE_ROOT = '.1.3.6.1.4.1.2011.5.25.195';
     private const OID_HW_POE_PORT_NAME = '.1.3.6.1.4.1.2011.5.25.195.3.1.2';
     private const OID_HW_POE_PORT_ENABLE = '.1.3.6.1.4.1.2011.5.25.195.3.1.3';
     private const OID_HW_POE_PORT_POWER_STATUS = '.1.3.6.1.4.1.2011.5.25.195.3.1.7';
     private const OID_HW_POE_PORT_PD_CLASS = '.1.3.6.1.4.1.2011.5.25.195.3.1.8';
+    private const OID_HW_POE_PORT_REFERENCE_POWER = '.1.3.6.1.4.1.2011.5.25.195.3.1.9';
     private const OID_HW_POE_PORT_CONSUMING_POWER = '.1.3.6.1.4.1.2011.5.25.195.3.1.10';
+    private const OID_HW_POE_PORT_PEAK_POWER = '.1.3.6.1.4.1.2011.5.25.195.3.1.11';
+    private const OID_HW_POE_PORT_AVERAGE_POWER = '.1.3.6.1.4.1.2011.5.25.195.3.1.12';
     private const OID_HW_POE_SLOT_CONSUMING_POWER = '.1.3.6.1.4.1.2011.5.25.195.2.1.5';
     private const OID_HW_POE_DEVICE_USED_POWER = '.1.3.6.1.4.1.2011.5.25.195.5.1.6';
     private const OID_HW_POE_GLOBAL_POWER = '.1.3.6.1.4.1.2011.5.25.195.1.1';
@@ -63,20 +68,63 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     public function collectPoeSnapshot(SnmpClient $client, Logger $logger, array $config): ?array
     {
         $hwEnable = $this->walkMap($client, $config, self::OID_HW_POE_PORT_ENABLE);
-        $this->lastDiagnostics['poe'] = [
-            'source' => 'HUAWEI-POE-MIB::hwPoePortTable',
-            'status' => empty($hwEnable) ? 'empty-enable-table' : 'enable-table-found',
-            'enable_count' => count($hwEnable),
-            'sample_indices' => array_slice(array_values(array_map('strval', array_keys($hwEnable))), 0, 10),
-        ];
-        if (empty($hwEnable)) {
-            return null;
-        }
-
         $hwPortName = $this->walkMap($client, $config, self::OID_HW_POE_PORT_NAME);
         $hwStatus = $this->walkMap($client, $config, self::OID_HW_POE_PORT_POWER_STATUS);
         $hwClass = $this->walkMap($client, $config, self::OID_HW_POE_PORT_PD_CLASS);
+        $hwReferencePower = $this->walkMap($client, $config, self::OID_HW_POE_PORT_REFERENCE_POWER);
         $hwConsumingPower = $this->walkMap($client, $config, self::OID_HW_POE_PORT_CONSUMING_POWER);
+        $hwPeakPower = $this->walkMap($client, $config, self::OID_HW_POE_PORT_PEAK_POWER);
+        $hwAveragePower = $this->walkMap($client, $config, self::OID_HW_POE_PORT_AVERAGE_POWER);
+        $rootProbeDiagnostics = [];
+        if (
+            empty($hwEnable)
+            && empty($hwPortName)
+            && empty($hwStatus)
+            && empty($hwClass)
+            && empty($hwReferencePower)
+            && empty($hwConsumingPower)
+            && empty($hwPeakPower)
+            && empty($hwAveragePower)
+        ) {
+            $rootProbeDiagnostics = $this->probeHuaweiPoeRoot($client, $config);
+        }
+        $poeIndices = $this->collectHuaweiPoePortIndices(
+            $hwEnable,
+            $hwPortName,
+            $hwStatus,
+            $hwClass,
+            $hwReferencePower,
+            $hwConsumingPower,
+            $hwPeakPower,
+            $hwAveragePower
+        );
+
+        $this->lastDiagnostics['poe'] = [
+            'source' => 'HUAWEI-POE-MIB::hwPoePortEntry',
+            'status' => empty($poeIndices)
+                ? (!empty($rootProbeDiagnostics) && (int)($rootProbeDiagnostics['oid_count'] ?? 0) === 0
+                    ? 'huawei-poe-mib-not-exposed'
+                    : 'empty-port-table')
+                : (empty($hwEnable) ? 'missing-enable-table-using-port-data' : 'enable-table-found'),
+            'enable_count' => count($hwEnable),
+            'status_count' => count($hwStatus),
+            'class_count' => count($hwClass),
+            'reference_power_count' => count($hwReferencePower),
+            'consumption_count' => count($hwConsumingPower),
+            'peak_power_count' => count($hwPeakPower),
+            'average_power_count' => count($hwAveragePower),
+            'port_name_count' => count($hwPortName),
+            'data_index_count' => count($poeIndices),
+            'root_probe_mode' => empty($rootProbeDiagnostics) ? 'off' : 'root-walk',
+            'root_probe_oid_count' => (int)($rootProbeDiagnostics['oid_count'] ?? 0),
+            'root_probe_status' => (string)($rootProbeDiagnostics['status'] ?? ''),
+            'root_probe_sample_oid' => (string)($rootProbeDiagnostics['sample_oid'] ?? ''),
+            'sample_indices' => array_slice(array_values(array_map('strval', $poeIndices)), 0, 10),
+        ];
+        if (empty($poeIndices)) {
+            return null;
+        }
+
         $hwDeviceUsedPower = $this->walkMap($client, $config, self::OID_HW_POE_DEVICE_USED_POWER);
         $hwSlotConsumingPower = $this->walkMap($client, $config, self::OID_HW_POE_SLOT_CONSUMING_POWER);
         $hwGlobalPower = $this->walkMap($client, $config, self::OID_HW_POE_GLOBAL_POWER);
@@ -85,9 +133,18 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         $class = [];
         $consumption = [];
         $portNames = [];
-        foreach ($hwEnable as $ifIndex => $enable) {
+        foreach ($poeIndices as $ifIndex) {
             $key = (string)$ifIndex;
-            $adminValue = $this->normalizeHuaweiEnabledStatus($enable);
+            $adminValue = array_key_exists($ifIndex, $hwEnable)
+                ? $this->normalizeHuaweiEnabledStatus($hwEnable[$ifIndex])
+                : $this->inferHuaweiAdminFromPortData(
+                    (string)($hwStatus[$ifIndex] ?? ''),
+                    $this->normalizeHuaweiInteger($hwClass[$ifIndex] ?? null),
+                    $this->normalizeHuaweiInteger($hwReferencePower[$ifIndex] ?? null),
+                    $this->normalizeHuaweiInteger($hwConsumingPower[$ifIndex] ?? null),
+                    $this->normalizeHuaweiInteger($hwPeakPower[$ifIndex] ?? null),
+                    $this->normalizeHuaweiInteger($hwAveragePower[$ifIndex] ?? null)
+                );
             $powerStatus = (string)($hwStatus[$ifIndex] ?? '');
             $powerMw = $this->normalizeHuaweiInteger($hwConsumingPower[$ifIndex] ?? null);
 
@@ -105,14 +162,23 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         $mainConsumption = $this->collectHuaweiMainConsumption($hwDeviceUsedPower, $hwSlotConsumingPower, $hwGlobalPower);
 
         $this->lastDiagnostics['poe'] = [
-            'source' => 'HUAWEI-POE-MIB::hwPoePortTable',
-            'status' => 'ok',
-            'enable_count' => count($admin),
+            'source' => 'HUAWEI-POE-MIB::hwPoePortEntry',
+            'status' => empty($hwEnable) ? 'ok-without-enable-table' : 'ok',
+            'enable_count' => count($hwEnable),
             'status_count' => count($hwStatus),
             'class_count' => count($class),
+            'reference_power_count' => count($hwReferencePower),
             'consumption_count' => count($consumption),
+            'peak_power_count' => count($hwPeakPower),
+            'average_power_count' => count($hwAveragePower),
             'port_name_count' => count($portNames),
             'main_consumption_count' => count($mainConsumption),
+            'data_index_count' => count($poeIndices),
+            'resolved_port_count' => count($admin),
+            'root_probe_mode' => empty($rootProbeDiagnostics) ? 'off' : 'root-walk',
+            'root_probe_oid_count' => (int)($rootProbeDiagnostics['oid_count'] ?? 0),
+            'root_probe_status' => (string)($rootProbeDiagnostics['status'] ?? ''),
+            'root_probe_sample_oid' => (string)($rootProbeDiagnostics['sample_oid'] ?? ''),
             'sample_indices' => array_slice(array_values(array_map('strval', array_keys($admin))), 0, 10),
         ];
 
@@ -123,7 +189,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
             'consumption' => $consumption,
             'port_name' => $portNames,
             'main_consumption' => $mainConsumption,
-            'source' => 'HUAWEI-POE-MIB::hwPoePortTable',
+            'source' => 'HUAWEI-POE-MIB::hwPoePortEntry',
         ];
     }
 
@@ -236,6 +302,104 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         return ctype_digit($normalized) ? (int)$normalized : 2;
+    }
+
+    /**
+     * @param array<int|string,string> ...$sources
+     * @return array<int|string>
+     */
+    private function collectHuaweiPoePortIndices(array ...$sources): array
+    {
+        $indices = [];
+        foreach ($sources as $source) {
+            foreach (array_keys($source) as $index) {
+                $key = (string)$index;
+                if ($key === '') {
+                    continue;
+                }
+                $indices[$key] = $index;
+            }
+        }
+
+        ksort($indices, SORT_NATURAL);
+        return array_values($indices);
+    }
+
+    private function inferHuaweiAdminFromPortData(
+        string $powerStatus,
+        ?int $pdClass,
+        ?int $referencePowerMw,
+        ?int $consumingPowerMw,
+        ?int $peakPowerMw,
+        ?int $averagePowerMw
+    ): int {
+        $normalizedStatus = strtolower(trim($powerStatus));
+
+        if ($consumingPowerMw !== null && $consumingPowerMw > 0) {
+            return 1;
+        }
+        if ($referencePowerMw !== null && $referencePowerMw > 0) {
+            return 1;
+        }
+        if ($peakPowerMw !== null && $peakPowerMw > 0) {
+            return 1;
+        }
+        if ($averagePowerMw !== null && $averagePowerMw > 0) {
+            return 1;
+        }
+        if ($pdClass !== null && $pdClass > 0) {
+            return 1;
+        }
+        if ($normalizedStatus !== '') {
+            if (preg_match('/disable|disabled|manual\s*off|power\s*off|shutdown|shut/i', $normalizedStatus) === 1) {
+                return 2;
+            }
+            return 1;
+        }
+
+        return 1;
+    }
+
+    /**
+     * Single SNMP walk against the HUAWEI-POE-MIB root to determine whether
+     * the subtree is exposed by the device at all. Replaces the previous
+     * per-ifIndex direct probe which fired hundreds of snmpget calls (the
+     * hwPoePort* indices are not ifIndex values, so that approach could
+     * never match anything anyway).
+     *
+     * @param array<string,mixed> $config
+     * @return array{oid_count:int,status:string,sample_oid:string}
+     */
+    private function probeHuaweiPoeRoot(SnmpClient $client, array $config): array
+    {
+        $result = $client->runWalk($config, self::OID_HW_POE_ROOT);
+        if (!$result['ok']) {
+            return [
+                'oid_count' => 0,
+                'status' => 'walk-failed',
+                'sample_oid' => '',
+            ];
+        }
+
+        $parsed = SnmpClient::parseWalkLines($result['lines']);
+        $supported = [];
+        foreach ($parsed as $oid => $value) {
+            if (SnmpClient::isUnsupportedResponseValue((string)$value)) {
+                continue;
+            }
+            $supported[$oid] = $value;
+        }
+
+        $sampleOid = '';
+        if (!empty($supported)) {
+            $sampleOid = (string)array_key_first($supported);
+        }
+
+        return [
+            'oid_count' => count($supported),
+            'status' => empty($supported) ? 'subtree-empty-or-blocked' : 'subtree-exposed',
+            'sample_oid' => $sampleOid,
+        ];
     }
 
     private function normalizeHuaweiInteger(mixed $value): ?int

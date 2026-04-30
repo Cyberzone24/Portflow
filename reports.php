@@ -1119,8 +1119,23 @@ if ($tab === 'topology') {
                 $poeDiagConsumptionCount = isset($poeDiagnostics['consumption_count']) ? (int)$poeDiagnostics['consumption_count'] : 0;
                 $poeDiagPortNameCount = isset($poeDiagnostics['port_name_count']) ? (int)$poeDiagnostics['port_name_count'] : 0;
                 $poeDiagMainCount = isset($poeDiagnostics['main_consumption_count']) ? (int)$poeDiagnostics['main_consumption_count'] : 0;
+                $poeDiagDataIndexCount = isset($poeDiagnostics['data_index_count']) ? (int)$poeDiagnostics['data_index_count'] : 0;
+                $poeDiagResolvedPortCount = isset($poeDiagnostics['resolved_port_count']) ? (int)$poeDiagnostics['resolved_port_count'] : 0;
+                $poeDiagRootProbeMode = trim((string)($poeDiagnostics['root_probe_mode'] ?? ''));
+                $poeDiagRootProbeOidCount = isset($poeDiagnostics['root_probe_oid_count']) ? (int)$poeDiagnostics['root_probe_oid_count'] : 0;
+                $poeDiagRootProbeStatus = trim((string)($poeDiagnostics['root_probe_status'] ?? ''));
+                $poeDiagRootProbeSampleOid = trim((string)($poeDiagnostics['root_probe_sample_oid'] ?? ''));
                 $poeDiagSampleIndices = is_array($poeDiagnostics['sample_indices'] ?? null) ? $poeDiagnostics['sample_indices'] : [];
                 $poeDiagSampleSummary = empty($poeDiagSampleIndices) ? '-' : implode(' · ', array_map(static fn($value): string => (string)$value, $poeDiagSampleIndices));
+                $genericPoeDiagnostics = is_array($det['generic_poe_diagnostics'] ?? null) ? $det['generic_poe_diagnostics'] : [];
+                $genericPoeStatus = trim((string)($genericPoeDiagnostics['status'] ?? ''));
+                $genericPoeSource = trim((string)($genericPoeDiagnostics['source'] ?? ''));
+                $genericPoeAdminCount = isset($genericPoeDiagnostics['admin_count']) ? (int)$genericPoeDiagnostics['admin_count'] : 0;
+                $genericPoeDetectionCount = isset($genericPoeDiagnostics['detection_count']) ? (int)$genericPoeDiagnostics['detection_count'] : 0;
+                $genericPoeClassCount = isset($genericPoeDiagnostics['class_count']) ? (int)$genericPoeDiagnostics['class_count'] : 0;
+                $genericPoeMainCount = isset($genericPoeDiagnostics['main_count']) ? (int)$genericPoeDiagnostics['main_count'] : 0;
+                $genericPoeSampleIndices = is_array($genericPoeDiagnostics['sample_indices'] ?? null) ? $genericPoeDiagnostics['sample_indices'] : [];
+                $genericPoeSampleSummary = empty($genericPoeSampleIndices) ? '-' : implode(' · ', array_map(static fn($value): string => (string)$value, $genericPoeSampleIndices));
             ?>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1261,6 +1276,12 @@ if ($tab === 'topology') {
                         <div><span class="font-semibold text-slate-900">PoE Verbrauch-Eintraege:</span> <?php echo $poeDiagConsumptionCount; ?></div>
                         <div><span class="font-semibold text-slate-900">PoE Portnamen-Eintraege:</span> <?php echo $poeDiagPortNameCount; ?></div>
                         <div><span class="font-semibold text-slate-900">PoE Main-Power-Eintraege:</span> <?php echo $poeDiagMainCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Daten-Indizes:</span> <?php echo $poeDiagDataIndexCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE ausgewertete Ports:</span> <?php echo $poeDiagResolvedPortCount; ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Root-Probe:</span> <?php echo rep_h($poeDiagRootProbeMode !== '' ? $poeDiagRootProbeMode : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Root-Probe Status:</span> <?php echo rep_h($poeDiagRootProbeStatus !== '' ? $poeDiagRootProbeStatus : '-'); ?></div>
+                        <div><span class="font-semibold text-slate-900">PoE Root-Probe OIDs:</span> <?php echo $poeDiagRootProbeOidCount; ?></div>
+                        <div class="md:col-span-2"><span class="font-semibold text-slate-900">PoE Root-Probe Beispiel-OID:</span> <?php echo rep_h($poeDiagRootProbeSampleOid !== '' ? $poeDiagRootProbeSampleOid : '-'); ?></div>
                         <div class="md:col-span-2"><span class="font-semibold text-slate-900">PoE Beispiel-Indizes:</span> <?php echo rep_h($poeDiagSampleSummary); ?></div>
                         <div><span class="font-semibold text-slate-900">Credential-Mode:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['credential_mode'] ?? '-')); ?></div>
                         <div><span class="font-semibold text-slate-900">SSH Auth:</span> <?php echo rep_h((string)($nodeIpCollectionConnection['auth_method'] ?? '-')); ?></div>
@@ -1286,6 +1307,21 @@ if ($tab === 'topology') {
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
+
+            <div class="mt-3 rounded-xl border border-slate-300 bg-white">
+                <div class="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                    <h3 class="text-sm font-semibold text-slate-900">Generische PoE-Diagnostik</h3>
+                    <span class="text-xs text-slate-500"><?php echo rep_h($genericPoeSource !== '' ? $genericPoeSource : '-'); ?></span>
+                </div>
+                <div class="grid grid-cols-1 gap-2 px-3 py-2 text-sm md:grid-cols-2">
+                    <div><span class="font-semibold text-slate-900">Status:</span> <?php echo rep_h($genericPoeStatus !== '' ? $genericPoeStatus : '-'); ?></div>
+                    <div><span class="font-semibold text-slate-900">Admin-Eintraege:</span> <?php echo $genericPoeAdminCount; ?></div>
+                    <div><span class="font-semibold text-slate-900">Detection-Eintraege:</span> <?php echo $genericPoeDetectionCount; ?></div>
+                    <div><span class="font-semibold text-slate-900">Klassen-Eintraege:</span> <?php echo $genericPoeClassCount; ?></div>
+                    <div><span class="font-semibold text-slate-900">Main-Power-Eintraege:</span> <?php echo $genericPoeMainCount; ?></div>
+                    <div class="md:col-span-2"><span class="font-semibold text-slate-900">Beispiel-Indizes:</span> <?php echo rep_h($genericPoeSampleSummary); ?></div>
+                </div>
+            </div>
 
             <!-- Neighbors / PoE / Entity -->
             <?php

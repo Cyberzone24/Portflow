@@ -312,6 +312,15 @@ class SnmpScanner
             $poeClass     = $this->walkMapCompound($config, self::OID_PETH_POWER_CLASS, 2);
             $poeSource    = 'POWER-ETHERNET-MIB';
             $poeMain      = $this->walkMap($config, self::OID_PETH_MAIN_CONSUMPTION);
+            $genericPoeDiagnostics = [
+                'source' => 'POWER-ETHERNET-MIB::pethPsePortTable',
+                'status' => empty($poeAdmin) ? 'empty-port-table' : 'ok',
+                'admin_count' => count($poeAdmin),
+                'detection_count' => count($poeDetection),
+                'class_count' => count($poeClass),
+                'main_count' => count($poeMain),
+                'sample_indices' => array_slice(array_values(array_map('strval', array_keys($poeAdmin))), 0, 10),
+            ];
             $extensionPoeData = null;
             if ($scannerExtension !== null) {
                 $extensionPoeData = $scannerExtension->collectPoeSnapshot($this->client, $this->logger, $config);
@@ -482,6 +491,7 @@ class SnmpScanner
                 'node_ip_sources'    => $nodeIpSources,
                 'scanner_extension'  => $scannerExtension?->getId(),
                 'scanner_extension_diagnostics' => $scannerExtensionDiagnostics,
+                'generic_poe_diagnostics' => $genericPoeDiagnostics,
                 'neighbors'          => $neighbors,
                 'neighbors_persisted' => $result['neighbors_persisted'] ?? 0,
                 'interface_ips'      => array_values($interfaceIps),
