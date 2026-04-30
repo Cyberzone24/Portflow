@@ -886,7 +886,7 @@ AUTOMATION_SECRET={$config['AUTOMATION_SECRET']}
 ";
 
     file_put_contents($envPath, $envContent);
-    @chmod($envPath, 0640);
+    @chmod($envPath, 0600);
 }
 
 # Prüfung für SNMP und OpenSSL (benötigt für SNMPv3) hinzufügen

@@ -1795,15 +1795,19 @@
         if (@copy($envPath, $backupPath) === false) {
             return ['ok' => false, 'message' => '.env Backup konnte nicht erstellt werden.'];
         }
+        @chmod($backupPath, 0600);
 
         if (file_put_contents($tempPath, $newContent, LOCK_EX) === false) {
             return ['ok' => false, 'message' => 'Temporare .env Datei konnte nicht geschrieben werden.'];
         }
+        @chmod($tempPath, 0600);
 
         if (!@rename($tempPath, $envPath)) {
             @unlink($tempPath);
             return ['ok' => false, 'message' => '.env konnte nicht atomar ersetzt werden.'];
         }
+
+        @chmod($envPath, 0600);
 
         return ['ok' => true, 'message' => 'Einstellungen wurden gespeichert.'];
     }
@@ -2040,16 +2044,16 @@
         } else {
             $envMode = @fileperms($envPath);
             $envModeString = configGetFileModeString($envPath);
-            $envReadableByWorld = is_int($envMode) && (($envMode & 0x0004) === 0x0004);
+            $envReadableByGroupOrWorld = is_int($envMode) && (($envMode & 0x0024) !== 0);
             $envWritableByGroupOrWorld = is_int($envMode) && (($envMode & 0x0012) !== 0 || ($envMode & 0x0002) === 0x0002);
             $envSeverity = 'ok';
             $envMessage = '.env Rechte sehen plausibel aus (' . $envModeString . ').';
-            $envFix = 'Empfohlen sind restriktive Rechte wie 0640 oder 0600.';
+            $envFix = 'Empfohlen sind restriktive Rechte wie 0600.';
 
-            if ($envReadableByWorld || $envWritableByGroupOrWorld) {
+            if ($envReadableByGroupOrWorld || $envWritableByGroupOrWorld) {
                 $envSeverity = 'critical';
                 $envMessage = '.env hat zu offene Rechte (' . $envModeString . ').';
-                $envFix = 'Datei auf 0640 oder 0600 begrenzen und Owner/Group des Webserver-Users pruefen.';
+                $envFix = 'Datei auf 0600 begrenzen und Owner des Webserver-Users pruefen.';
             } elseif (!is_readable($envPath) || !is_writable($envPath)) {
                 $envSeverity = 'warn';
                 $envMessage = '.env ist vorhanden, aber fuer Portflow nicht durchgaengig les- und schreibbar.';

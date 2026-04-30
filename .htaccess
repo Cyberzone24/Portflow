@@ -1,7 +1,13 @@
 RewriteEngine On
 
 # Block direct access to secrets and application data in Apache deployments.
-RewriteRule ^(?:data/|\.env(?:\..*)?|\.git|composer\.(?:json|lock)|Dockerfile$|podman-compose\.yml$) - [F,L,NC]
+<IfModule mod_authz_core.c>
+	<If "%{REQUEST_URI} =~ m#^/(?:data(?:/.*)?|\.git(?:/.*)?|\.env(?:\..*)?|\.htaccess|\.gitignore|\.gitmodules|composer\.(?:json|lock)|Dockerfile|podman-compose\.yml)$#i">
+		Require all denied
+	</If>
+</IfModule>
+
+RewriteRule ^(?:data(?:/.*)?|\.git(?:/.*)?|\.env(?:\..*)?|\.htaccess|\.gitignore|\.gitmodules|composer\.(?:json|lock)|Dockerfile|podman-compose\.yml)$ - [F,L,NC]
 
 # Forward the HTTP Authorization header to PHP in Apache setups.
 RewriteCond %{HTTP:Authorization} ^(.+)$

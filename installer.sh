@@ -435,7 +435,7 @@ LDAP_TRUST=${LDAP_TRUST}
 AUTOMATION_SECRET=${AUTOMATION_SECRET}
 EOF
 
-    run_root_cmd "Bootstrap .env schreiben" install -m 0640 "$tmp_env" "$env_file"
+    run_root_cmd "Bootstrap .env schreiben" install -m 0600 "$tmp_env" "$env_file"
     rm -f "$tmp_env"
 }
 
@@ -695,11 +695,11 @@ configure_lighttpd() {
     cat >"$tmp_config" <<EOF
 server.modules += ( "mod_fastcgi" )
 
-$HTTP["url"] =~ "^/data(?:/|$)" {
+$HTTP["url"] =~ "^/data(?:/.*)?$" {
     url.access-deny = ( "" )
 }
 
-$HTTP["url"] =~ "^/(?:\.git|\.env(?:\..*)?|\.htaccess|\.gitignore|\.gitmodules)(?:$|/)" {
+$HTTP["url"] =~ "^/(?:\.git(?:/.*)?|\.env(?:\..*)?|\.htaccess|\.gitignore|\.gitmodules)$" {
     url.access-deny = ( "" )
 }
 
