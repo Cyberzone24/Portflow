@@ -4548,6 +4548,21 @@
                 }
                 $targets = array_values(array_filter(array_unique($targets), static fn($n) => $n !== ''));
 
+                if (empty($targets)) {
+                    $automationTestResult = [
+                        'ok' => false,
+                        'title' => 'SNMP Scan',
+                        'output' => $set === 'automation_snmp_scan'
+                            ? 'Kein Switch fuer den manuellen SNMP-Scan uebergeben.'
+                            : 'Kein Switch im gespeicherten Inventar gefunden. Bitte das Switch-Inventar zuerst speichern.',
+                    ];
+
+                    include_once __DIR__ . '/includes/header.php';
+                    $site = 'scripts';
+                    $_GET['tab'] = getScriptsTabFromRequest();
+                    break;
+                }
+
                 $reports = [];
                 $okCount = 0;
                 $failCount = 0;
@@ -4555,7 +4570,15 @@
                     $r = $scanner->scanSwitch($name, $set === 'automation_snmp_scan' ? 'manual' : 'manual_all', $userUuid);
                     if ($r['ok']) {
                         $okCount++;
-                        $reports[] = sprintf('OK   %s -- interfaces=%d findings=%d run=%s', $name, $r['interfaces'], $r['findings'], substr((string)($r['run_uuid'] ?? ''), 0, 8));
+                        $reports[] = sprintf(
+                            'OK   %s -- interfaces=%d findings=%d ips=%d mapped=%d run=%s',
+                            $name,
+                            (int)($r['interfaces'] ?? 0),
+                            (int)($r['findings'] ?? 0),
+                            (int)($r['discovered_ips'] ?? 0),
+                            (int)($r['mapped_ips'] ?? 0),
+                            substr((string)($r['run_uuid'] ?? ''), 0, 8)
+                        );
                     } else {
                         $failCount++;
                         $reports[] = sprintf('FAIL %s -- %s', $name, (string)($r['error'] ?? 'unbekannter Fehler'));

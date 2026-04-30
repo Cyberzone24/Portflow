@@ -1066,6 +1066,9 @@ if ($tab === 'topology') {
                 $matched = is_array($det['matched_ports'] ?? null) ? $det['matched_ports'] : [];
                 $unknown = is_array($det['unknown_interfaces'] ?? null) ? $det['unknown_interfaces'] : [];
                 $ifaces = is_array($det['interfaces'] ?? null) ? $det['interfaces'] : [];
+                $interfaceIps = is_array($det['interface_ips'] ?? null) ? $det['interface_ips'] : [];
+                $mappedIpCount = count(array_filter($matched, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
+                $unknownIpCount = count(array_filter($unknown, static fn(array $row): bool => trim((string)($row['ip_address'] ?? '')) !== ''));
                 $vlanSrc = (string)($det['vlan_source'] ?? '-');
             ?>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1080,9 +1083,11 @@ if ($tab === 'topology') {
                         &nbsp;·&nbsp; <?php echo rep_run_status_pill((string)($selectedRun['status'] ?? '')); ?>
                     </p>
                 </div>
-                <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div class="grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-5">
                     <div class="rounded-lg bg-slate-100 px-3 py-2"><div class="text-lg font-bold text-slate-900"><?php echo (int)($selectedRun['interfaces_seen'] ?? 0); ?></div><div class="text-slate-500">Interfaces</div></div>
                     <div class="rounded-lg bg-slate-100 px-3 py-2"><div class="text-lg font-bold text-slate-900"><?php echo (int)($selectedRun['vlans_seen'] ?? 0); ?></div><div class="text-slate-500">VLANs</div></div>
+                    <div class="rounded-lg bg-cyan-50 px-3 py-2"><div class="text-lg font-bold text-cyan-800"><?php echo count($interfaceIps); ?></div><div class="text-cyan-700">IPs entdeckt</div></div>
+                    <div class="rounded-lg bg-emerald-50 px-3 py-2"><div class="text-lg font-bold text-emerald-800"><?php echo $mappedIpCount; ?></div><div class="text-emerald-700">IPs gemappt</div></div>
                     <div class="rounded-lg bg-amber-50 px-3 py-2"><div class="text-lg font-bold text-amber-800"><?php echo (int)($selectedRun['findings_total'] ?? 0); ?></div><div class="text-amber-700">Findings</div></div>
                 </div>
             </div>
@@ -1119,22 +1124,23 @@ if ($tab === 'topology') {
                 <div class="rounded-xl border border-slate-300 bg-white">
                     <div class="flex items-center justify-between border-b border-slate-200 px-3 py-2">
                         <h3 class="text-sm font-semibold text-slate-900">Unbekannte SNMP-Interfaces (<?php echo count($unknown); ?>)</h3>
-                        <span class="text-xs text-slate-500">kein passender Portflow-Port per Caption</span>
+                        <span class="text-xs text-slate-500">kein passender Portflow-Port per Caption · IPs auf unbekannten Interfaces: <?php echo $unknownIpCount; ?></span>
                     </div>
                     <div class="max-h-72 overflow-auto">
                         <table class="w-full text-left text-sm">
-                            <thead class="bg-slate-50 text-slate-700"><tr><th class="px-3 py-1">ifIndex</th><th class="px-3 py-1">ifName</th><th class="px-3 py-1">Alias</th><th class="px-3 py-1">Oper</th></tr></thead>
+                            <thead class="bg-slate-50 text-slate-700"><tr><th class="px-3 py-1">ifIndex</th><th class="px-3 py-1">ifName</th><th class="px-3 py-1">Alias</th><th class="px-3 py-1">IP</th><th class="px-3 py-1">Oper</th></tr></thead>
                             <tbody>
                             <?php foreach ($unknown as $u): ?>
                                 <tr class="border-t border-slate-100">
                                     <td class="px-3 py-1 font-mono"><?php echo (int)($u['if_index'] ?? 0); ?></td>
                                     <td class="px-3 py-1 font-mono text-xs"><?php echo rep_h($u['if_name'] ?? ''); ?></td>
                                     <td class="px-3 py-1 text-xs text-slate-500"><?php echo rep_h($u['if_alias'] ?? ''); ?></td>
+                                    <td class="px-3 py-1 font-mono text-xs text-cyan-700"><?php echo rep_h($u['ip_address'] ?? ''); ?></td>
                                     <td class="px-3 py-1"><?php echo rep_oper_pill(isset($u['oper']) ? (int)$u['oper'] : null); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                             <?php if (empty($unknown)): ?>
-                                <tr><td colspan="4" class="px-3 py-3 text-center text-xs text-slate-500">Alle Interfaces zugeordnet.</td></tr>
+                                <tr><td colspan="5" class="px-3 py-3 text-center text-xs text-slate-500">Alle Interfaces zugeordnet.</td></tr>
                             <?php endif; ?>
                             </tbody>
                         </table>
@@ -1151,7 +1157,7 @@ if ($tab === 'topology') {
                     <table class="w-full text-left text-sm">
                         <thead class="bg-slate-50 text-slate-700"><tr>
                             <th class="px-3 py-1">Caption</th><th class="px-3 py-1">ifName</th><th class="px-3 py-1">Alias</th>
-                            <th class="px-3 py-1 text-right">Speed</th><th class="px-3 py-1">MAC</th>
+                            <th class="px-3 py-1 text-right">Speed</th><th class="px-3 py-1">MAC</th><th class="px-3 py-1">IP</th>
                             <th class="px-3 py-1 text-right">PVID</th><th class="px-3 py-1">Admin</th><th class="px-3 py-1">Oper</th>
                         </tr></thead>
                         <tbody>
@@ -1162,13 +1168,14 @@ if ($tab === 'topology') {
                                 <td class="px-3 py-1 text-xs text-slate-500"><?php echo rep_h($m['if_alias'] ?? ''); ?></td>
                                 <td class="px-3 py-1 text-right text-xs"><?php echo $m['speed'] !== null ? (int)$m['speed'] : '-'; ?></td>
                                 <td class="px-3 py-1 font-mono text-xs"><?php echo rep_h($m['mac'] ?? ''); ?></td>
+                                <td class="px-3 py-1 font-mono text-xs text-cyan-700"><?php echo rep_h($m['ip_address'] ?? ''); ?></td>
                                 <td class="px-3 py-1 text-right text-xs"><?php echo $m['pvid'] !== null ? (int)$m['pvid'] : '-'; ?></td>
                                 <td class="px-3 py-1 text-xs"><?php echo rep_h(rep_admin_status_label(isset($m['admin']) ? (int)$m['admin'] : null)); ?></td>
                                 <td class="px-3 py-1"><?php echo rep_oper_pill(isset($m['oper']) ? (int)$m['oper'] : null); ?></td>
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($matched)): ?>
-                            <tr><td colspan="8" class="px-3 py-3 text-center text-xs text-slate-500">Keine Ports konnten per Caption zugeordnet werden.</td></tr>
+                            <tr><td colspan="9" class="px-3 py-3 text-center text-xs text-slate-500">Keine Ports konnten per Caption zugeordnet werden.</td></tr>
                         <?php endif; ?>
                         </tbody>
                     </table>

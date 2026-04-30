@@ -84,13 +84,13 @@ class SnmpScanner
     /**
      * Scan one switch and reconcile its port facts.
      *
-     * @return array{ok:bool,run_uuid?:string,error?:string,findings:int,interfaces:int,vlans:int,debug?:array}
+     * @return array{ok:bool,run_uuid?:string,error?:string,findings:int,interfaces:int,vlans:int,discovered_ips:int,mapped_ips:int,debug?:array}
      */
     public function scanSwitch(string $switchName, string $trigger = 'manual', ?string $userUuid = null): array
     {
         $resolution = $this->client->resolveSwitchConfig($switchName);
         if (!$resolution['ok']) {
-            return ['ok' => false, 'error' => $resolution['error'] ?? 'unbekannter SNMP-Konfigurationsfehler', 'findings' => 0, 'interfaces' => 0, 'vlans' => 0];
+            return ['ok' => false, 'error' => $resolution['error'] ?? 'unbekannter SNMP-Konfigurationsfehler', 'findings' => 0, 'interfaces' => 0, 'vlans' => 0, 'discovered_ips' => 0, 'mapped_ips' => 0];
         }
         $config = $resolution['config'];
         $deviceUuid = $config['device_uuid'] !== '' ? $config['device_uuid'] : null;
@@ -106,7 +106,7 @@ class SnmpScanner
                 $msg = 'Initialer ifName-Walk lieferte keine Daten (Auth-Fehler oder Switch nicht erreichbar). Abbruch.';
                 $this->logger->log('SNMP scan aborted for ' . $switchName . ': ' . $msg, 3);
                 $this->finalizeRun($runUuid, 'failed', $msg, 0, 0, 0, ['error' => $msg]);
-                return ['ok' => false, 'run_uuid' => $runUuid, 'error' => $msg, 'findings' => 0, 'interfaces' => 0, 'vlans' => 0];
+                return ['ok' => false, 'run_uuid' => $runUuid, 'error' => $msg, 'findings' => 0, 'interfaces' => 0, 'vlans' => 0, 'discovered_ips' => 0, 'mapped_ips' => 0];
             }
             $ifAliasMap = $this->walkMap($config, self::OID_IF_ALIAS);
             $ifSpeedMap = $this->walkMap($config, self::OID_IF_HIGH_SPEED);
@@ -350,6 +350,13 @@ class SnmpScanner
                 'neighbors'       => $neighbors,
             ]);
 
+            $mappedIpCount = 0;
+            foreach (($result['matched_details'] ?? []) as $matchedPort) {
+                if (trim((string)($matchedPort['ip_address'] ?? '')) !== '') {
+                    $mappedIpCount++;
+                }
+            }
+
             $vlanCount = count($vlanIds);
             $details = [
                 'switch_name'        => $switchName,
@@ -383,11 +390,13 @@ class SnmpScanner
                 'findings' => (int)($result['findings'] ?? 0),
                 'interfaces' => count($interfaces),
                 'vlans' => $vlanCount,
+                'discovered_ips' => count($interfaceIps),
+                'mapped_ips' => $mappedIpCount,
             ];
         } catch (\Throwable $e) {
             $this->logger->log('SNMP scan failed for ' . $switchName . ': ' . $e->getMessage(), 3);
             $this->finalizeRun($runUuid, 'failed', $e->getMessage(), 0, 0, 0, ['error' => $e->getMessage()]);
-            return ['ok' => false, 'run_uuid' => $runUuid, 'error' => $e->getMessage(), 'findings' => 0, 'interfaces' => 0, 'vlans' => 0];
+            return ['ok' => false, 'run_uuid' => $runUuid, 'error' => $e->getMessage(), 'findings' => 0, 'interfaces' => 0, 'vlans' => 0, 'discovered_ips' => 0, 'mapped_ips' => 0];
         }
     }
 
