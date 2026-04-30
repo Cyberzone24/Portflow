@@ -172,6 +172,30 @@ function checkApplicationDirectories(string $dir): bool {
     return true;
 }
 
+function getSchedulerCronStatus(string $applicationDir): array {
+    $cronPath = '/etc/cron.d/portflow';
+    $schedulerPath = rtrim($applicationDir, '/') . '/scheduler.php';
+
+    if (!is_file($cronPath)) {
+        return ['ok' => false, 'label' => 'Missing'];
+    }
+
+    if (!is_readable($cronPath)) {
+        return ['ok' => true, 'label' => 'Present (not readable)'];
+    }
+
+    $content = @file_get_contents($cronPath);
+    if (!is_string($content) || trim($content) === '') {
+        return ['ok' => false, 'label' => 'Present but empty'];
+    }
+
+    if (strpos($content, $schedulerPath) === false) {
+        return ['ok' => false, 'label' => 'Present but points elsewhere'];
+    }
+
+    return ['ok' => true, 'label' => 'Installed'];
+}
+
 function nextSetupStep($config, $afterStep = 0) {
     if ($afterStep < 1) {
         return 1;
@@ -357,6 +381,11 @@ function displayForm($step, $config = []) {
             } else {
                 echo 'Not Writable';
             }
+            echo '</td></tr>';
+
+            $schedulerCron = getSchedulerCronStatus(getcwd());
+            echo '<tr><td class="p-4 border border-slate-500">Scheduler Cronjob</td><td class="p-4 border border-slate-500">';
+            echo htmlspecialchars((string)$schedulerCron['label'], ENT_QUOTES, 'UTF-8');
             echo '</td></tr>';
 
             echo <<<HTML

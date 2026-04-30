@@ -9,7 +9,7 @@ DEFAULT_TARGET_DIR="/var/www/html"
 LOG_FILE="/tmp/portflow-installer-$(date +%Y%m%d-%H%M%S).log"
 
 CURRENT_STEP=0
-TOTAL_STEPS=10
+TOTAL_STEPS=11
 
 if [[ -t 1 ]]; then
     COLOR_BLUE='\033[1;34m'
@@ -645,7 +645,28 @@ collect_inputs() {
 
 install_packages() {
     run_root_cmd "APT Paketlisten aktualisieren" env DEBIAN_FRONTEND=noninteractive apt-get update
-    run_root_cmd "Benötigte Pakete installieren" env DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates lighttpd php-fpm php-cli php-common php-mbstring php-ldap php-pgsql php-opcache php-snmp postgresql postgresql-contrib
+    run_root_cmd "Benötigte Pakete installieren" env DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates cron lighttpd php-fpm php-cli php-common php-mbstring php-ldap php-pgsql php-opcache php-snmp postgresql postgresql-contrib
+}
+
+configure_scheduler_cron() {
+    local php_bin
+    local tmp_cron
+
+    php_bin=$(command -v php || true)
+    [[ -n "$php_bin" ]] || fail "PHP CLI wurde fuer den Scheduler-Cronjob nicht gefunden."
+
+    run_root_cmd "Cron-Dienst aktivieren" systemctl enable --now cron
+
+    tmp_cron=$(mktemp)
+    cat >"$tmp_cron" <<EOF
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * www-data $php_bin $TARGET_DIR/scheduler.php >/dev/null 2>&1
+EOF
+
+    run_root_cmd "Scheduler Cronjob schreiben" install -m 0644 "$tmp_cron" /etc/cron.d/portflow
+    rm -f "$tmp_cron"
 }
 
 detect_php_fpm() {
@@ -794,6 +815,7 @@ print_summary() {
     printf 'PHP-FPM Dienst: %s\n' "$PHP_FPM_SERVICE"
     printf 'PHP Version: %s\n' "$php_version"
     printf 'Logdatei: %s\n' "$LOG_FILE"
+    printf 'Scheduler-Cron: %s\n' '/etc/cron.d/portflow (alle 5 Minuten)'
     if [[ "$CONFIGURE_DB" == 'y' ]]; then
         printf 'PostgreSQL DB: %s\n' "$PG_DBNAME"
         printf 'PostgreSQL User: %s\n' "$PG_USERNAME"
@@ -851,6 +873,9 @@ main() {
 
     next_step "Rechte setzen"
     set_permissions
+
+    next_step "Scheduler einrichten"
+    configure_scheduler_cron
 
     print_summary
 }

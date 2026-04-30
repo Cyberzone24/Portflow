@@ -2545,6 +2545,62 @@
                 }
                 header('Location: ?site=configuration&tab=system#cfg-mail');
                 break;
+            case 'config_scheduler_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for scheduler configuration save', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=system');
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $automationSettings = $automationStore->getSettings();
+                $schedulerConfig = [
+                    'queue_enabled' => isset($_POST['scheduler_queue_enabled']) ? '1' : '0',
+                    'notifications_enabled' => isset($_POST['scheduler_notifications_enabled']) ? '1' : '0',
+                    'snmp_scan_enabled' => isset($_POST['scheduler_snmp_scan_enabled']) ? '1' : '0',
+                ];
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => (string)($automationSettings['ssh_host'] ?? ''),
+                        'ssh_port' => (int)($automationSettings['ssh_port'] ?? 22),
+                        'ssh_auth_method' => (string)($automationSettings['ssh_auth_method'] ?? 'password'),
+                        'ssh_username' => (string)($automationSettings['ssh_username'] ?? ''),
+                        'ssh_password' => (string)($automationSettings['ssh_password'] ?? ''),
+                        'ssh_private_key' => (string)($automationSettings['ssh_private_key'] ?? ''),
+                        'scripts_json' => (string)($automationSettings['scripts_json'] ?? '{}'),
+                        'switch_inventory_json' => (string)($automationSettings['switch_inventory_json'] ?? '{"switches": []}'),
+                        'scheduler_config' => $schedulerConfig,
+                    ]);
+
+                    configSetFeedback('scheduler', true, 'Scheduler-Einstellungen wurden gespeichert.', [
+                        'queue_enabled' => $schedulerConfig['queue_enabled'],
+                        'notifications_enabled' => $schedulerConfig['notifications_enabled'],
+                        'snmp_scan_enabled' => $schedulerConfig['snmp_scan_enabled'],
+                    ]);
+                    $logger->log('scheduler configuration save executed', 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_scheduler_save', [
+                        'queue_enabled' => $schedulerConfig['queue_enabled'] === '1',
+                        'notifications_enabled' => $schedulerConfig['notifications_enabled'] === '1',
+                        'snmp_scan_enabled' => $schedulerConfig['snmp_scan_enabled'] === '1',
+                    ]);
+                } catch (\Throwable $e) {
+                    configSetFeedback('scheduler', false, 'Scheduler-Einstellungen konnten nicht gespeichert werden: ' . $e->getMessage(), [
+                        'queue_enabled' => $schedulerConfig['queue_enabled'],
+                        'notifications_enabled' => $schedulerConfig['notifications_enabled'],
+                        'snmp_scan_enabled' => $schedulerConfig['snmp_scan_enabled'],
+                    ]);
+                    $logger->log('scheduler configuration save failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration&tab=system#cfg-scheduler');
+                break;
             case 'config_notification_save':
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -4657,6 +4713,16 @@ switch ($site) {
             'mail_smtpsecure' => configNormalizeMailSecureToUi((string)MAIL_SMTPSECURE) ?? ''
         ];
         $mailValues = array_merge($mailDefaults, is_array($cfgFormData['mail'] ?? null) ? $cfgFormData['mail'] : []);
+        $automationStore = new AutomationStore();
+        $automationSettings = $automationStore->getSettings();
+        $schedulerDefaultsRaw = is_array($automationSettings['scheduler_config'] ?? null) ? $automationSettings['scheduler_config'] : [];
+        $schedulerDefaults = [
+            'queue_enabled' => !array_key_exists('queue_enabled', $schedulerDefaultsRaw) || !empty($schedulerDefaultsRaw['queue_enabled']) ? '1' : '0',
+            'notifications_enabled' => !array_key_exists('notifications_enabled', $schedulerDefaultsRaw) || !empty($schedulerDefaultsRaw['notifications_enabled']) ? '1' : '0',
+            'snmp_scan_enabled' => !empty($schedulerDefaultsRaw['snmp_scan_enabled']) ? '1' : '0',
+        ];
+        $schedulerValues = array_merge($schedulerDefaults, is_array($cfgFormData['scheduler'] ?? null) ? $cfgFormData['scheduler'] : []);
+        $schedulerStatus = is_array($automationSettings['scheduler_status'] ?? null) ? $automationSettings['scheduler_status'] : [];
         $updaterDefaults = configGetUpdateStatus(false);
         $updaterValues = array_merge($updaterDefaults, is_array($cfgFormData['updater'] ?? null) ? $cfgFormData['updater'] : []);
         $updaterStateValues = configReadUpdaterState();
@@ -4774,6 +4840,31 @@ switch ($site) {
         echo '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
         echo '<button type="submit" formaction="?set=config_mail_test" class="bg-amber-600 hover:bg-amber-700 text-white">Mail testen</button>';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
+        echo '</div>';
+        echo '</form>';
+        echo '</section>';
+
+        echo '<section id="cfg-scheduler">';
+        echo '<div class="text-xl font-bold pb-1">Scheduler</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">Steuert, welche Aufgaben der periodische Scheduler ausfuehren darf. Der Cronjob selbst wird durch den Installer eingerichtet.</p>';
+        echo $renderFeedback($cfgFeedback, 'scheduler');
+        echo '<form action="?set=config_scheduler_save" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_queue_enabled" value="1"' . (configToBool($schedulerValues['queue_enabled'] ?? false) ? ' checked' : '') . '> <span>Queue-Automation ausfuehren</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_notifications_enabled" value="1"' . (configToBool($schedulerValues['notifications_enabled'] ?? false) ? ' checked' : '') . '> <span>Benachrichtigungen verarbeiten</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_scan_enabled" value="1"' . (configToBool($schedulerValues['snmp_scan_enabled'] ?? false) ? ' checked' : '') . '> <span>SNMP-Scan fuer alle Switches</span></label>';
+        echo '</div>';
+        echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter Lauf</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_run'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter Erfolg</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_success'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Processed / OK</div><div class="text-sm font-semibold">' . escapeSettingValue((string)((int)($schedulerStatus['processed'] ?? 0) . ' / ' . (int)($schedulerStatus['succeeded'] ?? 0))) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Fehlgeschlagen</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['failed'] ?? 0)) . '</div></div>';
+        echo '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Letzte Meldung</div>';
+        echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['message'] ?? 'Noch keine Scheduler-Ausfuehrung protokolliert.')) . '</div>';
+        echo '<div class="pt-4 flex flex-wrap gap-3">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';
         echo '</form>';

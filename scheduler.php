@@ -79,10 +79,17 @@ $mail = new Mail();
 $notificationCenter = new NotificationCenter($db, $logger, $mail);
 $startTime = microtime(true);
 
-// Dispatch alternative scheduler tasks via first CLI argument.
-$schedulerTask = isset($argv[1]) ? trim((string)$argv[1]) : '';
+function schedulerGetTaskConfig(array $storedSettings): array {
+    $config = is_array($storedSettings['scheduler_config'] ?? null) ? $storedSettings['scheduler_config'] : [];
 
-if ($schedulerTask === 'snmp-scan' || $schedulerTask === 'snmp_scan_all') {
+    return [
+        'queue_enabled' => !array_key_exists('queue_enabled', $config) || !empty($config['queue_enabled']),
+        'notifications_enabled' => !array_key_exists('notifications_enabled', $config) || !empty($config['notifications_enabled']),
+        'snmp_scan_enabled' => !empty($config['snmp_scan_enabled']),
+    ];
+}
+
+function schedulerRunSnmpScanAll(DatabaseAdapter $db, AutomationStore $automationStore, Logger $logger, float $startTime): int {
     include_once __DIR__ . '/includes/core/snmp_scanner.php';
     $logger->log('Scheduler[snmp-scan]: Starting SNMP scan across all inventory switches', 1);
 
@@ -104,7 +111,7 @@ if ($schedulerTask === 'snmp-scan' || $schedulerTask === 'snmp_scan_all') {
 
     if (empty($switchNames)) {
         $logger->log('Scheduler[snmp-scan]: No switches in inventory', 2);
-        exit(0);
+        return 0;
     }
 
     $scanner = new \Portflow\Core\SnmpScanner($db, $automationStore, $logger);
@@ -128,14 +135,66 @@ if ($schedulerTask === 'snmp-scan' || $schedulerTask === 'snmp_scan_all') {
 
     $logger->log(sprintf('Scheduler[snmp-scan] done: total=%d ok=%d fail=%d duration=%.2fs',
         count($switchNames), $okCount, $failCount, microtime(true) - $startTime), 1);
-    exit($failCount === 0 ? 0 : 1);
+
+    return $failCount === 0 ? 0 : 1;
 }
 
-$logger->log('Scheduler: Starting automated queue execution', 1);
+// Dispatch alternative scheduler tasks via first CLI argument.
+$schedulerTask = isset($argv[1]) ? trim((string)$argv[1]) : '';
+
+if ($schedulerTask === 'snmp-scan' || $schedulerTask === 'snmp_scan_all') {
+    exit(schedulerRunSnmpScanAll($db, $automationStore, $logger, $startTime));
+}
 
 try {
-    // Get all switches from inventory
     $storedSettings = $automationStore->getSettings();
+    $taskConfig = schedulerGetTaskConfig($storedSettings);
+    $enabledTasks = [];
+    if ($taskConfig['queue_enabled']) {
+        $enabledTasks[] = 'queue';
+    }
+    if ($taskConfig['notifications_enabled']) {
+        $enabledTasks[] = 'notifications';
+    }
+    if ($taskConfig['snmp_scan_enabled']) {
+        $enabledTasks[] = 'snmp-scan';
+    }
+
+    if (empty($enabledTasks)) {
+        $message = 'Scheduler: No tasks enabled in scheduler configuration';
+        $logger->log($message, 2);
+        recordSchedulerRun(true, $message, $automationStore);
+        exit(0);
+    }
+
+    $logger->log('Scheduler: Starting tasks [' . implode(', ', $enabledTasks) . ']', 1);
+
+    if ($taskConfig['snmp_scan_enabled']) {
+        $snmpExitCode = schedulerRunSnmpScanAll($db, $automationStore, $logger, $startTime);
+        if ($snmpExitCode !== 0) {
+            $logger->log('Scheduler: SNMP scan finished with failures', 2);
+        }
+    }
+
+    if (!$taskConfig['queue_enabled']) {
+        $notificationSummary = '';
+        if ($taskConfig['notifications_enabled']) {
+            $notificationCenter->enqueueDailySummaryIfDue();
+            $deliveryResult = $notificationCenter->processQueue(150);
+            $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
+            $notificationSummary = ' Notifications: processed=' . (int)$deliveryResult['processed']
+                . ' sent=' . (int)$deliveryResult['sent']
+                . ' failed=' . (int)$deliveryResult['failed']
+                . ' cleaned=' . (int)$cleanupResult['removed'] . '.';
+            $logger->log('Scheduler: notifications processed without queue execution', 1);
+        }
+
+        $message = 'Scheduler: Queue execution disabled by configuration.' . $notificationSummary;
+        recordSchedulerRun(true, $message, $automationStore);
+        exit(0);
+    }
+
+    // Get all switches from inventory
     $inventoryRaw = trim((string)($storedSettings['switch_inventory_json'] ?? ''));
     if ($inventoryRaw === '') {
         $inventoryRaw = '{"switches": []}';
@@ -283,18 +342,21 @@ try {
         );
     }
 
-    // Trigger daily summary creation based on env time/timezone and always process queue.
-    $notificationCenter->enqueueDailySummaryIfDue();
-    $deliveryResult = $notificationCenter->processQueue(150);
-    $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
-    $logger->log(
-        'Scheduler: notifications processed - processed=' . (int)$deliveryResult['processed']
-        . ' sent=' . (int)$deliveryResult['sent']
-        . ' failed=' . (int)$deliveryResult['failed']
-        . ' remaining=' . (int)$deliveryResult['remaining']
-        . ' cleaned=' . (int)$cleanupResult['removed'],
-        1
-    );
+    if ($taskConfig['notifications_enabled']) {
+        $notificationCenter->enqueueDailySummaryIfDue();
+        $deliveryResult = $notificationCenter->processQueue(150);
+        $cleanupResult = $notificationCenter->cleanupQueue((int)(defined('NOTIFICATION_QUEUE_RETENTION_DAYS') ? NOTIFICATION_QUEUE_RETENTION_DAYS : 30));
+        $logger->log(
+            'Scheduler: notifications processed - processed=' . (int)$deliveryResult['processed']
+            . ' sent=' . (int)$deliveryResult['sent']
+            . ' failed=' . (int)$deliveryResult['failed']
+            . ' remaining=' . (int)$deliveryResult['remaining']
+            . ' cleaned=' . (int)$cleanupResult['removed'],
+            1
+        );
+    } else {
+        $logger->log('Scheduler: notification processing disabled by configuration', 1);
+    }
 
     $logger->log($logMessage, $totalFailed === 0 ? 1 : 2);
     recordSchedulerRun($totalFailed === 0, $summary, $automationStore, $totalProcessed, $totalSucceeded, $totalFailed);

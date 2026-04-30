@@ -21,6 +21,8 @@ class AutomationStore {
             $sshAuthMethod = 'password';
         }
 
+        $schedulerConfig = $this->normalizeSchedulerConfig($stored['scheduler_config'] ?? null);
+
         return [
             'ssh_host' => (string)($stored['ssh_host'] ?? ''),
             'ssh_port' => (int)($stored['ssh_port'] ?? 22),
@@ -31,7 +33,8 @@ class AutomationStore {
             'scripts_json' => $this->decrypt((string)($stored['scripts_json'] ?? '')),
             'switch_inventory_json' => $this->decrypt((string)($stored['switch_inventory_json'] ?? '')),
             'updated_at' => (string)($stored['updated_at'] ?? ''),
-            'scheduler_status' => is_array($stored['scheduler_status'] ?? null) ? $stored['scheduler_status'] : null
+            'scheduler_status' => is_array($stored['scheduler_status'] ?? null) ? $stored['scheduler_status'] : null,
+            'scheduler_config' => $schedulerConfig
         ];
     }
 
@@ -53,6 +56,7 @@ class AutomationStore {
 
     public function saveSettings(array $input): void {
         $current = $this->getSettings();
+        $storedCurrent = $this->readStored();
 
         $sshHost = trim((string)($input['ssh_host'] ?? ''));
         $sshPort = (int)($input['ssh_port'] ?? 22);
@@ -62,6 +66,8 @@ class AutomationStore {
         $sshPrivateKey = trim((string)($input['ssh_private_key'] ?? ''));
         $scriptsJson = trim((string)($input['scripts_json'] ?? ''));
         $switchInventoryJson = trim((string)($input['switch_inventory_json'] ?? ''));
+        $schedulerConfigInput = $input['scheduler_config'] ?? ($current['scheduler_config'] ?? null);
+        $schedulerConfig = $this->normalizeSchedulerConfig($schedulerConfigInput);
 
         if (!in_array($sshAuthMethod, ['password', 'key'], true)) {
             $sshAuthMethod = 'password';
@@ -212,7 +218,7 @@ class AutomationStore {
             }
         }
 
-        $payload = [
+        $payload = array_merge($storedCurrent, [
             'version' => 2,
             'updated_at' => gmdate('c'),
             'ssh_host' => $sshHost,
@@ -222,10 +228,34 @@ class AutomationStore {
             'ssh_password' => $this->encrypt($sshPasswordToStore),
             'ssh_private_key' => $this->encrypt($sshPrivateKeyToStore),
             'scripts_json' => $this->encrypt(json_encode($decodedScripts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
-            'switch_inventory_json' => $this->encrypt(json_encode($decodedInventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
-        ];
+            'switch_inventory_json' => $this->encrypt(json_encode($decodedInventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'scheduler_config' => $schedulerConfig
+        ]);
 
         $this->writeStored($payload);
+    }
+
+    private function normalizeSchedulerConfig($config): array {
+        $input = is_array($config) ? $config : [];
+
+        return [
+            'queue_enabled' => $this->toBoolFlag($input['queue_enabled'] ?? true),
+            'notifications_enabled' => $this->toBoolFlag($input['notifications_enabled'] ?? true),
+            'snmp_scan_enabled' => $this->toBoolFlag($input['snmp_scan_enabled'] ?? false),
+        ];
+    }
+
+    private function toBoolFlag($value): bool {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value)) {
+            return $value !== 0;
+        }
+
+        $normalized = strtolower(trim((string)$value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
     }
 
     private function readStored(): array {
