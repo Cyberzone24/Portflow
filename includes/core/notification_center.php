@@ -512,6 +512,40 @@ class NotificationCenter {
         ];
     }
 
+    public function deleteFailedQueueEntries(): array {
+        $queue = $this->readQueue();
+        if (empty($queue)) {
+            return ['ok' => true, 'deleted' => 0, 'remaining' => 0];
+        }
+
+        $kept = [];
+        $deleted = 0;
+
+        foreach ($queue as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $status = strtolower(trim((string)($entry['status'] ?? 'pending')));
+            if ($status === 'failed') {
+                $deleted++;
+                continue;
+            }
+
+            $kept[] = $entry;
+        }
+
+        if ($deleted > 0) {
+            $this->writeQueue($kept);
+        }
+
+        return [
+            'ok' => true,
+            'deleted' => $deleted,
+            'remaining' => count($kept)
+        ];
+    }
+
     public function cleanupQueue(int $retentionDays = 30): array {
         $retentionDays = max(0, $retentionDays);
         $queue = $this->readQueue();

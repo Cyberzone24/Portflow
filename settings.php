@@ -3148,6 +3148,34 @@
 
                 header('Location: ?site=configuration&tab=notifications#cfg-notification');
                 break;
+            case 'config_notification_delete_failed_entries':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for notification bulk delete failed', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=notifications');
+                    die();
+                }
+
+                try {
+                    $notificationCenter = new NotificationCenter($db_adapter, $logger, $mail);
+                    $deleteResult = $notificationCenter->deleteFailedQueueEntries();
+                    $message = 'Fehlgeschlagene Benachrichtigungen geloescht: deleted=' . (int)($deleteResult['deleted'] ?? 0)
+                        . ', remaining=' . (int)($deleteResult['remaining'] ?? 0);
+                    configSetFeedback('notification', true, $message);
+                    $logger->log('notification queue bulk delete failed executed: ' . $message, 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'DELETE', 'configuration_notification_delete_failed_entries', $deleteResult);
+                } catch (\Throwable $e) {
+                    configSetFeedback('notification', false, 'Bulk-Loeschen fehlgeschlagen: ' . $e->getMessage());
+                    $logger->log('notification queue bulk delete failed failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+
+                header('Location: ?site=configuration&tab=notifications#cfg-notification');
+                break;
             case 'config_notification_enqueue_test':
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -5588,6 +5616,10 @@ switch ($site) {
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<input name="notification_queue_retention_days" type="number" min="0" max="365" value="' . escapeSettingValue((string)$currentRetentionDays) . '" class="w-24 py-2 px-3" title="Retention in Tagen (0 = sofort alle abgeschlossenen Eintraege entfernen)">';
         echo '<button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white">Queue bereinigen</button>';
+        echo '</form>';
+        echo '<form action="?set=config_notification_delete_failed_entries" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-rose-700 hover:bg-rose-800 text-white">Alle Fehlgeschlagenen loeschen</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_test_slack" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
