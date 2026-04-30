@@ -15,6 +15,7 @@
     include_once __DIR__ . '/includes/core/logger.php';
     include_once __DIR__ . '/includes/core/automation_store.php';
     include_once __DIR__ . '/includes/core/automation.php';
+    include_once __DIR__ . '/includes/core/system_state.php';
     use Portflow\Core\Auth;
     use Portflow\Core\Automation;
     use Portflow\Core\AutomationStore;
@@ -1397,6 +1398,28 @@
         return trim(implode("\n", $output));
     }
 
+    function configUpdateRollbackRef(): string {
+        return 'refs/portflow-updater/pre-update';
+    }
+
+    function configWriteUpdaterState(array $state): bool {
+        return portflow_write_state_file(portflow_updater_state_path(), $state);
+    }
+
+    function configReadUpdaterState(): array {
+        $state = portflow_get_updater_state();
+        return is_array($state) ? $state : [];
+    }
+
+    function configClearUpdaterState(): bool {
+        return portflow_delete_state_file(portflow_updater_state_path());
+    }
+
+    function configGetRollbackCandidate(array $updaterState): array {
+        $candidate = $updaterState['rollback_candidate'] ?? [];
+        return is_array($candidate) ? $candidate : [];
+    }
+
     function configGetUpdateStatus(bool $refreshRemote = false): array {
         $status = [
             'ok' => false,
@@ -1482,6 +1505,221 @@
         $status['ok'] = true;
         $status['last_checked_at'] = date('Y-m-d H:i:s');
         return $status;
+    }
+
+    function configExecuteUpdate(): array {
+        $statusBefore = configGetUpdateStatus(true);
+        $existingState = configReadUpdaterState();
+        $existingRollbackCandidate = configGetRollbackCandidate($existingState);
+
+        if (!$statusBefore['ok']) {
+            return $statusBefore + ['message' => 'Update nicht moeglich: ' . (string)($statusBefore['message'] ?? 'unbekannter Fehler')];
+        }
+
+        if (!$statusBefore['repo_available']) {
+            return $statusBefore + ['ok' => false, 'message' => 'Update nicht moeglich: kein Git-Repository gefunden.'];
+        }
+
+        if ($statusBefore['upstream'] === '') {
+            return $statusBefore + ['ok' => false, 'message' => 'Update nicht moeglich: kein Tracking-Branch konfiguriert.'];
+        }
+
+        if (!empty($statusBefore['working_tree_dirty'])) {
+            return $statusBefore + ['ok' => false, 'message' => 'Update abgebrochen: es gibt lokale, nicht committete Aenderungen.'];
+        }
+
+        if ((int)($statusBefore['behind_count'] ?? 0) < 1) {
+            return $statusBefore + ['ok' => true, 'message' => 'Kein Update erforderlich. Portflow ist bereits aktuell.'];
+        }
+
+        $currentBranch = trim((string)($statusBefore['branch'] ?? ''));
+        $upstream = trim((string)($statusBefore['upstream'] ?? ''));
+        $previousVersion = trim((string)($statusBefore['current_version'] ?? ''));
+        $targetVersion = trim((string)($statusBefore['remote_version'] ?? ''));
+        $previousCommit = trim((string)($statusBefore['current_commit'] ?? ''));
+        $targetCommit = trim((string)($statusBefore['remote_commit'] ?? ''));
+        $rollbackRef = configUpdateRollbackRef();
+
+        $updateState = [
+            'status' => 'running',
+            'operation' => 'update',
+            'started_at' => date('Y-m-d H:i:s'),
+            'branch' => $currentBranch,
+            'upstream' => $upstream,
+            'previous_version' => $previousVersion,
+            'previous_commit' => $previousCommit,
+            'target_version' => $targetVersion,
+            'target_commit' => $targetCommit,
+            'rollback_candidate' => $existingRollbackCandidate,
+        ];
+
+        if (!portflow_enable_maintenance_mode([
+            'message' => 'Ein System-Update wird angewendet. Portflow ist fuer kurze Zeit nicht verfuegbar.',
+            'branch' => $currentBranch,
+            'target_version' => $targetVersion,
+            'target_commit' => $targetCommit,
+        ])) {
+            return $statusBefore + ['ok' => false, 'message' => 'Update nicht moeglich: Wartungsmodus konnte nicht aktiviert werden.'];
+        }
+
+        configWriteUpdaterState($updateState);
+
+        $maintenanceDisableFailed = false;
+
+        try {
+            configRunGitCommand(['update-ref', $rollbackRef, 'HEAD'], $exitCode);
+            if ($exitCode !== 0) {
+                return $statusBefore + ['ok' => false, 'message' => 'Update fehlgeschlagen: der Rollback-Referenzpunkt konnte nicht erstellt werden.'];
+            }
+
+            configRunGitCommand(['checkout', $currentBranch], $exitCode);
+            if ($exitCode !== 0) {
+                return $statusBefore + ['ok' => false, 'message' => 'Update fehlgeschlagen: Branch ' . $currentBranch . ' konnte nicht ausgecheckt werden.'];
+            }
+
+            configRunGitCommand(['reset', '--hard', $upstream], $exitCode);
+            if ($exitCode !== 0) {
+                return $statusBefore + ['ok' => false, 'message' => 'Update fehlgeschlagen: Git-Reset auf ' . $upstream . ' war nicht erfolgreich.'];
+            }
+
+            $dbAdapter = new DatabaseAdapter();
+            $dbAdapter->db_update_schema();
+
+            $statusAfter = configGetUpdateStatus(false);
+            $statusAfter['ok'] = true;
+            $statusAfter['message'] = 'Update erfolgreich: ' . ($previousVersion !== '' ? $previousVersion : 'alter Stand unbekannt') . ' -> ' . ($targetVersion !== '' ? $targetVersion : ($statusAfter['current_version'] ?? 'neuer Stand unbekannt')) . '. Datenbankschema wurde aktualisiert.';
+            $statusAfter['previous_version'] = $previousVersion;
+            $statusAfter['previous_commit'] = $previousCommit;
+            $statusAfter['target_version'] = $targetVersion;
+            $statusAfter['target_commit'] = $targetCommit;
+            configWriteUpdaterState($updateState + [
+                'status' => 'success',
+                'finished_at' => date('Y-m-d H:i:s'),
+                'message' => $statusAfter['message'],
+                'rollback_candidate' => [
+                    'available' => true,
+                    'commit' => $previousCommit,
+                    'version' => $previousVersion,
+                    'from_commit' => $targetCommit,
+                    'from_version' => $targetVersion,
+                    'recorded_at' => date('Y-m-d H:i:s'),
+                ],
+            ]);
+            return $statusAfter;
+        } catch (\Throwable $e) {
+            $rollbackResetOutput = configRunGitCommand(['reset', '--hard', $previousCommit], $rollbackExitCode);
+            $rollbackSuccessful = ($rollbackExitCode === 0);
+            $rolledBackStatus = configGetUpdateStatus(false);
+            $rolledBackStatus['ok'] = false;
+            $rolledBackStatus['previous_version'] = $previousVersion;
+            $rolledBackStatus['previous_commit'] = $previousCommit;
+            $rolledBackStatus['target_version'] = $targetVersion;
+            $rolledBackStatus['target_commit'] = $targetCommit;
+            if ($rollbackSuccessful) {
+                $rolledBackStatus['message'] = 'Update fehlgeschlagen: Die Datenbankmigration konnte nicht abgeschlossen werden (' . $e->getMessage() . '). Der Code wurde auf ' . ($previousVersion !== '' ? $previousVersion : $previousCommit) . ' zurueckgesetzt. Bereits ausgefuehrte Datenbankaenderungen muessen ggf. manuell geprueft werden.';
+            } else {
+                $rolledBackStatus['message'] = 'Update fehlgeschlagen: Die Datenbankmigration konnte nicht abgeschlossen werden (' . $e->getMessage() . ') und der automatische Code-Rollback ist ebenfalls fehlgeschlagen (' . trim($rollbackResetOutput) . '). Bitte System manuell pruefen.';
+            }
+
+            configWriteUpdaterState($updateState + [
+                'status' => $rollbackSuccessful ? 'rolled_back' : 'failed',
+                'finished_at' => date('Y-m-d H:i:s'),
+                'message' => $rolledBackStatus['message'],
+                'rollback_attempted' => true,
+                'rollback_successful' => $rollbackSuccessful,
+                'rollback_candidate' => $existingRollbackCandidate,
+            ]);
+            return $rolledBackStatus;
+        } finally {
+            configRunGitCommand(['update-ref', '-d', $rollbackRef], $cleanupExitCode);
+            if (!portflow_disable_maintenance_mode()) {
+                $maintenanceDisableFailed = true;
+            }
+            if ($maintenanceDisableFailed) {
+                configWriteUpdaterState([
+                    'status' => 'warning',
+                    'operation' => 'update',
+                    'finished_at' => date('Y-m-d H:i:s'),
+                    'message' => 'Wartungsmodus konnte nach dem Update nicht deaktiviert werden. Bitte maintenance.json manuell pruefen.',
+                    'rollback_candidate' => $existingRollbackCandidate,
+                ]);
+            }
+        }
+    }
+
+    function configExecuteManualRollback(): array {
+        $statusBefore = configGetUpdateStatus(false);
+        $updaterState = configReadUpdaterState();
+        $rollbackCandidate = configGetRollbackCandidate($updaterState);
+
+        if (!$statusBefore['ok']) {
+            return $statusBefore + ['message' => 'Rollback nicht moeglich: ' . (string)($statusBefore['message'] ?? 'unbekannter Fehler')];
+        }
+
+        if (empty($rollbackCandidate['available']) || empty($rollbackCandidate['commit'])) {
+            return $statusBefore + ['ok' => false, 'message' => 'Rollback nicht moeglich: kein gespeicherter Ruecksetzpunkt verfuegbar.'];
+        }
+
+        if (!empty($statusBefore['working_tree_dirty'])) {
+            return $statusBefore + ['ok' => false, 'message' => 'Rollback abgebrochen: es gibt lokale, nicht committete Aenderungen.'];
+        }
+
+        $targetCommit = trim((string)$rollbackCandidate['commit']);
+        $targetVersion = trim((string)($rollbackCandidate['version'] ?? $targetCommit));
+        $currentVersion = trim((string)($statusBefore['current_version'] ?? ''));
+        $currentCommit = trim((string)($statusBefore['current_commit'] ?? ''));
+
+        configRunGitCommand(['rev-parse', '--verify', $targetCommit . '^{commit}'], $verifyExitCode);
+        if ($verifyExitCode !== 0) {
+            return $statusBefore + ['ok' => false, 'message' => 'Rollback nicht moeglich: der gespeicherte Commit ' . $targetCommit . ' existiert lokal nicht mehr.'];
+        }
+
+        if (!portflow_enable_maintenance_mode([
+            'message' => 'Ein manueller System-Rollback wird angewendet. Portflow ist fuer kurze Zeit nicht verfuegbar.',
+            'target_version' => $targetVersion,
+            'target_commit' => $targetCommit,
+        ])) {
+            return $statusBefore + ['ok' => false, 'message' => 'Rollback nicht moeglich: Wartungsmodus konnte nicht aktiviert werden.'];
+        }
+
+        try {
+            configWriteUpdaterState($updaterState + [
+                'status' => 'running',
+                'operation' => 'manual_rollback',
+                'started_at' => date('Y-m-d H:i:s'),
+                'message' => 'Manueller Rollback auf ' . $targetVersion . ' wird ausgefuehrt.',
+            ]);
+
+            configRunGitCommand(['reset', '--hard', $targetCommit], $rollbackExitCode);
+            if ($rollbackExitCode !== 0) {
+                return $statusBefore + ['ok' => false, 'message' => 'Rollback fehlgeschlagen: Git-Reset auf ' . $targetCommit . ' war nicht erfolgreich.'];
+            }
+
+            $statusAfter = configGetUpdateStatus(false);
+            $statusAfter['ok'] = true;
+            $statusAfter['message'] = 'Rollback erfolgreich: ' . ($currentVersion !== '' ? $currentVersion : $currentCommit) . ' -> ' . $targetVersion . '. Datenbankaenderungen werden nicht automatisch zurueckgenommen und muessen manuell geprueft werden.';
+            $statusAfter['previous_version'] = $currentVersion;
+            $statusAfter['previous_commit'] = $currentCommit;
+            $statusAfter['target_version'] = $targetVersion;
+            $statusAfter['target_commit'] = $targetCommit;
+            configWriteUpdaterState($updaterState + [
+                'status' => 'manual_rollback_success',
+                'operation' => 'manual_rollback',
+                'finished_at' => date('Y-m-d H:i:s'),
+                'message' => $statusAfter['message'],
+                'last_manual_rollback' => [
+                    'from_commit' => $currentCommit,
+                    'from_version' => $currentVersion,
+                    'to_commit' => $targetCommit,
+                    'to_version' => $targetVersion,
+                    'recorded_at' => date('Y-m-d H:i:s'),
+                ],
+                'rollback_candidate' => $rollbackCandidate,
+            ]);
+            return $statusAfter;
+        } finally {
+            portflow_disable_maintenance_mode();
+        }
     }
 
     function configWriteEnvValues(array $updates): array {
@@ -2405,6 +2643,57 @@
                 $updateStatus = configGetUpdateStatus(true);
                 configSetFeedback('updater', (bool)$updateStatus['ok'], (string)$updateStatus['message'], $updateStatus);
                 $logger->log('system updater check executed', $updateStatus['ok'] ? 1 : 2, echoToWeb: true);
+                header('Location: ?site=configuration&tab=updater#cfg-updater');
+                break;
+            case 'config_update_execute':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for updater execute', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=updater');
+                    die();
+                }
+
+                $updateResult = configExecuteUpdate();
+                configSetFeedback('updater', (bool)$updateResult['ok'], (string)$updateResult['message'], $updateResult);
+                $logger->log('system updater execute finished', !empty($updateResult['ok']) ? 1 : 3, echoToWeb: true);
+                if (!empty($updateResult['ok'])) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_system_update_execute', [
+                        'branch' => (string)($updateResult['branch'] ?? ''),
+                        'from' => (string)($updateResult['previous_version'] ?? ''),
+                        'to' => (string)($updateResult['target_version'] ?? ''),
+                        'behind_count' => (int)($updateResult['behind_count'] ?? 0),
+                    ]);
+                }
+                header('Location: ?site=configuration&tab=updater#cfg-updater');
+                break;
+            case 'config_update_rollback':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for updater rollback', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=updater');
+                    die();
+                }
+
+                $rollbackResult = configExecuteManualRollback();
+                configSetFeedback('updater', (bool)$rollbackResult['ok'], (string)$rollbackResult['message'], $rollbackResult);
+                $logger->log('system updater manual rollback finished', !empty($rollbackResult['ok']) ? 1 : 3, echoToWeb: true);
+                if (!empty($rollbackResult['ok'])) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_system_update_rollback', [
+                        'from' => (string)($rollbackResult['previous_version'] ?? ''),
+                        'to' => (string)($rollbackResult['target_version'] ?? ''),
+                        'target_commit' => (string)($rollbackResult['target_commit'] ?? ''),
+                    ]);
+                }
                 header('Location: ?site=configuration&tab=updater#cfg-updater');
                 break;
             case 'config_notification_cleanup_queue':
@@ -4072,7 +4361,7 @@
             <a class="flex-none lg:flex-auto" href="?site=notifications"><li class="<?php echo $settingsNavBaseClasses . ' ' . (($site == 'notifications') ? $settingsNavActiveClasses : '');?>"><?php echo $lang['notifications']; ?></li></a>
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=configuration"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'configuration' ? $settingsNavActiveClasses : '') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
             <?php if ($role == 'admin' && $site == 'configuration') : ?>
-                <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
+                <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1 lg:grid lg:gap-2" style="border-color: var(--pf-accent-500);">
                     <a href="?site=configuration&tab=system"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'system') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="system">System</li></a>
                     <a href="?site=configuration&tab=updater"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'updater') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="updater">Updater</li></a>
                     <a href="?site=configuration&tab=notifications"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'notifications') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="notifications">Benachrichtigungen</li></a>
@@ -4080,7 +4369,7 @@
             <?php endif; ?>
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=scripts"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'scripts' ? $settingsNavActiveClasses : '') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
             <?php if ($role == 'admin' && $site == 'scripts') : ?>
-                <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1" style="border-color: var(--pf-accent-500);">
+                <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1 lg:grid lg:gap-2" style="border-color: var(--pf-accent-500);">
                     <a href="?site=scripts&tab=switch"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'switch') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="switch">Switch/SSH</li></a>
                     <a href="?site=scripts&tab=profiles"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'profiles') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="profiles">Profile</li></a>
                     <a href="?site=scripts&tab=templates"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'templates') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="templates">Templates</li></a>
@@ -4370,6 +4659,8 @@ switch ($site) {
         $mailValues = array_merge($mailDefaults, is_array($cfgFormData['mail'] ?? null) ? $cfgFormData['mail'] : []);
         $updaterDefaults = configGetUpdateStatus(false);
         $updaterValues = array_merge($updaterDefaults, is_array($cfgFormData['updater'] ?? null) ? $cfgFormData['updater'] : []);
+        $updaterStateValues = configReadUpdaterState();
+        $rollbackCandidate = configGetRollbackCandidate($updaterStateValues);
 
         $notificationCfgDefaults = [
             'notification_daily_time' => (string)NOTIFICATION_DAILY_TIME,
@@ -4529,10 +4820,32 @@ switch ($site) {
         echo '<div class="font-medium">' . escapeSettingValue((string)($updaterValues['last_checked_at'] ?? '-')) . '</div>';
         echo '<div class="mt-3 text-sm text-gray-500">Ergebnis</div>';
         echo '<div class="font-medium">' . escapeSettingValue((string)($updaterValues['message'] ?? 'Noch keine Update-Pruefung ausgefuehrt.')) . '</div>';
-        echo '<form action="?set=config_update_check" method="post" class="m-0 pt-4">';
+        echo '<div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Letzter Laufstatus</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterStateValues['status'] ?? 'unbekannt')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Letzte Aktion</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterStateValues['operation'] ?? 'update-check')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Gestartet</div><div class="text-sm font-medium">' . escapeSettingValue((string)($updaterStateValues['started_at'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Beendet</div><div class="text-sm font-medium">' . escapeSettingValue((string)($updaterStateValues['finished_at'] ?? '-')) . '</div></div>';
+        echo '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Letzter Updater-Status</div>';
+        echo '<div class="font-medium">' . escapeSettingValue((string)($updaterStateValues['message'] ?? 'Es liegt noch kein gespeicherter Updater-Status vor.')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">Rollback-Stand</div>';
+        echo '<div class="font-medium">' . escapeSettingValue(!empty($rollbackCandidate['available']) ? ((string)($rollbackCandidate['version'] ?? $rollbackCandidate['commit'] ?? '-')) : 'Kein gespeicherter Ruecksetzpunkt') . '</div>';
+        echo '<div class="text-xs text-gray-500">Commit: ' . escapeSettingValue((string)($rollbackCandidate['commit'] ?? '-')) . ' | Gespeichert: ' . escapeSettingValue((string)($rollbackCandidate['recorded_at'] ?? '-')) . '</div>';
+        echo '<div class="pt-4 flex flex-wrap gap-3">';
+        echo '<form action="?set=config_update_check" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Nach Updates suchen</button>';
         echo '</form>';
+        echo '<form action="?set=config_update_execute" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white"' . ((!empty($updaterValues['working_tree_dirty']) || empty($updaterValues['repo_available']) || empty($updaterValues['upstream']) || (int)($updaterValues['behind_count'] ?? 0) < 1) ? ' disabled title="Vor dem Update bitte erst den Git-Status pruefen."' : '') . '>Update ausfuehren</button>';
+        echo '</form>';
+        echo '<form action="?set=config_update_rollback" method="post" class="m-0">';
+        echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+        echo '<button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white"' . ((!empty($updaterValues['working_tree_dirty']) || empty($rollbackCandidate['available']) || empty($rollbackCandidate['commit'])) ? ' disabled title="Es ist kein gespeicherter Ruecksetzpunkt verfuegbar oder der Worktree ist nicht sauber."' : '') . '>Letzten Stand wiederherstellen</button>';
+        echo '</form>';
+        echo '</div>';
+        echo '<div class="mt-3 text-xs text-gray-500">Das Update aktiviert kurzzeitig einen Wartungsmodus, blockiert jetzt auch API-Zugriffe, setzt den lokalen Branch auf den konfigurierten Tracking-Branch zurueck und fuehrt anschliessend die Datenbankmigration aus. Bei einem Fehler wird der Code automatisch auf den vorherigen Commit zurueckgesetzt. Der manuelle Rollback stellt spaeter denselben gespeicherten Code-Stand wieder her. Datenbankaenderungen werden dabei nicht automatisch rueckgaengig gemacht.</div>';
         echo '</div>';
         echo '</section>';
         echo '</div>'; // end cfg-section-updater

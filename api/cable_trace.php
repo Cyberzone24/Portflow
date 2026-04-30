@@ -11,6 +11,8 @@
 if (!defined('APP_NAME')) {
     define('APP_NAME', 'Portflow');
 }
+include_once __DIR__ . '/../includes/core/system_state.php';
+portflow_enforce_maintenance_mode('json', ['include_state' => true]);
 @include_once __DIR__ . '/../includes/core/session.php';
 require_once __DIR__ . '/../includes/core/cable_trace.php';
 

@@ -9,6 +9,9 @@ error_reporting(E_ALL);
 define('APP_NAME', 'Portflow');
 #const APP_NAME = 'Portflow';
 
+include_once __DIR__ . '/../includes/core/system_state.php';
+portflow_enforce_maintenance_mode('json', ['include_state' => true]);
+
 # ================================================================================================= .htaccess config has to be replicated for lighttpd conf, just for testing with apache
 
 // check if session exists

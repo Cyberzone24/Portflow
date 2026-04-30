@@ -1,5 +1,7 @@
 <?php
     $active_page = basename($_SERVER['PHP_SELF'], ".php");
+
+    include_once __DIR__ . '/core/system_state.php';
     
     if (isset($_GET['signout'])) {
         // destroy session
@@ -27,6 +29,8 @@
     include_once __DIR__ . '/core/auth.php';
     use Portflow\Core\Auth;
     $auth = new Auth();
+
+    portflow_enforce_maintenance_mode('html');
 
     $navActiveClass = 'pf-nav-pill pf-nav-pill-active';
     $navInactiveClass = 'pf-nav-pill';

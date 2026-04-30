@@ -51,6 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 if (!defined('APP_NAME')) {
     define('APP_NAME', 'Portflow');
 }
+include_once __DIR__ . '/../includes/core/system_state.php';
+portflow_enforce_maintenance_mode('json', ['include_state' => true]);
 @include_once __DIR__ . '/../includes/core/session.php';
 include_once __DIR__ . '/../includes/core/db_adapter.php';
 include_once __DIR__ . '/../includes/core/logger.php';

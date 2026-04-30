@@ -14,6 +14,13 @@
  * cleared (the table falls back to the default).
  */
 
+if (!defined('APP_NAME')) {
+    define('APP_NAME', 'Portflow');
+}
+
+include_once __DIR__ . '/../includes/core/system_state.php';
+portflow_enforce_maintenance_mode('json', ['include_state' => true]);
+
 @include_once __DIR__ . '/../includes/core/session.php';
 require_once __DIR__ . '/../includes/core/db_adapter.php';
 require_once __DIR__ . '/../includes/core/table_columns.php';
