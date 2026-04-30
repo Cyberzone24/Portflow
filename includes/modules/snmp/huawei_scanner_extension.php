@@ -396,7 +396,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
     }
 
     /**
-     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string,if_name?:string}>
+     * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string,if_name?:string,vlan?:int|null}>
      */
     private function parseNodeIpsFromCliOutput(string $output, string $source): array
     {
@@ -410,6 +410,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
             }
 
             $interfaceName = $this->extractInterfaceName($line);
+            $vlanId = $this->extractVlanId($line);
 
             if (!isset($nodeIps[$mac])) {
                 $nodeIps[$mac] = [
@@ -419,6 +420,7 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
                     'source' => $source,
                     'mac' => $mac,
                     'if_name' => $interfaceName,
+                    'vlan' => $vlanId,
                 ];
             }
         }
@@ -455,5 +457,15 @@ class HuaweiScannerExtension implements SnmpScannerExtensionInterface
         }
 
         return trim((string)$matches[1]);
+    }
+
+    private function extractVlanId(string $line): ?int
+    {
+        if (!preg_match('/(?:^|\s)(\d+)\/(?:--|[0-9-]+)(?=\s|$)/', $line, $matches)) {
+            return null;
+        }
+
+        $vlanId = (int)($matches[1] ?? 0);
+        return $vlanId > 0 ? $vlanId : null;
     }
 }

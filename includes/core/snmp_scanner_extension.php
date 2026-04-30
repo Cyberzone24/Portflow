@@ -26,7 +26,7 @@ interface SnmpScannerExtensionInterface
 
     /**
      * @param array<string,mixed> $config
-        * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string,if_name?:string}>
+        * @return array<string,array{if_index:int,ip:string,hostname:string,source:string,mac:string,if_name?:string,vlan?:int|null}>
      */
     public function collectNodeIps(SnmpClient $client, Logger $logger, array $config): array;
 

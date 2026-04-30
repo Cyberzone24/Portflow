@@ -263,11 +263,12 @@ class SnmpScanner
                 }
                 $nodes[] = [
                     'mac' => $mac,
-                    'vlan' => null,
+                    'vlan' => isset($nodeIp['vlan']) && $nodeIp['vlan'] !== null ? (int)$nodeIp['vlan'] : null,
                     'if_index' => $resolvedIfIndex,
                     'bridge_port' => 0,
                     'ip' => (string)($nodeIp['ip'] ?? ''),
                     'hostname' => (string)($nodeIp['hostname'] ?? ''),
+                    'ip_source' => (string)($nodeIp['source'] ?? 'snmp:arp'),
                 ];
                 $nodeMacs[$mac] = true;
             }
@@ -291,6 +292,9 @@ class SnmpScanner
                     $nodeIpMatchedMacs[$mac] = true;
                     if ($nodeIfIndex <= 0 && $nodeIpIfIndex > 0) {
                         $nodes[$idx]['if_index'] = $nodeIpIfIndex;
+                    }
+                    if ((!isset($nodes[$idx]['vlan']) || $nodes[$idx]['vlan'] === null) && isset($nodeIps[$mac]['vlan']) && $nodeIps[$mac]['vlan'] !== null) {
+                        $nodes[$idx]['vlan'] = (int)$nodeIps[$mac]['vlan'];
                     }
                     $nodes[$idx]['ip'] = (string)($nodeIps[$mac]['ip'] ?? '');
                     $nodes[$idx]['hostname'] = (string)($nodeIps[$mac]['hostname'] ?? '');

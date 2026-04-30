@@ -771,7 +771,7 @@ class PortReconciler
     * Persist FDB nodes (MAC-Adressen pro Port) mit upsert-Semantik.
     * Insert bei (device_port, mac) erstmals; Update last_seen + vlan + last_scan_run sonst.
      *
-    * @param array<int,array{mac:string,vlan:?int,if_index:?int,bridge_port:int,ip?:string,hostname?:string}> $nodes
+    * @param array<int,array{mac:string,vlan:?int,if_index:?int,bridge_port:int,ip?:string,hostname?:string,ip_source?:string}> $nodes
      * @param array<int,string> $ifIndexToPortUuid
      */
     private function applyNodeFacts(array $nodes, array $ifIndexToPortUuid, string $runUuid): int
@@ -797,6 +797,7 @@ class PortReconciler
                 $ipAddress = '';
             }
             $hostname = trim((string)($node['hostname'] ?? ''));
+            $ipSource = trim((string)($node['ip_source'] ?? ''));
             $targetPortUuids = [$portUuid];
             if (isset($mirrorTargets[$portUuid]) && $mirrorTargets[$portUuid] !== $portUuid) {
                 $targetPortUuids[] = $mirrorTargets[$portUuid];
@@ -805,6 +806,9 @@ class PortReconciler
             foreach (array_values(array_unique($targetPortUuids)) as $targetPortUuid) {
                 if ($this->persistNodeObservation($targetPortUuid, $mac, $vlan, $ipAddress, $hostname, $runUuid)) {
                     $persisted++;
+                    if ($targetPortUuid !== $portUuid) {
+                        $this->applyEndpointNodeFacts($targetPortUuid, $mac, $ipAddress, $hostname, $ipSource);
+                    }
                 }
             }
         }
@@ -920,6 +924,64 @@ class PortReconciler
         } catch (\Throwable $e) {
             $this->logger->log('PortReconciler: node upsert failed for ' . $mac . ' on port ' . $portUuid . ': ' . $e->getMessage(), 2);
             return false;
+        }
+    }
+
+    private function applyEndpointNodeFacts(string $portUuid, string $mac, string $ipAddress, string $hostname, string $ipSource): void
+    {
+        try {
+            if ($mac !== '') {
+                $this->db->db_query(
+                    'UPDATE device_port SET mac_address = :mac WHERE uuid = :uuid AND COALESCE(mac_address, \'\') <> :mac',
+                    ['mac' => $mac, 'uuid' => $portUuid]
+                );
+            }
+
+            if ($ipAddress === '' || !filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+                return;
+            }
+
+            $dhcpAddress = str_contains(strtolower($ipSource), 'dhcp');
+            $portRows = $this->db->db_query(
+                'SELECT device_port_ip FROM device_port WHERE uuid = :uuid LIMIT 1',
+                ['uuid' => $portUuid]
+            );
+            $devicePortIpUuid = trim((string)($portRows[0]['device_port_ip'] ?? ''));
+            if ($devicePortIpUuid === '') {
+                $created = $this->db->db_query(
+                    'INSERT INTO device_port_ip (ip, hostname, dhcp_address) VALUES (:ip, :hostname, :dhcp_address) RETURNING uuid',
+                    [
+                        'ip' => $ipAddress,
+                        'hostname' => $hostname !== '' ? $hostname : null,
+                        'dhcp_address' => $dhcpAddress,
+                    ]
+                );
+                $devicePortIpUuid = trim((string)($created[0]['uuid'] ?? ''));
+                if ($devicePortIpUuid !== '') {
+                    $this->db->db_query(
+                        'UPDATE device_port SET device_port_ip = :device_port_ip WHERE uuid = :uuid',
+                        ['device_port_ip' => $devicePortIpUuid, 'uuid' => $portUuid]
+                    );
+                }
+                return;
+            }
+
+            $updates = ['ip = :ip', 'dhcp_address = :dhcp_address'];
+            $params = [
+                'uuid' => $devicePortIpUuid,
+                'ip' => $ipAddress,
+                'dhcp_address' => $dhcpAddress,
+            ];
+            if ($hostname !== '') {
+                $updates[] = 'hostname = :hostname';
+                $params['hostname'] = $hostname;
+            }
+            $this->db->db_query(
+                'UPDATE device_port_ip SET ' . implode(', ', $updates) . ' WHERE uuid = :uuid',
+                $params
+            );
+        } catch (\Throwable $e) {
+            $this->logger->log('PortReconciler: endpoint node fact write-back failed for port ' . $portUuid . ': ' . $e->getMessage(), 2);
         }
     }
 
