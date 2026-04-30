@@ -4414,6 +4414,42 @@
                 }
                 redirectToScriptsTab(getScriptsTabFromRequest());
                 break;
+            case 'automation_settings_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for automation ssh settings', 2, echoToWeb: true);
+                    redirectToScriptsTab(getScriptsTabFromRequest());
+                    die();
+                }
+
+                $automationStore = new AutomationStore();
+                $currentSettings = $automationStore->getSettings();
+
+                try {
+                    $automationStore->saveSettings([
+                        'ssh_host' => $_POST['ssh_host'] ?? '',
+                        'ssh_port' => $_POST['ssh_port'] ?? 22,
+                        'ssh_auth_method' => $_POST['ssh_auth_method'] ?? 'password',
+                        'ssh_username' => $_POST['ssh_username'] ?? '',
+                        'ssh_password' => $_POST['ssh_password'] ?? '',
+                        'ssh_private_key' => $_POST['ssh_private_key'] ?? '',
+                        'scripts_json' => (string)($currentSettings['scripts_json'] ?? '{}'),
+                        'switch_inventory_json' => (string)($currentSettings['switch_inventory_json'] ?? '{"switches": []}')
+                    ]);
+                    $logger->log('automation ssh settings updated', 1, echoToWeb: true);
+                    logAutomationChange($db_adapter, 'UPDATE', 'settings_save_ssh', [
+                        'tab' => getScriptsTabFromRequest()
+                    ]);
+                } catch (\Exception $e) {
+                    $logger->log('automation ssh settings update failed: ' . $e->getMessage(), 3, echoToWeb: true);
+                }
+                redirectToScriptsTab(getScriptsTabFromRequest());
+                break;
             case 'automation_run_scheduler':
                 if ($role !== 'admin') {
                     $logger->log('user is not admin', 2, echoToWeb: true);
@@ -6377,9 +6413,9 @@ HTML;
             <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
             <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Switch-Inventar werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert. Templates werden in <span class="font-semibold">data/automation/automation.json</span> gepflegt.</p>
             {$testOutputHtml}
-            <form action="?set=automation_scripts" method="post">
+            <form action="?set=automation_settings_save" method="post">
                 <input type="hidden" name="csrf" value="$csrf">
-                <input type="hidden" id="scripts_active_tab" name="scripts_active_tab" value="$activeScriptsTab">
+                <input type="hidden" class="scripts-active-tab-input" name="scripts_active_tab" value="$activeScriptsTab">
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
                     <div>
@@ -6412,6 +6448,11 @@ HTML;
                         <p class="text-xs text-gray-500 mt-2">$privateKeyHint</p>
                     </div>
                 </div>
+
+                <div class="pb-6 flex justify-end scripts-section-switch">
+                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="SSH-Zugangsdaten speichern">
+                </div>
+            </form>
 
                 <div class="pb-6 scripts-section-switch">
                     <div class="flex items-center justify-between pb-2">
@@ -6680,27 +6721,36 @@ HTML;
                     </div>
                 </div>
 
-                <details class="pb-4 scripts-section-switch">
-                    <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
-                    <div class="pt-3 space-y-4">
-                        <div>
-                            <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
-                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
-                        </div>
+                <form action="?set=automation_scripts" method="post" class="scripts-section-switch">
+                    <input type="hidden" name="csrf" value="$csrf">
+                    <input type="hidden" class="scripts-active-tab-input" name="scripts_active_tab" value="$activeScriptsTab">
 
-                        <div>
-                            <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
-                            <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
-                            <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles. Templates werden in data/automation/automation.json gepflegt.</p>
+                    <details class="pb-4 scripts-section-switch">
+                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
+                        <div class="pt-3 space-y-4">
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
+                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
+                            </div>
+
+                            <div>
+                                <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
+                                <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
+                                <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles. Templates werden in data/automation/automation.json gepflegt.</p>
+                            </div>
                         </div>
+                    </details>
+
+                    <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Inventar / JSON speichern">
                     </div>
-                </details>
+                </form>
 
-                <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
-                    <button class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" formaction="?set=automation_run_scheduler">Scheduler jetzt ausfuehren</button>
-                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Automation speichern">
-                </div>
-            </form>
+                <form action="?set=automation_run_scheduler" method="post" class="pb-2 flex justify-end items-center scripts-section-switch">
+                    <input type="hidden" name="csrf" value="$csrf">
+                    <input type="hidden" class="scripts-active-tab-input" name="scripts_active_tab" value="$activeScriptsTab">
+                    <button class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit">Scheduler jetzt ausfuehren</button>
+                </form>
 
             <script>
                 const automationCsrfToken = '$csrf';
@@ -7195,10 +7245,9 @@ HTML;
                     const resolvedTab = (tabId === 'profiles' || tabId === 'templates' || tabId === 'history') ? tabId : 'switch';
                     currentScriptsTab = resolvedTab;
 
-                    const hiddenTabInput = document.getElementById('scripts_active_tab');
-                    if (hiddenTabInput) {
-                        hiddenTabInput.value = resolvedTab;
-                    }
+                    document.querySelectorAll('.scripts-active-tab-input').forEach(function(input) {
+                        input.value = resolvedTab;
+                    });
 
                     const showSwitch = (resolvedTab === 'switch');
                     const showProfiles = (resolvedTab === 'profiles');
