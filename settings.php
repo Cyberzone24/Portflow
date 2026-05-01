@@ -1507,6 +1507,52 @@
         return $status;
     }
 
+    function configRunSchemaMaintenance(bool $repair = false): array {
+        try {
+            $dbAdapter = new \Portflow\Core\DatabaseAdapter();
+            $beforeChanges = $dbAdapter->getPendingSchemaChanges();
+            $repairPerformed = false;
+
+            if ($repair && $dbAdapter->hasPendingSchemaChanges($beforeChanges)) {
+                $dbAdapter->db_update_schema();
+                $repairPerformed = true;
+            }
+
+            $afterChanges = $dbAdapter->getPendingSchemaChanges();
+            $hasBlockingChanges = $dbAdapter->hasBlockingSchemaChanges($afterChanges);
+            $hasOutdatedViews = !empty($afterChanges['outdated_views']);
+
+            if (!$dbAdapter->hasPendingSchemaChanges($afterChanges)) {
+                $message = $repairPerformed
+                    ? 'Datenbankschema wurde erfolgreich synchronisiert. Keine ausstehenden Schema-Aenderungen mehr.'
+                    : 'Datenbankschema ist aktuell. Keine ausstehenden Schema-Aenderungen gefunden.';
+            } elseif ($hasBlockingChanges) {
+                $message = ($repairPerformed ? 'Schema-Synchronisierung unvollstaendig: ' : 'Blockierende Schema-Aenderungen erkannt: ')
+                    . $dbAdapter->summarizePendingSchemaChanges($afterChanges);
+            } else {
+                $message = ($repairPerformed ? 'Schema strukturell synchronisiert, aber View-Abweichungen bleiben bestehen: ' : 'Nur nicht-blockierende View-Abweichungen erkannt: ')
+                    . $dbAdapter->summarizePendingSchemaChanges($afterChanges);
+            }
+
+            return [
+                'ok' => !$hasBlockingChanges,
+                'message' => $message,
+                'before' => $beforeChanges,
+                'after' => $afterChanges,
+                'repair_requested' => $repair,
+                'repair_performed' => $repairPerformed,
+                'has_outdated_views' => $hasOutdatedViews,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'message' => 'Schema-Pruefung fehlgeschlagen: ' . $e->getMessage(),
+                'repair_requested' => $repair,
+                'repair_performed' => false,
+            ];
+        }
+    }
+
     function configExecuteUpdate(): array {
         $statusBefore = configGetUpdateStatus(true);
         $existingState = configReadUpdaterState();
@@ -2070,6 +2116,46 @@
                 'message' => $envMessage,
                 'fix' => $envFix
             ]);
+
+            try {
+                $dbAdapter = new \Portflow\Core\DatabaseAdapter();
+                $pendingSchemaChanges = $dbAdapter->getPendingSchemaChanges();
+
+                if (!$dbAdapter->hasPendingSchemaChanges($pendingSchemaChanges)) {
+                    $addItem([
+                        'severity' => 'ok',
+                        'title' => 'Datenbankschema',
+                        'message' => 'Das Datenbankschema ist vollstaendig und aktuell.',
+                        'fix' => 'Keine Aktion erforderlich.'
+                    ]);
+                } else {
+                    $hasBlockingChanges = $dbAdapter->hasBlockingSchemaChanges($pendingSchemaChanges);
+                    $hasMissingTables = !empty($pendingSchemaChanges['missing_tables']);
+                    $severity = $hasBlockingChanges ? ($hasMissingTables ? 'critical' : 'warn') : 'info';
+                    $message = $hasBlockingChanges
+                        ? 'Schema-Auffaelligkeit: ' . $dbAdapter->summarizePendingSchemaChanges($pendingSchemaChanges) . '.'
+                        : 'Schema strukturell vollstaendig, aber View-Abweichungen erkannt: ' . $dbAdapter->summarizePendingSchemaChanges($pendingSchemaChanges) . '.';
+                    $fix = $hasBlockingChanges
+                        ? ($hasMissingTables
+                            ? 'Setup oder Schema-Update erneut ausfuehren. Fehlende Tabellen deuten auf eine unvollstaendige Initialisierung hin.'
+                            : 'Schema-Update in den Einstellungen ausfuehren, damit fehlende Spalten oder Views nachgezogen werden.')
+                        : 'Views bei Bedarf mit dem Schema-Update neu erzeugen und den View-Vergleich separat pruefen.';
+
+                    $addItem([
+                        'severity' => $severity,
+                        'title' => 'Datenbankschema',
+                        'message' => $message,
+                        'fix' => $fix
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                $addItem([
+                    'severity' => 'critical',
+                    'title' => 'Datenbankschema',
+                    'message' => 'Schema-Pruefung fehlgeschlagen: ' . $e->getMessage(),
+                    'fix' => 'DB-Zugangsdaten in .env pruefen und anschliessend den Schema-Status erneut testen.'
+                ]);
+            }
         }
 
         $dataPath = __DIR__ . '/data';
@@ -3025,6 +3111,31 @@
                 configSetFeedback('updater', (bool)$updateStatus['ok'], (string)$updateStatus['message'], $updateStatus);
                 $logger->log('system updater check executed', $updateStatus['ok'] ? 1 : 2, echoToWeb: true);
                 header('Location: ?site=configuration&tab=updater#cfg-updater');
+                break;
+            case 'config_schema_repair':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for schema repair', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=system');
+                    die();
+                }
+
+                $schemaResult = configRunSchemaMaintenance(true);
+                configSetFeedback('system', (bool)$schemaResult['ok'], (string)$schemaResult['message'], $schemaResult);
+                $logger->log('system schema repair executed', !empty($schemaResult['ok']) ? 1 : 3, echoToWeb: true);
+                if (!empty($schemaResult['repair_performed'])) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_system_schema_repair', [
+                        'has_outdated_views' => !empty($schemaResult['has_outdated_views']),
+                        'before' => $schemaResult['before'] ?? [],
+                        'after' => $schemaResult['after'] ?? [],
+                    ]);
+                }
+                header('Location: ?site=configuration&tab=system#cfg-security');
                 break;
             case 'config_update_execute':
                 if ($role !== 'admin') {
@@ -5305,12 +5416,22 @@ switch ($site) {
         echo '<div><div class="text-xl font-bold pb-1">System / Security Check</div><p class="text-sm text-gray-500">Prueft lokale Rechte und testet, ob sensible Pfade ueber den aktiven Webserver wirklich geblockt werden.</p></div>';
         echo '<div class="text-xs text-gray-500">Geprueft: ' . escapeSettingValue((string)($securityCheck['checked_at'] ?? '-')) . '<br>Basis-URL: ' . escapeSettingValue((string)($securityCheck['base_url'] ?? 'nicht ermittelbar')) . '</div>';
         echo '</div>';
+        echo $renderFeedback($cfgFeedback, 'system');
         echo '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">';
         echo '<div class="rounded-lg border border-red-200 p-3"><div class="text-xs text-gray-500">Kritisch</div><div class="text-lg font-semibold text-red-700">' . escapeSettingValue((string)($securityCheck['summary']['critical'] ?? 0)) . '</div></div>';
         echo '<div class="rounded-lg border border-amber-200 p-3"><div class="text-xs text-gray-500">Warnungen</div><div class="text-lg font-semibold text-amber-700">' . escapeSettingValue((string)($securityCheck['summary']['warn'] ?? 0)) . '</div></div>';
         echo '<div class="rounded-lg border border-emerald-200 p-3"><div class="text-xs text-gray-500">OK</div><div class="text-lg font-semibold text-emerald-700">' . escapeSettingValue((string)($securityCheck['summary']['ok'] ?? 0)) . '</div></div>';
         echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-xs text-gray-500">Hinweise</div><div class="text-lg font-semibold text-slate-700">' . escapeSettingValue((string)($securityCheck['summary']['info'] ?? 0)) . '</div></div>';
         echo '</div>';
+        if ($role === 'admin') {
+            echo '<div class="mb-4 flex flex-wrap items-center gap-3">';
+            echo '<form action="?set=config_schema_repair" method="post" class="m-0">';
+            echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+            echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">Schema jetzt synchronisieren</button>';
+            echo '</form>';
+            echo '<div class="text-xs text-gray-500">CLI Smoke-Test: <span class="font-mono">php cli/scripts/schema_smoke.php --repair</span></div>';
+            echo '</div>';
+        }
         echo '<div class="space-y-3">';
         foreach ((array)($securityCheck['items'] ?? []) as $securityItem) {
             $severity = (string)($securityItem['severity'] ?? 'info');

@@ -765,12 +765,38 @@ class PortReconciler
         }
         // Try trailing port number as last resort (only if unambiguous).
         foreach ([$caption, $ifAlias] as $src) {
+            if (!$this->allowTrailingNumberFallback($src)) {
+                continue;
+            }
             $tailKey = $this->extractTrailingNumber($src);
             if ($tailKey !== '' && isset($portIndex['tail'][$tailKey]) && $portIndex['tail'][$tailKey] !== false) {
                 return $portIndex['tail'][$tailKey];
             }
         }
         return null;
+    }
+
+    private function allowTrailingNumberFallback(string $name): bool
+    {
+        $normalized = strtolower(trim($name));
+        if ($normalized === '') {
+            return false;
+        }
+
+        if ($this->isLikelyVirtualInterfaceName($normalized)) {
+            return false;
+        }
+
+        if (preg_match('/^\d+$/', $normalized) === 1) {
+            return true;
+        }
+
+        return preg_match('/^(?:port|lan|wan|uplink|mgmt|management|eth(?:ernet)?|ge|gi|fa|fe|te|xe|xge|sfp|qsfp|combo|eno|ens|enp)[a-z0-9_-]*\d+$/', $normalized) === 1;
+    }
+
+    private function isLikelyVirtualInterfaceName(string $name): bool
+    {
+        return preg_match('/^(?:br\d+|switch\d+(?:\.\d+)?|eth\d+\.\d+|bond\d+(?:\.\d+)?|vlan\d+|docker\d+|veth[a-z0-9]+|lo|dummy\d+|gre\d+|gretap\d+|erspan\d+|ip_vti\d+|ip6_vti\d+|sit\d+|ip6tnl\d+|ifb(?:ppp)?\d+|ppp\d+|tun\d+|tap\d+|tailscale\d+|wg\d+)$/', $name) === 1;
     }
 
     /**

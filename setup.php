@@ -134,10 +134,20 @@ function hasBootstrapLdapConfig($config) {
 function isDatabaseSchemaInitialized() {
     try {
         $dbAdapter = new DatabaseAdapter();
-        return $dbAdapter->checkDatabaseAndTableExistence('users');
+        return !$dbAdapter->hasBlockingSchemaChanges();
     } catch (\Throwable $e) {
         return false;
     }
+}
+
+function consumeSetupFlash(string $key): ?string {
+    if (!isset($_SESSION[$key])) {
+        return null;
+    }
+
+    $message = (string)$_SESSION[$key];
+    unset($_SESSION[$key]);
+    return $message;
 }
 
 function isPhpFpmAvailable(): bool {
@@ -237,13 +247,21 @@ if (isset($_GET['start'])) {
     echo json_encode(['time' => date('Y-m-d H:i:s')]);
     exit;
 } elseif (isset($_GET['db_init'])) {
-    $db_adapter = new DatabaseAdapter();
-    $logger->log('DB adapter imported', 0);
-    $db_adapter->db_init();
-    $logger->log('DB initialized', 1);
+    $config = normalizeSetupConfig(isset($_SESSION['config']) ? $_SESSION['config'] : []);
+    try {
+        $db_adapter = new DatabaseAdapter();
+        $logger->log('DB adapter imported', 0);
+        $db_adapter->db_init();
+        $logger->log('DB initialized', 1);
+    } catch (\Throwable $e) {
+        $logger->log('DB initialization failed: ' . $e->getMessage(), 3);
+        $_SESSION['setup_error'] = 'Datenbankschema konnte nicht vollstaendig angelegt werden. ' . $e->getMessage();
+        $_SESSION['step'] = 2;
+        displayForm(2, $config);
+        exit;
+    }
 
     // Go to next step
-    $config = normalizeSetupConfig(isset($_SESSION['config']) ? $_SESSION['config'] : []);
     $nextStep = nextSetupStep($config, 2);
     if ($nextStep === null) {
         createEnvFile($config);
@@ -262,6 +280,7 @@ $config = normalizeSetupConfig(isset($_SESSION['config']) ? $_SESSION['config'] 
 function displayForm($step, $config = []) {
     $config = normalizeSetupConfig($config);
     $action = htmlspecialchars($_SERVER["PHP_SELF"]);
+    $setupError = consumeSetupFlash('setup_error');
     echo <<<HTML
     <!DOCTYPE html>
     <html lang="de">
@@ -302,6 +321,10 @@ function displayForm($step, $config = []) {
         <div class="flex flex-col items-center justify-center h-screen">
             <div class="bg-white shadow-lg rounded-2xl p-12 w-full max-w-lg">
     HTML;
+
+    if ($setupError !== null && $setupError !== '') {
+        echo '<div class="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">' . htmlspecialchars($setupError, ENT_QUOTES, 'UTF-8') . '</div>';
+    }
 
     switch ($step) {
         case 1:

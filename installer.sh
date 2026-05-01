@@ -9,7 +9,7 @@ DEFAULT_TARGET_DIR="/var/www/html"
 LOG_FILE="/tmp/portflow-installer-$(date +%Y%m%d-%H%M%S).log"
 
 CURRENT_STEP=0
-TOTAL_STEPS=11
+TOTAL_STEPS=12
 
 if [[ -t 1 ]]; then
     COLOR_BLUE='\033[1;34m'
@@ -59,6 +59,7 @@ LDAP_BIND_PASSWORD=''
 LDAP_TRUST='FALSE'
 WEB_PATH=''
 SETUP_URLS=()
+SCHEMA_BOOTSTRAP_MESSAGE='Nicht ausgefuehrt'
 
 usage() {
     cat <<'EOF'
@@ -685,6 +686,7 @@ detect_php_fpm() {
 configure_lighttpd() {
     run_root_cmd "Lighttpd aktivieren" systemctl enable --now lighttpd
     run_lighty_enable_mod fastcgi
+    run_lighty_enable_mod rewrite
 
     if [[ -f /etc/lighttpd/conf-enabled/15-fastcgi-php.conf ]]; then
         run_root_cmd "Alte Lighttpd PHP-Konfiguration entfernen" rm -f /etc/lighttpd/conf-enabled/15-fastcgi-php.conf
@@ -693,7 +695,7 @@ configure_lighttpd() {
     local tmp_config
     tmp_config=$(mktemp)
     cat >"$tmp_config" <<EOF
-server.modules += ( "mod_fastcgi" )
+server.modules += ( "mod_fastcgi", "mod_rewrite" )
 
 $HTTP["url"] =~ "^/data(?:/.*)?$" {
     url.access-deny = ( "" )
@@ -706,6 +708,10 @@ $HTTP["url"] =~ "^/(?:\.git(?:/.*)?|\.env(?:\..*)?|\.htaccess|\.gitignore|\.gitm
 $HTTP["url"] =~ "^/(?:composer\.(?:json|lock)|Dockerfile|podman-compose\.yml)$" {
     url.access-deny = ( "" )
 }
+
+url.rewrite-if-not-file += (
+    "^/api(?:/.*)?$" => "/api/index.php"
+)
 
 fastcgi.server = ( ".php" =>
     ( "localhost" =>
@@ -764,6 +770,7 @@ install_repository() {
 configure_postgresql() {
     local escaped_password
     local db_exists
+    local psql_check
 
     run_root_cmd "PostgreSQL aktivieren" systemctl enable --now postgresql
 
@@ -807,6 +814,40 @@ EOF
     else
         fail "PostgreSQL Datenbank konnte nicht angelegt werden."
     fi
+
+    info "PostgreSQL Anwendungszugang wird getestet"
+    psql_check=$(PGPASSWORD="$PG_PASSWORD" psql -h 127.0.0.1 -p 5432 -U "$PG_USERNAME" -d "$PG_DBNAME" -v ON_ERROR_STOP=1 -tAc 'SELECT current_database()' 2>>"$LOG_FILE" | tr -d '[:space:]' || true)
+    if [[ "$psql_check" == "$PG_DBNAME" ]]; then
+        success "PostgreSQL Anwendungszugang funktioniert"
+    else
+        fail "PostgreSQL Anwendungszugang konnte nicht verifiziert werden."
+    fi
+}
+
+bootstrap_database_schema() {
+    local schema_output=''
+    local schema_exit=0
+
+    if [[ "$CONFIGURE_DB" != 'y' ]]; then
+        SCHEMA_BOOTSTRAP_MESSAGE='Uebersprungen (keine lokale PostgreSQL-Bereitstellung gewaehlt)'
+        warn "$SCHEMA_BOOTSTRAP_MESSAGE"
+        return
+    fi
+
+    [[ -f "$TARGET_DIR/.env" ]] || fail "Schema-Bootstrap nicht moeglich: .env fehlt in $TARGET_DIR"
+    [[ -f "$TARGET_DIR/cli/scripts/schema_smoke.php" ]] || fail "Schema-Bootstrap nicht moeglich: cli/scripts/schema_smoke.php fehlt"
+
+    info "Portflow Datenbankschema wird initialisiert und validiert"
+    schema_output=$(php "$TARGET_DIR/cli/scripts/schema_smoke.php" --repair --json 2>>"$LOG_FILE") || schema_exit=$?
+
+    if [[ $schema_exit -ne 0 ]]; then
+        printf '%s\n' "$schema_output" >>"$LOG_FILE"
+        fail "Portflow Datenbankschema konnte nicht erfolgreich initialisiert werden. Details stehen in $LOG_FILE."
+    fi
+
+    printf '%s\n' "$schema_output" >>"$LOG_FILE"
+    SCHEMA_BOOTSTRAP_MESSAGE='Erfolgreich initialisiert und geprueft'
+    success "Portflow Datenbankschema ist initialisiert und geprueft"
 }
 
 set_permissions() {
@@ -843,6 +884,7 @@ print_summary() {
         printf 'PostgreSQL DB: %s\n' "$PG_DBNAME"
         printf 'PostgreSQL User: %s\n' "$PG_USERNAME"
     fi
+    printf 'Schema-Status: %s\n' "$SCHEMA_BOOTSTRAP_MESSAGE"
 
     printf '\nAufrufbare Setup-URLs:\n'
     for setup_url in "${SETUP_URLS[@]}"; do
@@ -893,6 +935,9 @@ main() {
 
     next_step "PostgreSQL konfigurieren"
     configure_postgresql
+
+    next_step "Datenbankschema initialisieren"
+    bootstrap_database_schema
 
     next_step "Rechte setzen"
     set_permissions

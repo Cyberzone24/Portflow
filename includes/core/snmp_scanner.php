@@ -116,6 +116,9 @@ class SnmpScanner
             $ifInMap    = $this->walkMap($config, self::OID_IF_HC_IN_OCTETS);
             $ifOutMap   = $this->walkMap($config, self::OID_IF_HC_OUT_OCTETS);
             $interfaceIps = $this->collectInterfaceIpsFromIpAddrTable($config);
+            $derivedVlanByIfIndex = $this->isUbiquitiUnifiScan($config)
+                ? $this->deriveVlanIdsFromInterfaceNames($ifNameMap)
+                : [];
 
             // BRIDGE-MIB: bridge port -> ifIndex. Required to translate Q-BRIDGE-MIB
             // tables (PVID, egress/untagged port bitmaps) which are keyed by bridge port,
@@ -196,6 +199,16 @@ class SnmpScanner
                     $vlanSource = (string)($extensionVlanData['source'] ?? $scannerExtension->getId());
                 }
             }
+            if (empty($vlanNameMap) && !empty($derivedVlanByIfIndex)) {
+                foreach (array_values(array_unique(array_map('intval', $derivedVlanByIfIndex))) as $derivedVlanId) {
+                    if ($derivedVlanId > 0) {
+                        $vlanNameMap[$derivedVlanId] = '';
+                    }
+                }
+                if (!empty($vlanNameMap)) {
+                    $vlanSource = 'ifName:ubiquiti-udm';
+                }
+            }
             // Add PVIDs as implicit VLAN ids (covers cases where VLAN table is hidden behind a different MIB).
             $vlanIds = [];
             foreach ($vlanNameMap as $vid => $name) {
@@ -216,6 +229,12 @@ class SnmpScanner
                 $vid = (int)$vid;
                 if ($vid > 0 && !isset($vlanIds[$vid])) {
                     $vlanIds[$vid] = '';
+                }
+            }
+            foreach ($derivedVlanByIfIndex as $derivedVlanId) {
+                $derivedVlanId = (int)$derivedVlanId;
+                if ($derivedVlanId > 0 && !isset($vlanIds[$derivedVlanId])) {
+                    $vlanIds[$derivedVlanId] = '';
                 }
             }
             ksort($vlanIds, SORT_NUMERIC);
@@ -247,6 +266,15 @@ class SnmpScanner
                     continue;
                 }
                 $nodeIps[$mac]['if_index'] = $ifNameToIndex[$ifName];
+            }
+            foreach ($nodeIps as $mac => $nodeIp) {
+                if (($nodeIp['vlan'] ?? null) !== null) {
+                    continue;
+                }
+                $ifIndex = (int)($nodeIp['if_index'] ?? 0);
+                if ($ifIndex > 0 && isset($derivedVlanByIfIndex[$ifIndex])) {
+                    $nodeIps[$mac]['vlan'] = (int)$derivedVlanByIfIndex[$ifIndex];
+                }
             }
 
             $nodeMacs = [];
@@ -386,6 +414,7 @@ class SnmpScanner
             foreach ($ifNameMap as $ifIndex => $ifName) {
                 $ifIdx        = (int)$ifIndex;
                 $pvid         = $pvidMap[$ifIdx] ?? null;
+                $derivedVlan  = $derivedVlanByIfIndex[$ifIdx] ?? null;
                 $egressSet    = isset($egressByIfIndex[$ifIdx])   ? array_keys($egressByIfIndex[$ifIdx])   : [];
                 $untaggedSet  = isset($untaggedByIfIndex[$ifIdx]) ? array_keys($untaggedByIfIndex[$ifIdx]) : [];
                 sort($egressSet,   SORT_NUMERIC);
@@ -409,6 +438,10 @@ class SnmpScanner
                 } else {
                     // No Q-BRIDGE egress data available -- fall back to PVID-only behaviour.
                     $untaggedVlan = ($pvid !== null && $pvid > 0) ? (int)$pvid : null;
+                    if ($untaggedVlan === null && $derivedVlan !== null) {
+                        $untaggedVlan = (int)$derivedVlan;
+                        $pvid = (int)$derivedVlan;
+                    }
                     $taggedVlans  = [];
                 }
 
@@ -782,6 +815,9 @@ class SnmpScanner
         $parsed = SnmpClient::parseWalkLines($result['lines']);
         $byVlan = [];
         foreach ($parsed as $oid => $value) {
+            if (SnmpClient::isUnsupportedResponseValue((string)$value)) {
+                continue;
+            }
             // Index = .timeMark.vlanId -- vlanId is the LAST dot-segment.
             $lastDot = strrpos($oid, '.');
             if ($lastDot === false) {
@@ -804,6 +840,62 @@ class SnmpScanner
             }
         }
         return $byVlan;
+    }
+
+    /**
+     * Some UDM/UniFi OS builds expose no Q-BRIDGE-MIB at all, but the Linux
+     * interface names still encode VLAN IDs via names like `br1002`,
+     * `switch0.1002` or `eth10.1002`.
+     *
+     * @param array<int|string,string> $ifNameMap
+     * @return array<int,int> ifIndex => vlanId
+     */
+    private function deriveVlanIdsFromInterfaceNames(array $ifNameMap): array
+    {
+        $derived = [];
+        foreach ($ifNameMap as $ifIndex => $ifName) {
+            $vlanId = $this->extractDerivedVlanIdFromInterfaceName((string)$ifName);
+            if ($vlanId !== null) {
+                $derived[(int)$ifIndex] = $vlanId;
+            }
+        }
+
+        return $derived;
+    }
+
+    private function extractDerivedVlanIdFromInterfaceName(string $ifName): ?int
+    {
+        $ifName = strtolower(trim($ifName));
+        if ($ifName === '') {
+            return null;
+        }
+
+        if ($ifName === 'br0') {
+            return 1;
+        }
+
+        if (preg_match('/^br(\d+)$/', $ifName, $matches) === 1) {
+            $vlanId = (int)$matches[1];
+            return $vlanId > 0 ? $vlanId : null;
+        }
+
+        if (preg_match('/^(?:switch\d+|eth\d+)\.(\d+)$/', $ifName, $matches) === 1) {
+            $vlanId = (int)$matches[1];
+            return $vlanId > 0 ? $vlanId : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     */
+    private function isUbiquitiUnifiScan(array $config): bool
+    {
+        $extension = strtolower(trim((string)($config['snmp_extension'] ?? '')));
+        $profileId = strtolower(trim((string)($config['profile_id'] ?? '')));
+
+        return $extension === 'ubiquiti_unifi' || str_contains($profileId, 'ubiquiti');
     }
 
     /**

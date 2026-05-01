@@ -25,6 +25,8 @@ if (!isset($_SESSION)) {
 
 // import dbAdapter
 include_once __DIR__ . '/../includes/core/db_adapter.php';
+include_once __DIR__ . '/../includes/core/automation_store.php';
+include_once __DIR__ . '/../includes/core/snmp_scanner.php';
 use Portflow\Core\DatabaseAdapter;
 
 $api = new API();
@@ -308,32 +310,78 @@ class API {
         }
     }
 
+    /**
+     * @return array<int,string>
+     */
+    private function getApiPathSegments(): array
+    {
+        $paths = [];
+
+        $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '');
+        $requestPath = parse_url($requestUri, PHP_URL_PATH);
+        if (is_string($requestPath) && $requestPath !== '') {
+            $paths[] = $requestPath;
+        }
+
+        foreach (['PATH_INFO', 'ORIG_PATH_INFO'] as $serverKey) {
+            $candidate = trim((string)($_SERVER[$serverKey] ?? ''));
+            if ($candidate !== '') {
+                $paths[] = $candidate;
+            }
+        }
+
+        foreach ($paths as $path) {
+            $segments = array_values(array_filter(explode('/', trim($path, '/')), static fn(string $segment): bool => $segment !== ''));
+            if (empty($segments)) {
+                continue;
+            }
+
+            if (($segments[0] ?? '') === 'api') {
+                array_shift($segments);
+            }
+            if (($segments[0] ?? '') === 'index.php') {
+                array_shift($segments);
+            }
+            if (!empty($segments)) {
+                return array_values($segments);
+            }
+        }
+
+        return [];
+    }
+
     public function route() {
+        $pathSegments = $this->getApiPathSegments();
+        $firstSegment = $pathSegments[0] ?? null;
+        $secondSegment = $pathSegments[1] ?? null;
+
         // Handle file uploads separately (before media type check)
-        if (isset($_FILES['file']) && $_SERVER['REQUEST_METHOD'] === 'POST' && strpos($_SERVER['REQUEST_URI'], '/api/upload') !== false) {
+        if (isset($_FILES['file']) && $_SERVER['REQUEST_METHOD'] === 'POST' && $firstSegment === 'upload') {
             $this->uploadFile();
             return;
         }
 
         // CLI tool endpoint (handled in its own file with HTTP Basic Auth).
-        if ($_SERVER['REQUEST_METHOD'] === 'POST'
-            && strpos($_SERVER['REQUEST_URI'], '/api/cli/record_link') !== false) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $firstSegment === 'cli' && $secondSegment === 'record_link') {
             $this->requireAuthenticatedSession('Portflow CLI');
             require __DIR__ . '/cli_record_link.php';
             return;
         }
 
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $firstSegment === 'snmp_scan') {
+            $this->handleSnmpScanRequest();
+            return;
+        }
+
         // Cable trace endpoint — reusable backend module so multiple detail
         // views (switch port, connection, cable, etc.) can share one path.
-        if ($_SERVER['REQUEST_METHOD'] === 'GET'
-            && strpos($_SERVER['REQUEST_URI'], '/api/cable_trace') !== false) {
+        if ($_SERVER['REQUEST_METHOD'] === 'GET' && $firstSegment === 'cable_trace') {
             require __DIR__ . '/cable_trace.php';
             return;
         }
 
         // Persist per-user table column visibility/order.
-        if ($_SERVER['REQUEST_METHOD'] === 'POST'
-            && strpos($_SERVER['REQUEST_URI'], '/api/user_table_columns') !== false) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $firstSegment === 'user_table_columns') {
             require __DIR__ . '/user_table_columns.php';
             return;
         }
@@ -347,10 +395,8 @@ class API {
         $uuid = $_GET['uuid'] ?? NULL;
 
         if (!$resource) {
-            $requestUri = trim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
-            $requestUri = explode('/', explode('/api', $requestUri)[1] ?? $requestUri);
-            $resource = $requestUri[1] ?? NULL;
-            $uuid = $requestUri[2] ?? NULL;
+            $resource = $pathSegments[0] ?? NULL;
+            $uuid = $pathSegments[1] ?? NULL;
         }
 
         $this->logger->log("Request URI: {$resource}", 0);
@@ -499,6 +545,70 @@ class API {
                 http_response_code(405);
                 echo json_encode(['error' => 'Method Not Allowed']);
                 break;
+        }
+    }
+
+    private function handleSnmpScanRequest(): void
+    {
+        $this->requireAuthenticatedSession('Portflow SNMP API');
+
+        if (!$this->checkAccessRights('snmp_scan')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $payload = [];
+        $contentType = strtolower(trim((string)($_SERVER['CONTENT_TYPE'] ?? '')));
+        if (str_contains($contentType, 'json')) {
+            $decoded = json_decode((string)file_get_contents('php://input'), true);
+            if (is_array($decoded)) {
+                $payload = $decoded;
+            }
+        }
+        if ($payload === []) {
+            $payload = is_array($_POST) ? $_POST : [];
+        }
+
+        $scanAll = !empty($payload['all']);
+        $switchName = trim((string)($payload['switch_name'] ?? ''));
+
+        try {
+            $store = new AutomationStore();
+            $scanner = new SnmpScanner($this->dbAdapter, $store, $this->logger);
+            $userUuid = !empty($_SESSION['uuid']) ? (string)$_SESSION['uuid'] : null;
+
+            if ($scanAll) {
+                $settings = $store->getSettings();
+                $inventory = json_decode((string)($settings['switch_inventory_json'] ?? ''), true);
+                $switches = is_array($inventory['switches'] ?? null) ? $inventory['switches'] : [];
+                $results = [];
+                foreach ($switches as $switchEntry) {
+                    $inventorySwitchName = trim((string)($switchEntry['name'] ?? ''));
+                    if ($inventorySwitchName === '') {
+                        continue;
+                    }
+                    $results[] = [
+                        'switch_name' => $inventorySwitchName,
+                        'result' => $scanner->scanSwitch($inventorySwitchName, 'api', $userUuid),
+                    ];
+                }
+                http_response_code(200);
+                echo json_encode(['ok' => true, 'results' => $results]);
+                return;
+            }
+
+            if ($switchName === '') {
+                http_response_code(400);
+                echo json_encode(['error' => 'Bad Request', 'message' => 'switch_name or all=true is required.']);
+                return;
+            }
+
+            $result = $scanner->scanSwitch($switchName, 'api', $userUuid);
+            http_response_code(!empty($result['ok']) ? 200 : 502);
+            echo json_encode($result);
+        } catch (\Throwable $e) {
+            $this->respondServerError($e, 'API SNMP scan failed');
         }
     }
 

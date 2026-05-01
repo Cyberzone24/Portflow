@@ -26,6 +26,7 @@ class DatabaseAdapter {
     private array $excludedDataFolders = ['role', 'users', 'changelog', 'metadata', 'access', 'device_port_vlan', 'device_port_ip', 'device_lifecycle'];
     private array $auditExcludedTables = ['changelog'];
     private array $auditUserNoiseColumns = ['last_login', 'last_login_attempt', 'login_attempts', 'ip_address', 'changed'];
+    private array $canonicalExpectedViewDefinitions = [];
 
     public function __construct() {
         $this->logger = new Logger();
@@ -63,21 +64,21 @@ class DatabaseAdapter {
         }
     }
 
-    public function checkDatabaseAndTableExistence($tableName) {
+    public function checkDatabaseAndTableExistence($tableName, bool $echoToWeb = true) {
         try {
             $stmt = $this->pdo->prepare("SELECT to_regclass('public.$tableName')");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($result && $result['to_regclass'] === null) {
-                $this->logger->log('table ' . $tableName . ' does not exist.', 3, echoToWeb: true);
+                $this->logger->log('table ' . $tableName . ' does not exist.', 3, $echoToWeb);
                 // Die Tabelle existiert nicht
                 return false;
             }
             // Die Tabelle existiert
             return true;
         } catch (PDOException $e) {
-            $this->logger->log('error checking table existence: ' . $e->getMessage(), 3, echoToWeb: true);
+            $this->logger->log('error checking table existence: ' . $e->getMessage(), 3, $echoToWeb);
             return false;
         }
     }
@@ -648,15 +649,15 @@ class DatabaseAdapter {
         }
     }
 
-    private function getCurrentViewDefinition(string $viewName): string {
-        if ($viewName === '') {
+    private function getViewDefinitionByRegclass(string $viewRegclass): string {
+        if ($viewRegclass === '') {
             return '';
         }
 
         try {
             $results = $this->db_query(
                 "SELECT pg_get_viewdef(:view_name::regclass, true) AS view_definition",
-                ['view_name' => 'public.' . $viewName]
+                ['view_name' => $viewRegclass]
             );
 
             return trim((string)($results[0]['view_definition'] ?? ''));
@@ -664,6 +665,14 @@ class DatabaseAdapter {
             $this->logger->log('error reading view definition: ' . $e->getMessage(), 1);
             return '';
         }
+    }
+
+    private function getCurrentViewDefinition(string $viewName): string {
+        if ($viewName === '') {
+            return '';
+        }
+
+        return $this->getViewDefinitionByRegclass('public.' . $viewName);
     }
 
     private function extractViewBodyFromSql(string $sql): string {
@@ -683,6 +692,46 @@ class DatabaseAdapter {
         return rtrim($normalized, '; ');
     }
 
+    private function getCanonicalExpectedViewDefinition(string $viewName, string $expectedSql): string {
+        if (isset($this->canonicalExpectedViewDefinitions[$viewName])) {
+            return $this->canonicalExpectedViewDefinitions[$viewName];
+        }
+
+        $expectedDefinition = $this->extractViewBodyFromSql($expectedSql);
+        if ($expectedDefinition === '' || $this->pdo === null || $this->pdo->inTransaction()) {
+            $this->canonicalExpectedViewDefinitions[$viewName] = $expectedDefinition;
+            return $expectedDefinition;
+        }
+
+        try {
+            $suffix = bin2hex(random_bytes(6));
+        } catch (\Throwable $e) {
+            $suffix = dechex(mt_rand());
+        }
+
+        $tempViewName = '__pf_schema_compare_' . $suffix;
+
+        try {
+            $this->pdo->beginTransaction();
+            $this->db_query('CREATE VIEW "' . $tempViewName . '" AS ' . $expectedDefinition, []);
+            $canonicalDefinition = $this->getViewDefinitionByRegclass($tempViewName);
+            $this->pdo->rollBack();
+
+            if ($canonicalDefinition !== '') {
+                $this->canonicalExpectedViewDefinitions[$viewName] = $canonicalDefinition;
+                return $canonicalDefinition;
+            }
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            $this->logger->log('view canonicalization skipped for ' . $viewName . ': ' . $e->getMessage(), 0);
+        }
+
+        $this->canonicalExpectedViewDefinitions[$viewName] = $expectedDefinition;
+        return $expectedDefinition;
+    }
+
     public function getPendingSchemaChanges(): array {
         $changes = [
             'missing_tables' => [],
@@ -694,7 +743,7 @@ class DatabaseAdapter {
         $dbTables = $this->getDbTablesConfiguration();
 
         foreach ($dbTables as $dbTable => $columns) {
-            $tableExists = $this->checkDatabaseAndTableExistence($dbTable);
+            $tableExists = $this->checkDatabaseAndTableExistence($dbTable, false);
             if (!$tableExists) {
                 $changes['missing_tables'][] = $dbTable;
                 continue;
@@ -719,7 +768,7 @@ class DatabaseAdapter {
             }
 
             $currentDefinition = $this->getCurrentViewDefinition($viewName);
-            $expectedDefinition = $this->extractViewBodyFromSql($expectedSql);
+            $expectedDefinition = $this->getCanonicalExpectedViewDefinition($viewName, $expectedSql);
 
             if ($currentDefinition === '' || $this->normalizeViewDefinition($currentDefinition) !== $this->normalizeViewDefinition($expectedDefinition)) {
                 $changes['outdated_views'][] = $viewName;
@@ -729,12 +778,144 @@ class DatabaseAdapter {
         return $changes;
     }
 
-    public function schemaUpdateNeeded(): bool {
-        $changes = $this->getPendingSchemaChanges();
+    public function hasPendingSchemaChanges(?array $changes = null): bool {
+        $changes = $changes ?? $this->getPendingSchemaChanges();
+
         return !empty($changes['missing_tables'])
             || !empty($changes['missing_columns'])
             || !empty($changes['missing_views'])
             || !empty($changes['outdated_views']);
+    }
+
+    public function hasBlockingSchemaChanges(?array $changes = null): bool {
+        $changes = $changes ?? $this->getPendingSchemaChanges();
+
+        return !empty($changes['missing_tables'])
+            || !empty($changes['missing_columns'])
+            || !empty($changes['missing_views']);
+    }
+
+    public function summarizePendingSchemaChanges(?array $changes = null, int $maxItemsPerCategory = 3): string {
+        $changes = $changes ?? $this->getPendingSchemaChanges();
+        $parts = [];
+
+        if (!empty($changes['missing_tables'])) {
+            $parts[] = $this->summarizeSchemaList('missing tables', $changes['missing_tables'], $maxItemsPerCategory);
+        }
+
+        if (!empty($changes['missing_columns'])) {
+            $columnParts = [];
+            foreach ($changes['missing_columns'] as $tableName => $columns) {
+                $columnParts[] = $tableName . '(' . implode(', ', array_slice($columns, 0, $maxItemsPerCategory))
+                    . (count($columns) > $maxItemsPerCategory ? ', ...' : '') . ')';
+            }
+            $parts[] = $this->summarizeSchemaList('tables with missing columns', $columnParts, $maxItemsPerCategory);
+        }
+
+        if (!empty($changes['missing_views'])) {
+            $parts[] = $this->summarizeSchemaList('missing views', $changes['missing_views'], $maxItemsPerCategory);
+        }
+
+        if (!empty($changes['outdated_views'])) {
+            $parts[] = $this->summarizeSchemaList('outdated views', $changes['outdated_views'], $maxItemsPerCategory);
+        }
+
+        return empty($parts) ? 'no pending schema changes' : implode('; ', $parts);
+    }
+
+    private function summarizeSchemaList(string $label, array $items, int $maxItems): string {
+        $visibleItems = array_slice($items, 0, $maxItems);
+        $suffix = count($items) > $maxItems ? ', ...' : '';
+        return $label . ': ' . implode(', ', $visibleItems) . $suffix;
+    }
+
+    public function ensureSchemaUpToDate(bool $includeOutdatedViews = false): void {
+        $changes = $this->getPendingSchemaChanges();
+        $hasRelevantChanges = $this->hasBlockingSchemaChanges($changes)
+            || ($includeOutdatedViews && !empty($changes['outdated_views']));
+
+        if ($hasRelevantChanges) {
+            throw new Exception('Database schema is incomplete: ' . $this->summarizePendingSchemaChanges($changes));
+        }
+    }
+
+    public function schemaUpdateNeeded(): bool {
+        return $this->hasPendingSchemaChanges();
+    }
+
+    private function ensureTablesExist(array $dbTables): void {
+        $pendingTables = $dbTables;
+        $lastErrors = [];
+
+        while (!empty($pendingTables)) {
+            $progress = false;
+
+            foreach ($pendingTables as $dbTable => $columns) {
+                if ($this->checkDatabaseAndTableExistence($dbTable, false)) {
+                    unset($pendingTables[$dbTable]);
+                    $progress = true;
+                    continue;
+                }
+
+                try {
+                    $this->pdo->beginTransaction();
+                    $query = $this->buildCreateTableQuery($dbTable, $columns);
+                    $this->db_query($query, []);
+                    $this->pdo->commit();
+                    $this->logger->log("Created table $dbTable");
+                    unset($pendingTables[$dbTable]);
+                    unset($lastErrors[$dbTable]);
+                    $progress = true;
+                } catch (\Exception $e) {
+                    if ($this->pdo->inTransaction()) {
+                        $this->pdo->rollBack();
+                    }
+                    $lastErrors[$dbTable] = $e->getMessage();
+                    $this->logger->log("Deferred table creation for $dbTable: " . $e->getMessage(), 0);
+                }
+            }
+
+            if (!$progress) {
+                $pendingNames = implode(', ', array_keys($pendingTables));
+                $errorSummaryParts = [];
+                foreach ($lastErrors as $tableName => $message) {
+                    $errorSummaryParts[] = $tableName . ': ' . $message;
+                }
+                $errorSummary = empty($errorSummaryParts) ? 'no detailed error available' : implode(' | ', $errorSummaryParts);
+                throw new Exception('Could not create schema tables after retrying. Remaining tables: ' . $pendingNames . '. Errors: ' . $errorSummary);
+            }
+        }
+    }
+
+    private function ensureMissingColumns(array $dbTables): void {
+        foreach ($dbTables as $dbTable => $columns) {
+            $tableExists = $this->checkDatabaseAndTableExistence($dbTable, false);
+            if (!$tableExists) {
+                throw new Exception('Cannot add missing columns because table ' . $dbTable . ' does not exist.');
+            }
+
+            $existingColumns = $this->getExistingColumns($dbTable);
+            foreach ($columns as $column => $columnType) {
+                if ($column === 'PRIMARY KEY' || $column === 'UNIQUE') {
+                    continue;
+                }
+
+                if (!in_array($column, $existingColumns, true)) {
+                    try {
+                        $this->pdo->beginTransaction();
+                        $alterQuery = "ALTER TABLE \"$dbTable\" ADD COLUMN \"$column\" $columnType";
+                        $this->db_query($alterQuery, []);
+                        $this->pdo->commit();
+                        $this->logger->log("Added missing column $column to table $dbTable");
+                    } catch (\Exception $e) {
+                        if ($this->pdo->inTransaction()) {
+                            $this->pdo->rollBack();
+                        }
+                        throw new Exception('Error while adding missing column ' . $column . ' to table ' . $dbTable . ': ' . $e->getMessage(), 0, $e);
+                    }
+                }
+            }
+        }
     }
 
     private function isAllowedSqlViewDefinition(string $sql): bool {
@@ -787,40 +968,10 @@ class DatabaseAdapter {
     public function db_update_schema() {
         $dbTables = $this->getDbTablesConfiguration();
 
+        $this->ensureTablesExist($dbTables);
+        $this->ensureMissingColumns($dbTables);
+
         foreach ($dbTables as $dbTable => $columns) {
-            try {
-                $tableExists = $this->checkDatabaseAndTableExistence($dbTable);
-
-                if (!$tableExists) {
-                    $this->pdo->beginTransaction();
-                    $query = $this->buildCreateTableQuery($dbTable, $columns);
-                    $this->db_query($query, []);
-                    $this->pdo->commit();
-                    $this->logger->log("Created missing table $dbTable during schema update");
-                } else {
-                    $existingColumns = $this->getExistingColumns($dbTable);
-
-                    foreach ($columns as $column => $columnType) {
-                        if ($column === 'PRIMARY KEY' || $column === 'UNIQUE') {
-                            continue;
-                        }
-
-                        if (!in_array($column, $existingColumns, true)) {
-                            $this->pdo->beginTransaction();
-                            $alterQuery = "ALTER TABLE \"$dbTable\" ADD COLUMN \"$column\" $columnType";
-                            $this->db_query($alterQuery, []);
-                            $this->pdo->commit();
-                            $this->logger->log("Added missing column $column to table $dbTable");
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                if ($this->pdo->inTransaction()) {
-                    $this->pdo->rollBack();
-                }
-                $this->logger->log("Error while updating schema for table $dbTable: " . $e->getMessage(), 1);
-            }
-
             try {
                 $this->ensureDataFolderForTable($dbTable);
             } catch (\Exception $e) {
@@ -829,35 +980,12 @@ class DatabaseAdapter {
         }
 
         $this->createOrReplaceViews($dbTables);
+        $this->ensureSchemaUpToDate();
         $this->logger->log('Database schema update finished');
     }
     
     public function db_init() {
-        // get content of db_tables.json, convert to array
-        $dbTables = $this->getDbTablesConfiguration();
-    
-        // iterate over array and create tables
-        foreach ($dbTables as $dbTable => $columns) {
-            $query = $this->buildCreateTableQuery($dbTable, $columns);
-    
-            try {
-                $this->pdo->beginTransaction();
-                $this->db_query($query, []);
-                $this->pdo->commit();
-                $this->logger->log("Created table $dbTable");
-            } catch (\Exception $e) {
-                $this->pdo->rollBack();
-                $this->logger->log('Error during initialization of database: ' . $e->getMessage());
-            }
-    
-            try {
-                $this->ensureDataFolderForTable($dbTable);
-            } catch (\Exception $e) {
-                $this->logger->log('Error during creation of folder for table: ' . $e->getMessage());
-            }
-        }
-
-        $this->createOrReplaceViews($dbTables);
-        $this->logger->log("DB initialized");
+        $this->db_update_schema();
+        $this->logger->log('DB initialized');
     }
 }

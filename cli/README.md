@@ -190,6 +190,17 @@ The script checks valid API auth, invalid API auth, and whether the CLI route
 reaches application logic with valid credentials instead of redirecting back
 to the login page.
 
+For a quick schema smoke test on the server itself you can run:
+
+```bash
+php cli/scripts/schema_smoke.php
+php cli/scripts/schema_smoke.php --repair
+```
+
+The script reports missing tables/columns/views, can optionally run the schema
+repair, and returns a non-zero exit code only for blocking schema gaps by
+default.
+
 `/api/cli/record_link` resolves or creates:
 
 1. **Patchpanel port** by `recorded_outlet_port` or `outlet_caption`.

@@ -6,6 +6,53 @@
         "version": "0.1.0"
     },
     "paths": {
+        "/snmp_scan": {
+            "post": {
+                "summary": "Trigger an SNMP scan",
+                "description": "Starts one SNMP scan for a named inventory switch or scans all configured switches when `all=true` is provided.",
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "switch_name": {
+                                        "type": "string",
+                                        "description": "Inventory switch name to scan"
+                                    },
+                                    "all": {
+                                        "type": "boolean",
+                                        "description": "Scan all inventory switches instead of a single one"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Scan accepted and executed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Missing switch name or invalid payload"
+                    },
+                    "401": {
+                        "description": "Authentication required"
+                    },
+                    "403": {
+                        "description": "Missing API permission for snmp_scan"
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "summary": "Fetch all users",
