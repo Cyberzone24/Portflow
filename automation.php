@@ -104,6 +104,21 @@
         return $switchData;
     }
 
+    function automation_t(string $key, array $replacements = []): string {
+        global $lang;
+
+        $text = (string)($lang[$key] ?? $key);
+        foreach ($replacements as $placeholder => $value) {
+            $text = str_replace('{' . $placeholder . '}', (string)$value, $text);
+        }
+
+        return $text;
+    }
+
+    function automation_count_label(int $count, string $singularKey, string $pluralKey): string {
+        return automation_t($count === 1 ? $singularKey : $pluralKey, ['count' => $count]);
+    }
+
     $automation = new Automation();
     $automationStore = new AutomationStore();
     $logger = new Logger();
@@ -188,12 +203,12 @@
             $logger->log('csrf token invalid for automation queue action', 2, echoToWeb: true);
             $executionResult = [
                 'ok' => false,
-                'output' => 'Warteschlangen-Operation fehlgeschlagen: Ungueltiger CSRF-Token.'
+                'output' => automation_t('automation_queue_action_csrf_invalid')
             ];
         } elseif (!$canAutomationExecute) {
             $executionResult = [
                 'ok' => false,
-                'output' => 'Warteschlangen-Operation fehlgeschlagen: Keine Berechtigung.'
+                'output' => automation_t('automation_queue_action_no_permission')
             ];
         } else {
             $queueAction = (string)($_POST['queue_action'] ?? '');
@@ -222,18 +237,18 @@
 
                     // Convert array summary to display format
                     $executionResult['ok'] = $executionResult['failed'] === 0;
-                    $executionResult['output'] = "Warteschlangen-Ausfuehrung:\n"
-                        . "- Gesamt: " . $executionResult['total'] . "\n"
-                        . "- Erfolgreich: " . $executionResult['completed'] . "\n"
-                        . "- Fehlgeschlagen: " . $executionResult['failed'] . "\n\n";
+                    $executionResult['output'] = automation_t('automation_queue_execution_header') . "\n"
+                        . '- ' . automation_t('automation_status_total') . ': ' . $executionResult['total'] . "\n"
+                        . '- ' . automation_t('automation_status_successful') . ': ' . $executionResult['completed'] . "\n"
+                        . '- ' . automation_t('automation_status_failed') . ': ' . $executionResult['failed'] . "\n\n";
 
                     if (!empty($executionResult['details'])) {
-                        $executionResult['output'] .= "Details:\n";
+                        $executionResult['output'] .= automation_t('automation_details_label') . ":\n";
                         foreach ($executionResult['details'] as $detail) {
                             $executionResult['output'] .= "- [{$detail['status']}] {$detail['uuid']}\n";
                         }
                         if (isset($executionResult['details'][0]['output'])) {
-                            $executionResult['output'] .= "\nAusgabe der SSH-Session:\n" . $executionResult['details'][0]['output'];
+                            $executionResult['output'] .= "\n" . automation_t('automation_ssh_session_output_label') . ":\n" . $executionResult['details'][0]['output'];
                         }
                     }
 
@@ -256,7 +271,7 @@
                 } else {
                     $executionResult = [
                         'ok' => false,
-                        'output' => 'Warteschlangen-Ausfuehrung fehlgeschlagen: Ungultiger Switch.'
+                        'output' => automation_t('automation_queue_execution_invalid_switch')
                     ];
                 }
             } elseif ($queueAction === 'execute_one' && isset($_POST['pending_uuid'])) {
@@ -266,14 +281,14 @@
                 if (!is_array($pendingChange)) {
                     $executionResult = [
                         'ok' => false,
-                        'output' => 'Eintrag nicht gefunden oder keine Berechtigung.'
+                        'output' => automation_t('automation_queue_entry_not_found_or_unauthorized')
                     ];
                 } else {
                     $switchToExecute = (string)($pendingChange['switch_name'] ?? '');
                     if ($switchToExecute === '' || !isset($switches[$switchToExecute])) {
                         $executionResult = [
                             'ok' => false,
-                            'output' => 'Ausfuehrung fehlgeschlagen: Switch des Queue-Eintrags ist nicht gueltig.'
+                            'output' => automation_t('automation_queue_entry_switch_invalid')
                         ];
                     } else {
                         $switchData = resolveSwitchConnectionData($switches[$switchToExecute], $storedSettings);
@@ -286,7 +301,7 @@
                         if (empty($commands)) {
                             $executionResult = [
                                 'ok' => false,
-                                'output' => 'Ausfuehrung fehlgeschlagen: Queue-Eintrag enthaelt keine Befehle.'
+                                'output' => automation_t('automation_queue_entry_no_commands')
                             ];
                         } else {
                             $queueManager->updatePendingChange($pendingUuid, 'executing');
@@ -307,7 +322,7 @@
 
                             $executionResult = [
                                 'ok' => !empty($result['ok']),
-                                'output' => "Einzel-Eintrag ausgefuehrt: " . $pendingUuid . "\n\n" . (string)($result['output'] ?? '')
+                                'output' => automation_t('automation_queue_single_executed', ['uuid' => $pendingUuid]) . "\n\n" . (string)($result['output'] ?? '')
                             ];
 
                             logAutomationExecutionEvent(
@@ -340,12 +355,12 @@
                 if (empty($pendingUuids)) {
                     $executionResult = [
                         'ok' => false,
-                        'output' => 'Keine Queue-Eintraege fuer die Ausfuehrung ausgewaehlt.'
+                        'output' => automation_t('automation_queue_none_selected')
                     ];
                 } elseif ($switchToExecute === '' || !isset($switches[$switchToExecute])) {
                     $executionResult = [
                         'ok' => false,
-                        'output' => 'Ausfuehrung fehlgeschlagen: Ungueltiger Switch fuer Auswahl-Ausfuehrung.'
+                        'output' => automation_t('automation_queue_selected_invalid_switch')
                     ];
                 } else {
                     $switchData = resolveSwitchConnectionData($switches[$switchToExecute], $storedSettings);
@@ -358,20 +373,20 @@
                         $pendingChange = $queueManager->getPendingChange($pendingUuid, $_SESSION['uuid']);
                         if (!is_array($pendingChange)) {
                             $failedCount++;
-                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Eintrag nicht gefunden oder keine Berechtigung.';
+                            $resultLines[] = '[' . $pendingUuid . '] ' . automation_t('automation_status_error_short') . ': ' . automation_t('automation_queue_entry_not_found_or_unauthorized');
                             continue;
                         }
 
                         if ((string)($pendingChange['status'] ?? '') !== 'pending') {
                             $failedCount++;
-                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Eintrag ist nicht mehr ausstehend.';
+                            $resultLines[] = '[' . $pendingUuid . '] ' . automation_t('automation_status_error_short') . ': ' . automation_t('automation_queue_entry_not_pending');
                             continue;
                         }
 
                         $entrySwitch = (string)($pendingChange['switch_name'] ?? '');
                         if ($entrySwitch !== $switchToExecute) {
                             $failedCount++;
-                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Eintrag gehoert zu einem anderen Switch (' . $entrySwitch . ').';
+                            $resultLines[] = '[' . $pendingUuid . '] ' . automation_t('automation_status_error_short') . ': ' . automation_t('automation_queue_entry_other_switch', ['switch' => $entrySwitch]);
                             continue;
                         }
 
@@ -381,9 +396,9 @@
                         );
 
                         if (empty($commands)) {
-                            $queueManager->updatePendingChange($pendingUuid, 'failed', 'Queue-Eintrag enthaelt keine Befehle.');
+                            $queueManager->updatePendingChange($pendingUuid, 'failed', automation_t('automation_queue_entry_contains_no_commands'));
                             $failedCount++;
-                            $resultLines[] = '[' . $pendingUuid . '] FEHLER: Keine Befehle im Queue-Eintrag.';
+                            $resultLines[] = '[' . $pendingUuid . '] ' . automation_t('automation_status_error_short') . ': ' . automation_t('automation_queue_entry_contains_no_commands');
                             continue;
                         }
 
@@ -406,10 +421,10 @@
 
                         if ($ok) {
                             $executedCount++;
-                            $resultLines[] = '[' . $pendingUuid . '] OK';
+                            $resultLines[] = '[' . $pendingUuid . '] ' . automation_t('ok');
                         } else {
                             $failedCount++;
-                            $resultLines[] = '[' . $pendingUuid . '] FEHLER';
+                            $resultLines[] = '[' . $pendingUuid . '] ' . automation_t('automation_status_error_short');
                         }
 
                         logAutomationExecutionEvent(
@@ -432,10 +447,10 @@
 
                     $executionResult = [
                         'ok' => ($failedCount === 0),
-                        'output' => "Auswahl-Ausfuehrung abgeschlossen:\n"
-                            . '- Ausgewaehlt: ' . count($pendingUuids) . "\n"
-                            . '- Erfolgreich: ' . $executedCount . "\n"
-                            . '- Fehlgeschlagen: ' . $failedCount . "\n\n"
+                        'output' => automation_t('automation_queue_selected_execution_completed') . "\n"
+                            . '- ' . automation_t('automation_status_selected') . ': ' . count($pendingUuids) . "\n"
+                            . '- ' . automation_t('automation_status_successful') . ': ' . $executedCount . "\n"
+                            . '- ' . automation_t('automation_status_failed') . ': ' . $failedCount . "\n\n"
                             . implode("\n", $resultLines)
                     ];
                 }
@@ -444,7 +459,7 @@
                 $success = $queueManager->deletePendingChange($pendingUuid, $_SESSION['uuid']);
                 $executionResult = [
                     'ok' => $success,
-                    'output' => $success ? 'Aenderung aus Warteschlange entfernt.' : 'Fehler beim Loeschen.'
+                    'output' => $success ? automation_t('automation_queue_change_removed') : automation_t('automation_queue_delete_error')
                 ];
             }
         }
@@ -460,16 +475,16 @@
             $executionResult = [
                 'ok' => false,
                 'output' => $queueMode
-                    ? 'Warteschlange fehlgeschlagen: Ungueltiger CSRF-Token.'
-                    : 'Ausfuehrung fehlgeschlagen: Ungueltiger CSRF-Token.'
+                    ? automation_t('automation_queue_csrf_invalid')
+                    : automation_t('automation_execute_csrf_invalid')
             ];
         } elseif (!$hasRequiredPermission) {
             $logger->log('user denied access to automation ' . $requiredPermission, 2, echoToWeb: true);
             $executionResult = [
                 'ok' => false,
                 'output' => $queueMode
-                    ? 'Warteschlange fehlgeschlagen: Sie haben keine Schreibberechtigung fuer Automatisierungen.'
-                    : 'Ausfuehrung fehlgeschlagen: Sie haben keine Execute-Berechtigung fuer Automatisierungen.'
+                    ? automation_t('automation_queue_no_write_permission')
+                    : automation_t('automation_execute_no_execute_permission')
             ];
         } else {
             $selectedSwitch = (string)($_POST['switch'] ?? $selectedSwitch);
@@ -542,23 +557,23 @@
             );
 
             if ($selectedSaveMode === 'skip_save') {
-                $rendered['warnings'][] = 'Save-Befehle wurden fuer diesen Lauf uebersprungen (save/write_config).';
+                $rendered['warnings'][] = automation_t('automation_warning_save_skipped');
             }
 
             if (in_array($selectedErrorStrategy, ['stop_on_error', 'stop_with_rollback'], true) && count($pipelineGroups) > 1) {
-                $rendered['warnings'][] = 'Error-Strategie aktiv: ' . $selectedErrorStrategy . ' (Template-weise Ausfuehrung mit Abbruch bei erstem Fehler).';
+                $rendered['warnings'][] = automation_t('automation_warning_error_strategy_active', ['strategy' => $selectedErrorStrategy]);
             }
 
             if ($queueMode) {
                 if (!is_array($selectedSwitchData)) {
                     $executionResult = [
                         'ok' => false,
-                        'output' => 'Warteschlange: Bitte zuerst einen gueltigen Switch auswaehlen.'
+                        'output' => automation_t('automation_queue_select_switch_first')
                     ];
                 } elseif (empty($rendered['commands'])) {
                     $executionResult = [
                         'ok' => false,
-                        'output' => 'Warteschlange: Keine Befehle zum Speichern vorhanden.'
+                        'output' => automation_t('automation_queue_no_commands_to_save')
                     ];
                 } else {
                     // Add to queue instead of executing immediately
@@ -573,7 +588,7 @@
 
                     $executionResult = [
                         'ok' => true,
-                        'output' => 'Aenderung in Warteschlange eingefuegt.\n\nQueue-UUID: ' . $queueUuid . '\n\nDie Aenderung wird ausgefuehrt, wenn Sie auf dem Tab "Warteschlange" alle ausstehenden Aenderungen ausfuehren.'
+                        'output' => automation_t('automation_queue_added', ['uuid' => $queueUuid])
                     ];
                     $activeTab = 'queue';
                 }
@@ -628,7 +643,7 @@
             } else {
                 $executionResult = [
                     'ok' => false,
-                    'output' => 'Ausfuehrung fehlgeschlagen: Kein gueltiger Switch wurde ausgewaehlt.'
+                    'output' => automation_t('automation_execution_no_valid_switch')
                 ];
             }
         }
@@ -674,19 +689,19 @@
         $rendered['commands'] = flattenPipelineCommands($previewPipelineGroups);
 
         if ($selectedSaveMode === 'skip_save') {
-            $rendered['warnings'][] = 'Preview ohne Save-Befehle (save/write_config).';
+            $rendered['warnings'][] = automation_t('automation_preview_warning_save_skipped');
         }
         if ($selectedErrorStrategy === 'stop_on_error' && count($previewPipelineGroups) > 1) {
-            $rendered['warnings'][] = 'Preview-Hinweis: stop_on_error fuehrt Templates nacheinander aus und bricht bei Fehler ab.';
+            $rendered['warnings'][] = automation_t('automation_preview_warning_stop_on_error');
         }
         if ($selectedErrorStrategy === 'stop_with_rollback' && count($previewPipelineGroups) > 1) {
-            $rendered['warnings'][] = 'Preview-Hinweis: stop_with_rollback versucht bei Fehlern bereits ausgefuehrte Templates rueckgaengig zu machen (wenn rollback_commands definiert sind).';
+            $rendered['warnings'][] = automation_t('automation_preview_warning_stop_with_rollback');
         }
     }
 
-    $executionHasWarnings = false;
-    if (is_array($executionResult) && isset($executionResult['output'])) {
-        $executionHasWarnings = stripos((string)$executionResult['output'], 'warn') !== false;
+    $executionHasWarnings = !empty($executionResult['warning']);
+    if (!$executionHasWarnings && is_array($executionResult) && isset($executionResult['output'])) {
+        $executionHasWarnings = stripos((string)$executionResult['output'], automation_t('warning')) !== false;
     }
 
     if (!empty($executionResult['ok'])) {
@@ -712,7 +727,7 @@
         if ($host === '' || $username === '') {
             return [
                 'ok' => false,
-                'output' => 'Ausfuehrung fehlgeschlagen: Host und Username fehlen.'
+                'output' => automation_t('automation_error_missing_host_username')
             ];
         }
 
@@ -720,7 +735,7 @@
         if ($sshPath === '') {
             return [
                 'ok' => false,
-                'output' => 'Ausfuehrung fehlgeschlagen: ssh Binary wurde nicht gefunden.'
+                'output' => automation_t('automation_error_ssh_not_found')
             ];
         }
 
@@ -732,7 +747,7 @@
         if (!is_dir($knownHostsDir) && !mkdir($knownHostsDir, 0700, true) && !is_dir($knownHostsDir)) {
             return [
                 'ok' => false,
-                'output' => 'Ausfuehrung fehlgeschlagen: Known-Hosts-Verzeichnis konnte nicht angelegt werden.'
+                'output' => automation_t('automation_error_known_hosts_dir')
             ];
         }
 
@@ -740,7 +755,7 @@
         if (!file_exists($knownHostsFile) && @touch($knownHostsFile) === false) {
             return [
                 'ok' => false,
-                'output' => 'Ausfuehrung fehlgeschlagen: Known-Hosts-Datei konnte nicht angelegt werden.'
+                'output' => automation_t('automation_error_known_hosts_file')
             ];
         }
 
@@ -750,7 +765,7 @@
         if ($commandFile === false) {
             return [
                 'ok' => false,
-                'output' => 'Ausfuehrung fehlgeschlagen: Konnte keine temporäre Datei anlegen.'
+                'output' => automation_t('automation_error_temp_file')
             ];
         }
 
@@ -780,7 +795,7 @@
                 @unlink($commandFile);
                 return [
                     'ok' => false,
-                    'output' => 'Ausfuehrung fehlgeschlagen: SSH-Key ist leer.'
+                    'output' => automation_t('automation_error_empty_ssh_key')
                 ];
             }
 
@@ -789,7 +804,7 @@
                 @unlink($commandFile);
                 return [
                     'ok' => false,
-                    'output' => 'Ausfuehrung fehlgeschlagen: Konnte keine temporaere Key-Datei anlegen.'
+                    'output' => automation_t('automation_error_temp_key_file')
                 ];
             }
 
@@ -809,7 +824,7 @@
                 }
                 return [
                     'ok' => false,
-                    'output' => 'Ausfuehrung fehlgeschlagen: sshpass wurde nicht gefunden.'
+                    'output' => automation_t('automation_error_sshpass_not_found')
                 ];
             }
 
@@ -838,7 +853,7 @@
         $maxLines = 120;
         if (count($lines) > $maxLines) {
             $lines = array_slice($lines, 0, $maxLines);
-            $lines[] = '... output truncated ...';
+            $lines[] = automation_t('automation_output_truncated');
         }
 
         $maskedCommand = ($authMethod === 'password' && $password !== '')
@@ -864,21 +879,20 @@
 
         $reportedCommands = buildCommandStatusLines($commands, $lines, $exitCode);
 
-        $outputText = "Command: " . $maskedCommand . "\n";
-        $outputText .= "Exit Code: " . $exitCode . "\n";
-        $outputText .= "Duration: " . number_format($durationSec, 2, '.', '') . "s\n\n";
+        $outputText = automation_t('automation_output_command_label') . ': ' . $maskedCommand . "\n";
+        $outputText .= automation_t('automation_output_exit_code_label') . ': ' . $exitCode . "\n";
+        $outputText .= automation_t('automation_output_duration_label') . ': ' . number_format($durationSec, 2, '.', '') . "s\n\n";
         if (!empty($reportedCommands)) {
-            $outputText .= "Command Status (heuristisch):\n" . implode("\n", $reportedCommands) . "\n\n";
+            $outputText .= automation_t('automation_output_command_status_label') . ":\n" . implode("\n", $reportedCommands) . "\n\n";
         }
         $outputText .= implode("\n", $lines);
 
         if ($exitCode === 124) {
-            $outputText .= "\n\nHinweis: Timeout waehrend oder nach erfolgreicher Konfig-Anwendung. "
-                . "Die Session wurde moeglicherweise nicht sauber beendet oder ein Prompt blieb offen.";
+            $outputText .= "\n\n" . automation_t('automation_output_timeout_note');
         }
 
         if ($warning) {
-            $outputText .= "\n\nBewertung: WARNUNG. Die Befehle wurden wahrscheinlich angewendet, aber die SSH-Session endete nicht sauber (Exit-Code " . $exitCode . ").";
+            $outputText .= "\n\n" . automation_t('automation_output_warning_assessment', ['exit_code' => $exitCode]);
         }
 
         $logLevel = $ok ? ($warning ? 2 : 1) : 3;
@@ -999,7 +1013,7 @@
                 continue;
             }
 
-            $status = 'SENT';
+            $status = automation_t('automation_command_status_sent');
             $normalized = strtolower(preg_replace('/\s+/', ' ', $commandText) ?? '');
             $needle = substr($normalized, 0, 24);
             $firstToken = strtok($normalized, ' ') ?: '';
@@ -1017,11 +1031,11 @@
             }
 
             if ($matchedError) {
-                $status = 'ERR?';
+                $status = automation_t('automation_command_status_error_maybe');
             } elseif ($exitCode === 0 && empty($errorLines)) {
-                $status = 'OK';
+                $status = automation_t('ok');
             } elseif ($exitCode === 0) {
-                $status = 'OK?';
+                $status = automation_t('automation_command_status_ok_maybe');
             }
 
             $statusLines[] = str_pad((string)($idx + 1), 3, ' ', STR_PAD_LEFT) . ': [' . $status . '] ' . $commandText;
@@ -1171,23 +1185,23 @@
             );
 
             if (empty($commands)) {
-                $reportLines[] = '[' . $templateId . '] SKIPPED (keine Befehle)';
+                $reportLines[] = '[' . $templateId . '] ' . automation_t('automation_command_status_skipped') . ' (' . automation_t('automation_queue_entry_contains_no_commands') . ')';
                 continue;
             }
 
             $result = runAutomationSshCommands($connection, $commands, $logger, $switchName, $profileId, $templateId);
             $logger->log('stop_with_rollback step template=' . $templateId . ' ok=' . (!empty($result['ok']) ? '1' : '0'), !empty($result['ok']) ? 0 : 2);
-            $statusText = !empty($result['ok']) ? 'OK' : 'FAILED';
+            $statusText = !empty($result['ok']) ? automation_t('ok') : automation_t('automation_status_failed_short');
             $reportLines[] = '[' . $templateId . '] ' . $statusText;
 
             if (isset($result['output'])) {
-                $reportLines[] = "--- Output " . $templateId . " ---";
+                $reportLines[] = '--- ' . automation_t('automation_report_output_label') . ' ' . $templateId . ' ---';
                 $reportLines[] = (string)$result['output'];
             }
 
             if (empty($result['ok'])) {
                 $overallOk = false;
-                $reportLines[] = 'Abbruch: stop_on_error hat weitere Templates nicht mehr ausgefuehrt.';
+                $reportLines[] = automation_t('automation_report_abort_stop_on_error');
                 break;
             }
         }
@@ -1217,16 +1231,16 @@
             );
 
             if (empty($commands)) {
-                $reportLines[] = '[' . $templateId . '] SKIPPED (keine Befehle)';
+                $reportLines[] = '[' . $templateId . '] ' . automation_t('automation_command_status_skipped') . ' (' . automation_t('automation_queue_entry_contains_no_commands') . ')';
                 continue;
             }
 
             $result = runAutomationSshCommands($connection, $commands, $logger, $switchName, $profileId, $templateId);
-            $statusText = !empty($result['ok']) ? 'OK' : 'FAILED';
+            $statusText = !empty($result['ok']) ? automation_t('ok') : automation_t('automation_status_failed_short');
             $reportLines[] = '[' . $templateId . '] ' . $statusText;
 
             if (isset($result['output'])) {
-                $reportLines[] = '--- Output ' . $templateId . ' ---';
+                $reportLines[] = '--- ' . automation_t('automation_report_output_label') . ' ' . $templateId . ' ---';
                 $reportLines[] = (string)$result['output'];
             }
 
@@ -1239,10 +1253,10 @@
             }
 
             $overallOk = false;
-            $reportLines[] = 'Abbruch: stop_with_rollback hat weitere Templates nicht mehr ausgefuehrt.';
+            $reportLines[] = automation_t('automation_report_abort_stop_with_rollback');
 
             if (!empty($executed)) {
-                $reportLines[] = 'Rollback gestartet fuer bereits ausgefuehrte Templates (reverse order).';
+                $reportLines[] = automation_t('automation_report_rollback_started');
             }
 
             for ($r = count($executed) - 1; $r >= 0; $r--) {
@@ -1253,7 +1267,7 @@
                 );
 
                 if (empty($rollbackCommands)) {
-                    $reportLines[] = '[ROLLBACK ' . $rollbackTemplateId . '] SKIPPED (keine rollback_commands definiert)';
+                    $reportLines[] = '[' . automation_t('automation_report_rollback_label') . ' ' . $rollbackTemplateId . '] ' . automation_t('automation_command_status_skipped') . ' (' . automation_t('automation_report_no_rollback_commands') . ')';
                     continue;
                 }
 
@@ -1267,16 +1281,16 @@
                 );
                 $logger->log('stop_with_rollback rollback template=' . $rollbackTemplateId . ' ok=' . (!empty($rollbackResult['ok']) ? '1' : '0'), !empty($rollbackResult['ok']) ? 1 : 3);
 
-                $rollbackStatus = !empty($rollbackResult['ok']) ? 'OK' : 'FAILED';
-                $reportLines[] = '[ROLLBACK ' . $rollbackTemplateId . '] ' . $rollbackStatus;
+                $rollbackStatus = !empty($rollbackResult['ok']) ? automation_t('ok') : automation_t('automation_status_failed_short');
+                $reportLines[] = '[' . automation_t('automation_report_rollback_label') . ' ' . $rollbackTemplateId . '] ' . $rollbackStatus;
 
                 if (isset($rollbackResult['output'])) {
-                    $reportLines[] = '--- Output ROLLBACK ' . $rollbackTemplateId . ' ---';
+                    $reportLines[] = '--- ' . automation_t('automation_report_output_label') . ' ' . automation_t('automation_report_rollback_label') . ' ' . $rollbackTemplateId . ' ---';
                     $reportLines[] = (string)$rollbackResult['output'];
                 }
 
                 if (empty($rollbackResult['ok'])) {
-                    $reportLines[] = 'Rollback-Fehler bei Template: ' . $rollbackTemplateId;
+                    $reportLines[] = automation_t('automation_report_rollback_error', ['template' => $rollbackTemplateId]);
                 }
             }
 
@@ -1421,12 +1435,12 @@
         $pipelineGroups = [];
 
         if (!empty($pipelineTemplates)) {
-            $warnings[] = 'Pipeline aktiv: ' . count($templateSequence) . ' Templates werden nacheinander ausgefuehrt.';
+            $warnings[] = automation_t('automation_pipeline_active', ['count' => count($templateSequence)]);
         }
 
         foreach ($templateSequence as $templateId) {
             if (!isset($templates[$templateId])) {
-                $warnings[] = 'Template in Pipeline nicht gefunden: ' . $templateId;
+                $warnings[] = automation_t('automation_pipeline_template_missing', ['template' => $templateId]);
                 continue;
             }
 
@@ -1440,7 +1454,7 @@
                 );
 
                 if (!in_array('interface', $templateVarNames, true)) {
-                    $warnings[] = 'Batch fuer Template "' . $templateId . '" ignoriert: Variable "interface" fehlt, es wird einmalig ausgefuehrt.';
+                    $warnings[] = automation_t('automation_batch_missing_interface_variable', ['template' => $templateId]);
                     $rendered = $automation->renderTemplate($templateId, $selectedProfile, $variableValues);
                     foreach ((array)($rendered['warnings'] ?? []) as $warning) {
                         $warnings[] = '[' . $templateId . '] ' . (string)$warning;
@@ -1516,7 +1530,7 @@
         }
 
         if (!empty($batchInterfaces)) {
-            $warnings[] = 'Batch-Modus aktiv: ' . count($batchInterfaces) . ' Interfaces werden verarbeitet.';
+            $warnings[] = automation_t('automation_batch_active', ['count' => count($batchInterfaces)]);
         }
 
         return $commands;
@@ -1828,15 +1842,15 @@
 <div class="automation-shell">
     <div class="automation-sidebar flex flex-col gap-4">
         <div class="automation-sidebar-head">
-            <p class="automation-side-title">Automatisierung</p>
+            <p class="automation-side-title"><?php echo automation_escape(automation_t('automation_sidebar_title')); ?></p>
         </div>
         <ul class="automation-side-nav">
             <li class="automation-side-item automation-side-item-active automation-tab" data-tab="automation">
-                <span class="automation-side-item-main"><i data-lucide="bot"></i><span>Automation</span></span>
+                <span class="automation-side-item-main"><i data-lucide="bot"></i><span><?php echo automation_escape(automation_t('automation_tab_automation')); ?></span></span>
                 <span class="automation-side-chevron"><i data-lucide="chevron-right"></i></span>
             </li>
             <li class="automation-side-item automation-tab" data-tab="queue">
-                <span class="automation-side-item-main"><i data-lucide="inbox"></i><span>Warteschlange</span></span>
+                <span class="automation-side-item-main"><i data-lucide="inbox"></i><span><?php echo automation_escape(automation_t('automation_tab_queue')); ?></span></span>
                 <span class="automation-side-chevron"><i data-lucide="chevron-right"></i></span>
             </li>
         </ul>
@@ -1844,49 +1858,49 @@
 
     <div class="automation-content">
         <ul class="automation-mobile-subnav">
-            <li class="automation-side-item automation-side-item-active automation-tab" data-tab="automation"><span class="automation-side-item-main"><i data-lucide="bot"></i><span>Automation</span></span></li>
-            <li class="automation-side-item automation-tab" data-tab="queue"><span class="automation-side-item-main"><i data-lucide="inbox"></i><span>Warteschlange</span></span></li>
+            <li class="automation-side-item automation-side-item-active automation-tab" data-tab="automation"><span class="automation-side-item-main"><i data-lucide="bot"></i><span><?php echo automation_escape(automation_t('automation_tab_automation')); ?></span></span></li>
+            <li class="automation-side-item automation-tab" data-tab="queue"><span class="automation-side-item-main"><i data-lucide="inbox"></i><span><?php echo automation_escape(automation_t('automation_tab_queue')); ?></span></span></li>
         </ul>
         
         <!-- Automation Tab -->
         <div id="automation-content" class="tab-content">
             <div class="flex justify-between items-start gap-6 pb-6">
                 <div>
-                    <div class="text-2xl font-bold">Automation Preview</div>
-                    <div class="text-sm text-gray-600">Konfiguration und Kommandosequenz fuer Huawei Switches.</div>
+                    <div class="text-2xl font-bold"><?php echo automation_escape(automation_t('automation_preview_title')); ?></div>
+                    <div class="text-sm text-gray-600"><?php echo automation_escape(automation_t('automation_preview_subtitle')); ?></div>
                 </div>
                 <div class="text-sm text-gray-500 max-w-xl text-right">
-                    Waehle Switch, Profil, Template und Variablen, dann ausfuehren oder zu Warteschlange hinzufuegen.
+                    <?php echo automation_escape(automation_t('automation_preview_hint')); ?>
                 </div>
             </div>
 
         <div class="automation-top-actions">
-            <button type="button" class="automation-top-btn automation-top-btn-run" onclick="triggerAutomationExecution('off')">Sofort ausfuehren</button>
-            <button type="button" class="automation-top-btn automation-top-btn-queue" onclick="triggerAutomationExecution('on')">Zu Warteschlange</button>
+            <button type="button" class="automation-top-btn automation-top-btn-run" onclick="triggerAutomationExecution('off')"><?php echo automation_escape(automation_t('automation_run_now')); ?></button>
+            <button type="button" class="automation-top-btn automation-top-btn-queue" onclick="triggerAutomationExecution('on')"><?php echo automation_escape(automation_t('automation_add_to_queue')); ?></button>
         </div>
 
         <form id="automation-preview-form" class="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8" method="GET" action="automation.php">
             <div class="space-y-4 automation-main-card">
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="switch">Switch Target</label>
+                    <label class="block text-sm font-semibold mb-2" for="switch"><?php echo automation_escape(automation_t('automation_switch_target_label')); ?></label>
                     <select id="switch" name="switch" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
-                        <option value="">Kein Ziel ausgewaehlt</option>
+                        <option value=""><?php echo automation_escape(automation_t('automation_no_target_selected')); ?></option>
                         <?php foreach ($switches as $switchName => $switchData) : ?>
                             <option value="<?php echo automation_escape($switchName); ?>" <?php echo $switchName === $selectedSwitch ? 'selected' : ''; ?> data-profile="<?php echo automation_escape($switchData['profile'] ?? ''); ?>"><?php echo automation_escape($switchName); ?></option>
                         <?php endforeach; ?>
                     </select>
                     <?php if (is_array($selectedSwitchData)) : ?>
                         <div class="text-xs text-gray-600 mt-2">
-                            Management IP: <span class="font-semibold"><?php echo automation_escape($selectedSwitchData['mgmt_ip'] ?? ''); ?></span>
+                            <?php echo automation_escape(automation_t('automation_management_ip_label')); ?>: <span class="font-semibold"><?php echo automation_escape($selectedSwitchData['mgmt_ip'] ?? ''); ?></span>
                             <?php if (!empty($selectedSwitchData['profile'])) : ?>
-                                | Profil: <span class="font-semibold"><?php echo automation_escape($selectedSwitchData['profile']); ?></span>
+                                | <?php echo automation_escape(automation_t('profile_label')); ?>: <span class="font-semibold"><?php echo automation_escape($selectedSwitchData['profile']); ?></span>
                             <?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="profile">Switch Profile</label>
+                    <label class="block text-sm font-semibold mb-2" for="profile"><?php echo automation_escape(automation_t('automation_switch_profile_label')); ?></label>
                     <select id="profile" name="profile" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
                         <?php foreach ($profiles as $profileKey => $profile) : ?>
                             <option value="<?php echo automation_escape($profileKey); ?>" <?php echo $profileKey === $selectedProfile ? 'selected' : ''; ?>><?php echo automation_escape($profile['label'] ?? $profileKey); ?></option>
@@ -1895,7 +1909,7 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="template">Script Template</label>
+                    <label class="block text-sm font-semibold mb-2" for="template"><?php echo automation_escape(automation_t('automation_script_template_label')); ?></label>
                     <select id="template" name="template" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
                         <?php foreach ($templates as $templateKey => $template) : ?>
                             <option value="<?php echo automation_escape($templateKey); ?>" <?php echo $templateKey === $selectedTemplate ? 'selected' : ''; ?>><?php echo automation_escape($template['label'] ?? $templateKey); ?></option>
@@ -1904,32 +1918,32 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="save_mode">Save Strategy</label>
+                    <label class="block text-sm font-semibold mb-2" for="save_mode"><?php echo automation_escape(automation_t('automation_save_strategy_label')); ?></label>
                     <select id="save_mode" name="save_mode" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
-                        <option value="immediate" <?php echo $selectedSaveMode === 'immediate' ? 'selected' : ''; ?>>Sofort speichern</option>
-                        <option value="skip_save" <?php echo $selectedSaveMode === 'skip_save' ? 'selected' : ''; ?>>Save in diesem Lauf ueberspringen</option>
+                        <option value="immediate" <?php echo $selectedSaveMode === 'immediate' ? 'selected' : ''; ?>><?php echo automation_escape(automation_t('automation_save_mode_immediate')); ?></option>
+                        <option value="skip_save" <?php echo $selectedSaveMode === 'skip_save' ? 'selected' : ''; ?>><?php echo automation_escape(automation_t('automation_save_mode_skip')); ?></option>
                     </select>
-                    <div class="text-xs text-gray-600 mt-2">"Ueberspringen" spart Laufzeit und eignet sich fuer Session-/Batch-Aenderungen ohne direktes Save.</div>
+                    <div class="text-xs text-gray-600 mt-2"><?php echo automation_escape(automation_t('automation_save_mode_hint')); ?></div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="error_strategy">Fehlerstrategie</label>
+                    <label class="block text-sm font-semibold mb-2" for="error_strategy"><?php echo automation_escape(automation_t('automation_error_strategy_label')); ?></label>
                     <select id="error_strategy" name="error_strategy" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white">
-                        <option value="continue_report" <?php echo $selectedErrorStrategy === 'continue_report' ? 'selected' : ''; ?>>continue_with_report (eine Session)</option>
-                        <option value="stop_on_error" <?php echo $selectedErrorStrategy === 'stop_on_error' ? 'selected' : ''; ?>>stop_on_error (Template-weise)</option>
-                        <option value="stop_with_rollback" <?php echo $selectedErrorStrategy === 'stop_with_rollback' ? 'selected' : ''; ?>>stop_with_rollback (Template-weise + Rollback)</option>
+                        <option value="continue_report" <?php echo $selectedErrorStrategy === 'continue_report' ? 'selected' : ''; ?>><?php echo automation_escape(automation_t('automation_error_strategy_continue_report')); ?></option>
+                        <option value="stop_on_error" <?php echo $selectedErrorStrategy === 'stop_on_error' ? 'selected' : ''; ?>><?php echo automation_escape(automation_t('automation_error_strategy_stop_on_error')); ?></option>
+                        <option value="stop_with_rollback" <?php echo $selectedErrorStrategy === 'stop_with_rollback' ? 'selected' : ''; ?>><?php echo automation_escape(automation_t('automation_error_strategy_stop_with_rollback')); ?></option>
                     </select>
-                    <div class="text-xs text-gray-600 mt-2">stop_on_error bricht bei erstem Fehler ab. stop_with_rollback versucht bereits ausgefuehrte Templates rueckgaengig zu machen (wenn rollback_commands im Template definiert sind).</div>
+                    <div class="text-xs text-gray-600 mt-2"><?php echo automation_escape(automation_t('automation_error_strategy_hint')); ?></div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-semibold mb-2" for="batch_interfaces">Batch Interfaces (optional, eine Zeile pro Port)</label>
-                    <textarea id="batch_interfaces" name="batch_interfaces" rows="4" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white font-mono text-sm" placeholder="MultiGE1/0/1&#10;MultiGE1/0/2&#10;MultiGE1/0/3"><?php echo automation_escape($batchInterfacesInput); ?></textarea>
-                    <div class="text-xs text-gray-600 mt-2">Wenn gesetzt, wird das Template fuer alle Interfaces in einer einzigen SSH-Session ausgefuehrt.</div>
+                    <label class="block text-sm font-semibold mb-2" for="batch_interfaces"><?php echo automation_escape(automation_t('automation_batch_interfaces_label')); ?></label>
+                    <textarea id="batch_interfaces" name="batch_interfaces" rows="4" class="w-full rounded-xl border border-gray-300 px-3 py-2 bg-white font-mono text-sm" placeholder="<?php echo automation_escape(automation_t('automation_batch_interfaces_placeholder')); ?>"><?php echo automation_escape($batchInterfacesInput); ?></textarea>
+                    <div class="text-xs text-gray-600 mt-2"><?php echo automation_escape(automation_t('automation_batch_interfaces_hint')); ?></div>
                 </div>
 
                 <div>
-                    <div class="text-sm font-semibold mb-2">Variables</div>
+                    <div class="text-sm font-semibold mb-2"><?php echo automation_escape(automation_t('automation_variables_label')); ?></div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <?php foreach (($templateDefinition['variables'] ?? []) as $variable) : ?>
                             <div>
@@ -1949,14 +1963,14 @@
 
                 <div class="flex justify-end">
                     <div class="flex gap-3">
-                        <button type="submit" class="px-5 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold">Preview</button>
+                        <button type="submit" class="px-5 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold"><?php echo automation_escape(automation_t('preview_alt')); ?></button>
                     </div>
                 </div>
             </div>
 
             <div class="space-y-4">
                 <div class="automation-main-card">
-                    <div class="text-sm font-semibold pb-2">Template Description</div>
+                    <div class="text-sm font-semibold pb-2"><?php echo automation_escape(automation_t('automation_template_description_label')); ?></div>
                     <div class="text-sm text-gray-700"><?php echo automation_escape($templateDefinition['description'] ?? ''); ?></div>
                     <?php if (!empty($rendered['warnings'])) : ?>
                         <div class="mt-3 space-y-2">
@@ -1968,18 +1982,18 @@
                 </div>
 
                 <div class="automation-main-card-dark shadow-inner">
-                    <div class="text-sm font-semibold pb-3">Rendered Command Sequence</div>
+                    <div class="text-sm font-semibold pb-3"><?php echo automation_escape(automation_t('automation_rendered_sequence_label')); ?></div>
                     <pre class="text-sm whitespace-pre-wrap overflow-x-auto leading-6"><?php echo automation_escape(implode("\n", $rendered['commands'] ?? [])); ?></pre>
                 </div>
 
                 <div id="automationExecutionLoading" class="automation-loading-box hidden">
                     <span class="automation-loading-dot"></span>
-                    <span>Automation wird ausgefuehrt ...</span>
+                    <span><?php echo automation_escape(automation_t('automation_loading_execution')); ?></span>
                 </div>
 
                 <?php if (is_array($executionResult) && isset($executionResult['output'])) : ?>
                     <div class="automation-main-card-result <?php echo $executionStateClass; ?>">
-                        <div class="text-sm font-semibold pb-2">Execution Output</div>
+                        <div class="text-sm font-semibold pb-2"><?php echo automation_escape(automation_t('automation_execution_output_label')); ?></div>
                         <pre class="text-sm whitespace-pre-wrap leading-6"><?php echo automation_escape($executionResult['output']); ?></pre>
                     </div>
                 <?php endif; ?>
@@ -1989,8 +2003,8 @@
         <div class="mt-4 bg-white rounded-2xl border border-gray-200 p-4 shadow-sm hidden">
             <div class="flex items-center justify-between gap-4 pb-4">
                 <div>
-                    <div class="text-lg font-bold">Execute Automation</div>
-                    <div class="text-sm text-gray-600">Fuehrt die gerenderte Kommandosequenz auf dem gewaelten Switch aus oder fuegt zu Warteschlange hinzu.</div>
+                    <div class="text-lg font-bold"><?php echo automation_escape(automation_t('automation_execute_title')); ?></div>
+                    <div class="text-sm text-gray-600"><?php echo automation_escape(automation_t('automation_execute_subtitle')); ?></div>
                 </div>
             </div>
             <form id="automation-execute-form" method="POST" action="automation.php" onsubmit="return syncExecutionFormValues();">
@@ -2006,8 +2020,8 @@
                     <input type="hidden" name="<?php echo automation_escape($variableName); ?>" value="<?php echo automation_escape($variableValue); ?>">
                 <?php endforeach; ?>
                 <div class="hidden justify-end gap-2">
-                    <button type="submit" name="queue_mode" value="off" class="px-5 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold">Sofort ausfuehren</button>
-                    <button type="submit" name="queue_mode" value="on" class="px-5 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold">Zu Warteschlange hinzufuegen</button>
+                    <button type="submit" name="queue_mode" value="off" class="px-5 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white font-semibold"><?php echo automation_escape(automation_t('automation_run_now')); ?></button>
+                    <button type="submit" name="queue_mode" value="on" class="px-5 py-2 rounded-full bg-blue-500 hover:bg-blue-700 text-white font-semibold"><?php echo automation_escape(automation_t('automation_add_to_queue')); ?></button>
                 </div>
             </form>
         </div>
@@ -2018,15 +2032,15 @@
         <div id="queue-content" class="tab-content hidden">
             <div class="flex justify-between items-start gap-6 pb-6">
                 <div>
-                    <div class="text-2xl font-bold">Warteschlange</div>
-                    <div class="text-sm text-gray-600">Ausstehende Aenderungen verwalten und ausfuehren.</div>
+                    <div class="text-2xl font-bold"><?php echo automation_escape(automation_t('automation_queue_title')); ?></div>
+                    <div class="text-sm text-gray-600"><?php echo automation_escape(automation_t('automation_queue_subtitle')); ?></div>
                 </div>
             </div>
             
             <?php
                 $userPendingSummary = $queueManager->getPendingSummary($_SESSION['uuid'] ?? '');
                 if (empty($userPendingSummary)) {
-                    echo '<div class="rounded-xl bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3">Keine ausstehenden Aenderungen in der Warteschlange.</div>';
+                    echo '<div class="rounded-xl bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3">' . automation_escape(automation_t('automation_queue_empty')) . '</div>';
                 } else {
                     foreach ($userPendingSummary as $switchName => $count) {
                         $queueGroupId = 'queue-group-' . md5((string)$switchName);
@@ -2034,26 +2048,26 @@
                         echo '<div class="flex justify-between items-center pb-4">';
                         echo '<div>';
                         echo '<div class="text-lg font-bold">' . automation_escape($switchName) . '</div>';
-                        echo '<div class="text-sm text-gray-600">' . $count . ' ausstehende Aenderung' . ($count !== 1 ? 'en' : '') . '</div>';
+                        echo '<div class="text-sm text-gray-600">' . automation_escape(automation_count_label((int)$count, 'automation_queue_pending_change_singular', 'automation_queue_pending_change_plural')) . '</div>';
                         echo '</div>';
                         echo '<div class="flex items-center gap-2">';
                         echo '<form method="POST" action="automation.php" style="display: inline;" id="' . automation_escape($queueGroupId) . '-selected" onsubmit="return ensureQueueSelection(\'' . automation_escape($queueGroupId) . '\');">';
                         echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                         echo '<input type="hidden" name="queue_action" value="execute_selected">';
                         echo '<input type="hidden" name="execute_selected_switch" value="' . automation_escape($switchName) . '">';
-                        echo '<button type="submit" class="queue-action-btn bg-emerald-500 hover:bg-emerald-700 text-white">Auswahl ausfuehren</button>';
+                        echo '<button type="submit" class="queue-action-btn bg-emerald-500 hover:bg-emerald-700 text-white">' . automation_escape(automation_t('automation_queue_execute_selection')) . '</button>';
                         echo '</form>';
                         echo '<form method="POST" action="automation.php" style="display: inline;">';
                         echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                         echo '<input type="hidden" name="queue_action" value="execute_all">';
                         echo '<input type="hidden" name="execute_all_switch" value="' . automation_escape($switchName) . '">';
-                        echo '<button type="submit" class="queue-action-btn bg-green-500 hover:bg-green-700 text-white">Alle ausfuehren</button>';
+                        echo '<button type="submit" class="queue-action-btn bg-green-500 hover:bg-green-700 text-white">' . automation_escape(automation_t('automation_queue_execute_all')) . '</button>';
                         echo '</form>';
                         echo '</div>';
                         echo '</div>';
                         echo '<div class="pb-3 text-sm text-gray-700 flex items-center gap-2">';
                         echo '<input type="checkbox" id="' . automation_escape($queueGroupId) . '-all" onchange="toggleQueueGroup(\'' . automation_escape($queueGroupId) . '\', this.checked)">';
-                        echo '<label for="' . automation_escape($queueGroupId) . '-all">Alle Eintraege dieser Gruppe markieren</label>';
+                        echo '<label for="' . automation_escape($queueGroupId) . '-all">' . automation_escape(automation_t('automation_queue_select_all_group')) . '</label>';
                         echo '</div>';
                         
                         $pendingChanges = $queueManager->getPendingChanges($_SESSION['uuid'] ?? '', $switchName);
@@ -2064,7 +2078,7 @@
                             echo '<div>';
                             echo '<div class="pb-2">';
                             echo '<input type="checkbox" name="pending_uuids[]" value="' . automation_escape($change['uuid']) . '" form="' . automation_escape($queueGroupId) . '-selected" data-queue-group="' . automation_escape($queueGroupId) . '">';
-                            echo '<span class="ml-2 text-xs text-gray-600">Markieren fuer Sammelausfuehrung</span>';
+                            echo '<span class="ml-2 text-xs text-gray-600">' . automation_escape(automation_t('automation_queue_mark_for_bulk')) . '</span>';
                             echo '</div>';
                             echo '<div class="font-semibold">' . automation_escape($change['profile_id']) . ' → ' . automation_escape($change['template_id']) . '</div>';
                             echo '<div class="text-xs text-gray-500 mt-1">' . (new DateTime($change['created']))->format('Y-m-d H:i:s') . '</div>';
@@ -2075,13 +2089,13 @@
                             echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                             echo '<input type="hidden" name="queue_action" value="execute_one">';
                             echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
-                            echo '<button type="submit" class="queue-item-btn bg-green-100 hover:bg-green-200 text-green-700">Ausfuehren</button>';
+                            echo '<button type="submit" class="queue-item-btn bg-green-100 hover:bg-green-200 text-green-700">' . automation_escape(automation_t('automation_queue_execute_one')) . '</button>';
                             echo '</form>';
                             echo '<form method="POST" action="automation.php" style="display: inline;">';
                             echo '<input type="hidden" name="csrf" value="' . automation_escape((string)$csrf) . '">';
                             echo '<input type="hidden" name="queue_action" value="delete">';
                             echo '<input type="hidden" name="pending_uuid" value="' . automation_escape($change['uuid']) . '">';
-                            echo '<button type="submit" class="queue-item-btn bg-red-100 hover:bg-red-200 text-red-700" onclick="return confirm(\'Wirklich loeschen?\')">Loeschen</button>';
+                            echo '<button type="submit" class="queue-item-btn bg-red-100 hover:bg-red-200 text-red-700" onclick="return confirm(\'' . automation_escape(automation_t('automation_queue_delete_confirm')) . '\')">' . automation_escape(automation_t('automation_queue_delete')) . '</button>';
                             echo '</form>';
                             echo '</div>';
                             echo '</div>';
@@ -2098,6 +2112,8 @@
 
 
 <script>
+const AUTOMATION_I18N = <?php echo json_encode($lang, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+
 document.addEventListener('DOMContentLoaded', function() {
     // Tab switching
     const tabButtons = document.querySelectorAll('.automation-tab');
@@ -2247,7 +2263,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.ensureQueueSelection = function(groupId) {
         const selected = document.querySelectorAll('input[data-queue-group="' + groupId + '"]:checked');
         if (selected.length === 0) {
-            alert('Bitte mindestens einen Queue-Eintrag markieren.');
+            alert(AUTOMATION_I18N.automation_select_queue_entry_alert);
             return false;
         }
         return true;
