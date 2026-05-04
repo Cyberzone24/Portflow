@@ -61,12 +61,14 @@
     }
 
     function classifyPortStatus(snmp) {
-        if (!snmp || (snmp.admin_status == null && snmp.oper_status == null)) {
+        if (!snmp || ((snmp.if_admin_status == null && snmp.admin_status == null) && (snmp.if_oper_status == null && snmp.oper_status == null))) {
             return 'unknown';
         }
-        if (snmp.admin_status === 2) return 'admin_down';
-        if (snmp.oper_status  === 1) return 'up';
-        if (snmp.oper_status  === 2) return 'down';
+        const adminStatus = Number(snmp.if_admin_status ?? snmp.admin_status);
+        const operStatus = Number(snmp.if_oper_status ?? snmp.oper_status);
+        if (adminStatus === 2) return 'admin_down';
+        if (operStatus  === 1) return 'up';
+        if (operStatus  === 2) return 'down';
         return 'unknown';
     }
 
@@ -129,6 +131,40 @@
         return items;
     }
 
+    function pickFirstValue(row, keys) {
+        for (const key of keys) {
+            if (row && row[key] != null && row[key] !== '') {
+                return row[key];
+            }
+        }
+        return null;
+    }
+
+    function normalizeSnmpRow(row) {
+        if (!row || typeof row !== 'object') {
+            return null;
+        }
+
+        const devicePort = pickFirstValue(row, [
+            'device_port',
+            'device_port_uuid',
+            'device_port_snmp_state_device_port',
+            'device_port_snmp_state_device_port_uuid'
+        ]);
+        if (!devicePort) {
+            return null;
+        }
+
+        return {
+            device_port: String(devicePort),
+            if_admin_status: pickFirstValue(row, ['if_admin_status', 'device_port_snmp_state_if_admin_status']),
+            if_oper_status: pickFirstValue(row, ['if_oper_status', 'device_port_snmp_state_if_oper_status']),
+            if_alias: pickFirstValue(row, ['if_alias', 'device_port_snmp_state_if_alias']),
+            if_name: pickFirstValue(row, ['if_name', 'device_port_snmp_state_if_name']),
+            if_speed: pickFirstValue(row, ['if_speed', 'device_port_snmp_state_if_speed'])
+        };
+    }
+
     async function loadDeviceContext(deviceUuids) {
         // Ports filtered by device uuids via *In suffix (API handles array filters).
         // Chunked to keep request URI short enough for typical web servers.
@@ -162,11 +198,26 @@
                     portUuids,
                     (csv) => '/?table=device_port_snmp_state&device_portIn=' + encodeURIComponent(csv) + '&limit=5000'
                 );
-                for (const s of snmp) {
-                    const k = String(s.device_port || '');
-                    snmpByPort.set(k, s);
+                for (const rawRow of snmp) {
+                    const s = normalizeSnmpRow(rawRow);
+                    if (!s) continue;
+                    snmpByPort.set(s.device_port, s);
                 }
             } catch (_e) { /* SNMP optional */ }
+
+            if (snmpByPort.size === 0) {
+                try {
+                    const snmpDetails = await fetchInBatches(
+                        portUuids,
+                        (csv) => '/?table=device_port_snmp_state_details&device_port_snmp_state_device_portIn=' + encodeURIComponent(csv) + '&limit=5000'
+                    );
+                    for (const rawRow of snmpDetails) {
+                        const s = normalizeSnmpRow(rawRow);
+                        if (!s) continue;
+                        snmpByPort.set(s.device_port, s);
+                    }
+                } catch (_e) { /* SNMP optional */ }
+            }
         }
 
         return { ports, vlansByPort, snmpByPort };
