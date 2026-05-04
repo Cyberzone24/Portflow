@@ -527,7 +527,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
         return {
             summary,
-            statusValue: String(statusValue || ''),
+            statusValue: statusValue === null || statusValue === undefined ? '' : String(statusValue),
             speedLabelText: speedLabel(connectionSpeed),
             switchCaption: String(switchCaption || '--'),
             switchPortCaption: String(switchPortCaption || '--'),
