@@ -128,6 +128,26 @@ class API {
         return is_array($rows) ? $rows : [];
     }
 
+    private function resourceHasColumn(string $resource, string $columnName): bool
+    {
+        foreach ($this->getResourceColumns($resource) as $column) {
+            if (isset($column['column_name']) && (string)$column['column_name'] === $columnName) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function applyWriteAuditFields(string $resource, array $data): array
+    {
+        if ($this->resourceHasColumn($resource, 'users') && !array_key_exists('users', $data) && !empty($_SESSION['uuid'])) {
+            $data['users'] = (string)$_SESSION['uuid'];
+        }
+
+        return $data;
+    }
+
     private function normalizeScalarFilterValue(mixed $value, string $dataType): mixed
     {
         if (is_array($value) || is_object($value)) {
@@ -336,12 +356,16 @@ class API {
                 continue;
             }
 
-            if (($segments[0] ?? '') === 'api') {
-                array_shift($segments);
+            $apiIndex = array_search('api', $segments, true);
+            if ($apiIndex !== false) {
+                $segments = array_slice($segments, $apiIndex + 1);
             }
-            if (($segments[0] ?? '') === 'index.php') {
-                array_shift($segments);
+
+            $scriptIndex = array_search('index.php', $segments, true);
+            if ($scriptIndex !== false) {
+                $segments = array_slice($segments, $scriptIndex + 1);
             }
+
             if (!empty($segments)) {
                 return array_values($segments);
             }
@@ -613,12 +637,9 @@ class API {
     }
 
     private function post($resource, $data) {
-        // add users uuid to data if not provided
-        if ($resource === 'metadata' && empty($data['users']) && !empty($_SESSION['uuid'])) {
-            $data['users'] = $_SESSION['uuid'];
-        }
         try {
             $this->validateBaseTableForWrite((string)$resource);
+            $data = $this->applyWriteAuditFields((string)$resource, (array)$data);
             $data = $this->filterWritablePayload((string)$resource, (array)$data);
             $quotedColumns = array_map(fn($key) => $this->quoteIdentifier((string)$key), array_keys($data));
             $query = 'INSERT INTO ' . $this->quoteIdentifier((string)$resource)
@@ -797,10 +818,15 @@ class API {
     private function put($resource, $uuid, $data) {
         try {
             $this->validateBaseTableForWrite((string)$resource);
+            $data = $this->applyWriteAuditFields((string)$resource, (array)$data);
             $data = $this->filterWritablePayload((string)$resource, (array)$data);
-            $query = 'UPDATE ' . $this->quoteIdentifier((string)$resource) . ' SET ' . implode(', ', array_map(function($key) {
+            $assignments = array_map(function($key) {
                 return $this->quoteIdentifier((string)$key) . ' = :' . $key;
-            }, array_keys($data))) . ' WHERE uuid = :uuid RETURNING *';
+            }, array_keys($data));
+            if ($this->resourceHasColumn((string)$resource, 'changed') && !array_key_exists('changed', $data)) {
+                $assignments[] = $this->quoteIdentifier('changed') . ' = CURRENT_TIMESTAMP';
+            }
+            $query = 'UPDATE ' . $this->quoteIdentifier((string)$resource) . ' SET ' . implode(', ', $assignments) . ' WHERE uuid = :uuid RETURNING *';
             $params = $data;
             $params['uuid'] = $uuid;
             $results = $this->dbAdapter->db_query($query, $params);
@@ -817,10 +843,15 @@ class API {
     private function patch($resource, $uuid, $data) {
         try {
             $this->validateBaseTableForWrite((string)$resource);
+            $data = $this->applyWriteAuditFields((string)$resource, (array)$data);
             $data = $this->filterWritablePayload((string)$resource, (array)$data);
-            $query = 'UPDATE ' . $this->quoteIdentifier((string)$resource) . ' SET ' . implode(', ', array_map(function($key) {
+            $assignments = array_map(function($key) {
                 return $this->quoteIdentifier((string)$key) . ' = :' . $key;
-            }, array_keys($data))) . ' WHERE uuid = :uuid RETURNING *';
+            }, array_keys($data));
+            if ($this->resourceHasColumn((string)$resource, 'changed') && !array_key_exists('changed', $data)) {
+                $assignments[] = $this->quoteIdentifier('changed') . ' = CURRENT_TIMESTAMP';
+            }
+            $query = 'UPDATE ' . $this->quoteIdentifier((string)$resource) . ' SET ' . implode(', ', $assignments) . ' WHERE uuid = :uuid RETURNING *';
             $params = $data;
             $params['uuid'] = $uuid;
             $results = $this->dbAdapter->db_query($query, $params);

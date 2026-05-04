@@ -167,36 +167,36 @@
         $privateKey = trim((string)($switchEntry['ssh_private_key'] ?? ''));
 
         if (!isValidAutomationInventoryName($name)) {
-            throw new InvalidArgumentException('Switch-Name enthaelt unzulaessige Zeichen oder ist zu lang.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_switch_name_invalid'));
         }
         if (!isValidAutomationInventoryHost($host)) {
-            throw new InvalidArgumentException('Management-IP/Host ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_mgmt_host_invalid'));
         }
         if ($profile === '' || !isset($profileDefaults[$profile])) {
-            throw new InvalidArgumentException('Switch-Profil ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_profile_invalid'));
         }
         if (!in_array($credentialMode, ['global', 'individual'], true)) {
-            throw new InvalidArgumentException('Credential-Mode ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_credential_mode_invalid'));
         }
         if (!in_array($authMethod, ['password', 'key'], true)) {
-            throw new InvalidArgumentException('SSH-Auth-Methode ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_ssh_auth_invalid'));
         }
         if ($deviceId !== '' && !isValidAutomationReferenceUuid($deviceId)) {
-            throw new InvalidArgumentException('Device-Referenz ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_device_ref_invalid'));
         }
         if ($itemGroupId !== '' && !isValidAutomationReferenceUuid($itemGroupId)) {
-            throw new InvalidArgumentException('Item-Group-Referenz ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_item_group_ref_invalid'));
         }
 
         if ($credentialMode === 'individual') {
             if ($username === '') {
-                throw new InvalidArgumentException('Individuelle Credentials erfordern einen SSH-Benutzernamen.');
+                throw new InvalidArgumentException(settings_t('settings_inventory_individual_username_required'));
             }
             if ($authMethod === 'password' && $password === '') {
-                throw new InvalidArgumentException('Individuelle Passwort-Authentifizierung erfordert ein Passwort.');
+                throw new InvalidArgumentException(settings_t('settings_inventory_individual_password_required'));
             }
             if ($authMethod === 'key' && $privateKey === '') {
-                throw new InvalidArgumentException('Individuelle Key-Authentifizierung erfordert einen SSH-Key.');
+                throw new InvalidArgumentException(settings_t('settings_inventory_individual_key_required'));
             }
         }
     }
@@ -204,12 +204,12 @@
     function validateAutomationInventoryJson(string $inventoryJson, array $profileDefaults): string {
         $decoded = json_decode($inventoryJson, true);
         if (!is_array($decoded) || !isset($decoded['switches']) || !is_array($decoded['switches'])) {
-            throw new InvalidArgumentException('Switch-Inventory JSON ist ungueltig.');
+            throw new InvalidArgumentException(settings_t('settings_inventory_json_invalid'));
         }
 
         foreach ($decoded['switches'] as $index => $switchEntry) {
             if (!is_array($switchEntry)) {
-                throw new InvalidArgumentException('Switch-Inventory Eintrag #' . ($index + 1) . ' ist ungueltig.');
+                throw new InvalidArgumentException(settings_t('settings_inventory_json_entry_invalid', ['index' => $index + 1]));
             }
             validateAutomationInventoryEntry($switchEntry, $profileDefaults);
         }
@@ -252,14 +252,14 @@
         if ($host === '' || $username === '') {
             return [
                 'ok' => false,
-                'output' => "SSH-Test fehlgeschlagen: Host und Username sind erforderlich."
+                'output' => settings_t('settings_ssh_test_failed_missing_host_username')
             ];
         }
 
         if (!isValidAutomationInventoryHost($host)) {
             return [
                 'ok' => false,
-                'output' => "SSH-Test fehlgeschlagen: Host enthaelt unzulaessige Zeichen."
+                'output' => settings_t('settings_ssh_test_failed_invalid_host')
             ];
         }
 
@@ -267,7 +267,7 @@
         if ($sshPath === '') {
             return [
                 'ok' => false,
-                'output' => "SSH-Test fehlgeschlagen: ssh Binary wurde nicht gefunden."
+                'output' => settings_t('settings_ssh_test_failed_ssh_missing')
             ];
         }
 
@@ -280,7 +280,7 @@
         } catch (RuntimeException $e) {
             return [
                 'ok' => false,
-                'output' => 'SSH-Test fehlgeschlagen: ' . $e->getMessage()
+                'output' => settings_t('settings_ssh_test_failed_prefix', ['message' => $e->getMessage()])
             ];
         }
 
@@ -296,7 +296,7 @@
             if ($privateKey === '') {
                 return [
                     'ok' => false,
-                    'output' => "SSH-Test fehlgeschlagen: SSH-Key ist leer."
+                    'output' => settings_t('settings_ssh_test_failed_empty_key')
                 ];
             }
 
@@ -304,7 +304,7 @@
             if ($keyFile === false) {
                 return [
                     'ok' => false,
-                    'output' => 'SSH-Test fehlgeschlagen: Konnte keine temporaere Key-Datei anlegen.'
+                    'output' => settings_t('settings_ssh_test_failed_temp_key')
                 ];
             }
             file_put_contents($keyFile, rtrim($privateKey) . "\n");
@@ -316,7 +316,7 @@
         if ($commandFile === false) {
             return [
                 'ok' => false,
-                'output' => 'SSH-Test fehlgeschlagen: Konnte keine temporäre Datei anlegen.'
+                'output' => settings_t('settings_ssh_test_failed_temp_file')
             ];
         }
 
@@ -333,7 +333,7 @@
                 }
                 return [
                     'ok' => false,
-                    'output' => "SSH-Test fehlgeschlagen: Passwortauthentifizierung benoetigt sshpass, ist aber nicht installiert."
+                    'output' => settings_t('settings_ssh_test_failed_sshpass')
                 ];
             }
 
@@ -360,26 +360,26 @@
         $maxLines = 60;
         if (count($lines) > $maxLines) {
             $lines = array_slice($lines, 0, $maxLines);
-            $lines[] = '... output truncated ...';
+            $lines[] = settings_t('settings_test_output_truncated');
         }
 
         $maskedCommand = ($authMethod === 'password' && $password !== '')
             ? 'sshpass -e ssh ...'
             : trim((string)$fullCommand);
 
-        $outputText = "Command: " . $maskedCommand . "\n";
-        $outputText .= "Exit Code: " . $exitCode . "\n\n";
+        $outputText = settings_t('settings_test_command_label') . ': ' . $maskedCommand . "\n";
+        $outputText .= settings_t('settings_test_exit_code_label') . ': ' . $exitCode . "\n\n";
         $outputText .= implode("\n", $lines);
 
         if ($exitCode === 124) {
-            $outputText .= "\n\nHinweis: Timeout erreicht. Verbindung wurde nicht rechtzeitig beendet.";
+            $outputText .= "\n\n" . settings_t('settings_test_timeout_ssh');
         }
 
         $logger->log('automation ssh test for ' . $host . ' returned exit code ' . $exitCode, $exitCode === 0 ? 1 : 3);
 
         return [
             'ok' => ($exitCode === 0),
-            'title' => 'SSH Test Output',
+            'title' => settings_t('settings_test_output_ssh'),
             'output' => $outputText
         ];
     }
@@ -500,16 +500,16 @@
         if ($host === '') {
             return [
                 'ok' => false,
-                'title' => 'SNMP Test Output',
-                'output' => 'SNMP-Test fehlgeschlagen: Host ist erforderlich.'
+                'title' => settings_t('settings_test_output_snmp'),
+                'output' => settings_t('settings_snmp_test_failed_missing_host')
             ];
         }
 
         if (!isValidAutomationInventoryHost($host)) {
             return [
                 'ok' => false,
-                'title' => 'SNMP Test Output',
-                'output' => 'SNMP-Test fehlgeschlagen: Host enthaelt unzulaessige Zeichen.'
+                'title' => settings_t('settings_test_output_snmp'),
+                'output' => settings_t('settings_snmp_test_failed_invalid_host')
             ];
         }
 
@@ -537,8 +537,8 @@
         if ($snmpgetPath === '') {
             return [
                 'ok' => false,
-                'title' => 'SNMP Test Output',
-                'output' => 'SNMP-Test fehlgeschlagen: snmpget Binary wurde nicht gefunden.'
+                'title' => settings_t('settings_test_output_snmp'),
+                'output' => settings_t('settings_snmp_test_failed_snmpget_missing')
             ];
         }
 
@@ -562,8 +562,8 @@
             if ($snmpV3Username === '') {
                 return [
                     'ok' => false,
-                    'title' => 'SNMP Test Output',
-                    'output' => 'SNMP-Test fehlgeschlagen: Fuer SNMPv3 ist ein Username erforderlich.'
+                    'title' => settings_t('settings_test_output_snmp'),
+                    'output' => settings_t('settings_snmp_test_failed_v3_username')
                 ];
             }
 
@@ -611,8 +611,8 @@
             if ($community === '') {
                 return [
                     'ok' => false,
-                    'title' => 'SNMP Test Output',
-                    'output' => 'SNMP-Test fehlgeschlagen: Fuer SNMPv2c ist eine Community erforderlich.'
+                    'title' => settings_t('settings_test_output_snmp'),
+                    'output' => settings_t('settings_snmp_test_failed_v2c_community')
                 ];
             }
 
@@ -644,25 +644,25 @@
         $maxLines = 60;
         if (count($lines) > $maxLines) {
             $lines = array_slice($lines, 0, $maxLines);
-            $lines[] = '... output truncated ...';
+            $lines[] = settings_t('settings_test_output_truncated');
         }
 
-        $outputText = 'Command: ' . $maskedCommand . "\n";
-        $outputText .= 'Exit Code: ' . $exitCode . "\n";
+        $outputText = settings_t('settings_test_command_label') . ': ' . $maskedCommand . "\n";
+        $outputText .= settings_t('settings_test_exit_code_label') . ': ' . $exitCode . "\n";
         if ($mib !== '') {
-            $outputText .= 'Hinweis: Profil/Switch-MIB fuer diesen Test: ' . $mib . "\n";
+            $outputText .= settings_t('settings_test_profile_switch_mib', ['mib' => $mib]) . "\n";
         }
         $outputText .= "\n" . implode("\n", $lines);
 
         if ($exitCode === 124) {
-            $outputText .= "\n\nHinweis: Timeout erreicht. SNMP-Ziel hat nicht rechtzeitig geantwortet.";
+            $outputText .= "\n\n" . settings_t('settings_test_timeout_snmp');
         }
 
         $logger->log('automation snmp test for ' . $host . ' returned exit code ' . $exitCode, $exitCode === 0 ? 1 : 3);
 
         return [
             'ok' => ($exitCode === 0),
-            'title' => 'SNMP Test Output',
+            'title' => settings_t('settings_test_output_snmp'),
             'output' => $outputText
         ];
     }
@@ -1284,6 +1284,21 @@
 
     function escapeSettingValue(string $value): string {
         return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+    }
+
+    function settings_t(string $key, array $replacements = []): string {
+        global $lang;
+
+        $text = (string)($lang[$key] ?? $key);
+        foreach ($replacements as $placeholder => $value) {
+            $text = str_replace('{' . $placeholder . '}', (string)$value, $text);
+        }
+
+        return $text;
+    }
+
+    function settings_count_label(int $count, string $singularKey, string $pluralKey): string {
+        return settings_t($count === 1 ? $singularKey : $pluralKey, ['count' => $count]);
     }
 
     function configToBool($value): bool {
@@ -4993,22 +5008,22 @@
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=configuration"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'configuration' ? $settingsNavActiveClasses : '') . '">' . $lang['configuration'] . '</li></a>' : ''; ?>
             <?php if ($role == 'admin' && $site == 'configuration') : ?>
                 <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1 lg:grid lg:gap-2" style="border-color: var(--pf-accent-500);">
-                    <a href="?site=configuration&tab=system"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'system') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="system">System</li></a>
-                    <a href="?site=configuration&tab=updater"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'updater') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="updater">Updater</li></a>
-                    <a href="?site=configuration&tab=notifications"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'notifications') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="notifications">Benachrichtigungen</li></a>
+                    <a href="?site=configuration&tab=system"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'system') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="system"><?php echo settings_t('settings_nav_system'); ?></li></a>
+                    <a href="?site=configuration&tab=updater"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'updater') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="updater"><?php echo settings_t('settings_nav_updater'); ?></li></a>
+                    <a href="?site=configuration&tab=notifications"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeConfigTab === 'notifications') ? $settingsNavSubActiveClasses : ''); ?>" data-config-tab="notifications"><?php echo settings_t('settings_nav_notifications_admin'); ?></li></a>
                 </div>
             <?php endif; ?>
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=scripts"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'scripts' ? $settingsNavActiveClasses : '') . '">' . $lang['scripts'] . '</li></a>' : ''; ?>
             <?php if ($role == 'admin' && $site == 'scripts') : ?>
                 <div class="settings-subnav mt-0 border-l-2 pl-2 lg:-mt-1 lg:grid lg:gap-2" style="border-color: var(--pf-accent-500);">
-                    <a href="?site=scripts&tab=switch"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'switch') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="switch">Switch/SSH</li></a>
-                    <a href="?site=scripts&tab=profiles"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'profiles') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="profiles">Profile</li></a>
-                    <a href="?site=scripts&tab=templates"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'templates') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="templates">Templates</li></a>
-                    <a href="?site=scripts&tab=history"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'history') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="history">Historie</li></a>
+                    <a href="?site=scripts&tab=switch"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'switch') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="switch"><?php echo settings_t('settings_nav_switch_ssh'); ?></li></a>
+                    <a href="?site=scripts&tab=profiles"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'profiles') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="profiles"><?php echo settings_t('settings_nav_profiles'); ?></li></a>
+                    <a href="?site=scripts&tab=templates"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'templates') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="templates"><?php echo settings_t('settings_nav_templates'); ?></li></a>
+                    <a href="?site=scripts&tab=history"><li class="<?php echo $settingsNavSubBaseClasses . ' ' . (($activeScriptsTab === 'history') ? $settingsNavSubActiveClasses : ''); ?>" data-script-tab="history"><?php echo settings_t('settings_nav_history'); ?></li></a>
                 </div>
             <?php endif; ?>
             <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=access"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'access' ? $settingsNavActiveClasses : '') . '">' . $lang['access_management'] . '</li></a>' : ''; ?>
-            <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=changelog"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'changelog' ? $settingsNavActiveClasses : '') . '">Changelog</li></a>' : ''; ?>
+            <?php echo ($role == 'admin') ? '<a class="flex-none lg:flex-auto" href="?site=changelog"><li class="' . $settingsNavBaseClasses . ' ' . ($site == 'changelog' ? $settingsNavActiveClasses : '') . '">' . settings_t('changelog') . '</li></a>' : ''; ?>
         </ul>
     </div>
     <div class="settings-content relative min-h-0 overflow-y-auto rounded-2xl border p-4" style="background: var(--pf-surface-alt); border-color: var(--pf-border);">
@@ -5026,65 +5041,65 @@ switch ($site) {
         echo <<<HTML
             <div class="h-fit w-full p-4">
                 <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold pb-6">Username</div>
+                    <div class="text-xl font-bold pb-6">{$lang['username']}</div>
                     <form action="?set=username" method="post">
                         <div class="pb-6">
                             <label class="block mb-2" for="username">
-                                New Username
+                                {$lang['settings_account_new_username']}
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username" name="username" min="2" max="255">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="{$lang['username']}" name="username" min="2" max="255">
                         </div>
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
-                                Password
+                                {$lang['password']}
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="{$lang['password']}" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
                             <input type="hidden" name="csrf" value="$csrf">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="{$lang['settings_account_change']}">
                         </div>
                     </form>
                 </div>
                 <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold py-6">E-Mail</div>
+                    <div class="text-xl font-bold py-6">{$lang['email']}</div>
                     <form action="?set=email" method="post">
                         <div class="pb-6">
                             <label class="block mb-2" for="email">
-                                New E-Mail
+                                {$lang['settings_account_new_email']}
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="E-Mail" name="email" min="3" max="254">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="email" type="email" placeholder="{$lang['email']}" name="email" min="3" max="254">
                             </div>
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
-                                Password
+                                {$lang['password']}
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="{$lang['password']}" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
                             <input type="hidden" name="csrf" value="$csrf">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="{$lang['settings_account_change']}">
                         </div>
                     </form>
                 </div>
                 <div class="h-fit max-w-lg">
-                    <div class="text-xl font-bold py-6">Password</div>
+                    <div class="text-xl font-bold py-6">{$lang['password']}</div>
                     <form action="?set=password" method="post">
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
-                                New Password
+                                {$lang['settings_account_new_password']}
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="Password" name="password" min="8" max="128">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="password" type="password" placeholder="{$lang['password']}" name="password" min="8" max="128">
                         </div>
                         <div class="pb-6">
                             <label class="block mb-2" for="password">
-                                Old Password
+                                {$lang['settings_account_old_password']}
                             </label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="old_password" type="password" placeholder="Password" name="old_password" min="8" max="128">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="old_password" type="password" placeholder="{$lang['password']}" name="old_password" min="8" max="128">
                         </div>
                         <div class="pb-6 flex justify-between items-center">
                             <input type="hidden" name="csrf" value="$csrf">
-                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Ändern">
+                            <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="{$lang['settings_account_change']}">
                         </div>
                     </div>
                 </form>
@@ -5112,28 +5127,28 @@ switch ($site) {
         $levelProgress = $notificationLevel === 'progress' ? 'selected' : '';
         $levelAll = $notificationLevel === 'all' ? 'selected' : '';
 
-        $slackStatus = 'deaktiviert';
+        $slackStatus = settings_t('settings_notifications_slack_disabled');
         $notificationSlackWebhook = configNormalizeEnvValue((string)($notificationSettings['slack_webhook_url'] ?? ''));
         if (!empty($channelReadiness['slack_enabled'])) {
             if ($notificationSlackWebhook !== '') {
-                $slackStatus = 'bereit (persoenlicher Webhook gesetzt)';
+                $slackStatus = settings_t('settings_notifications_slack_ready_personal');
             } else {
                 $slackStatus = !empty($channelReadiness['slack'])
-                    ? 'bereit (globaler Webhook aktiv)'
-                    : 'aktiv, aber unvollstaendig konfiguriert';
+                    ? settings_t('settings_notifications_slack_ready_global')
+                    : settings_t('settings_notifications_slack_incomplete');
             }
         }
 
-        $telegramStatus = 'deaktiviert';
+        $telegramStatus = settings_t('settings_notifications_telegram_disabled');
         if (!empty($channelReadiness['telegram_enabled'])) {
             if (empty($channelReadiness['telegram'])) {
-                $telegramStatus = 'aktiv, aber Bot-Token fehlt';
+                $telegramStatus = settings_t('settings_notifications_telegram_missing_bot');
             } elseif ($notificationTelegramChatId !== '') {
-                $telegramStatus = 'bereit (persoenliche Chat-ID gesetzt)';
+                $telegramStatus = settings_t('settings_notifications_telegram_ready_personal');
             } elseif (!empty($channelReadiness['telegram_global_chat_id'])) {
-                $telegramStatus = 'bereit (globaler Fallback aktiv)';
+                $telegramStatus = settings_t('settings_notifications_telegram_ready_global');
             } else {
-                $telegramStatus = 'bereit, aber persoenliche Chat-ID empfohlen';
+                $telegramStatus = settings_t('settings_notifications_telegram_recommended_personal');
             }
         }
 
@@ -5157,6 +5172,7 @@ switch ($site) {
         $telegramLinkUsername = escapeSettingValue((string)($notificationSettings['telegram_link_username'] ?? ''));
         $telegramLinkCommand = $telegramLinkToken !== '' ? '/start ' . $telegramLinkToken : '/start <token>';
         $telegramLinkCommandSafe = escapeSettingValue($telegramLinkCommand);
+        $telegramFlowSafe = escapeSettingValue(settings_t('settings_notifications_telegram_flow', ['command' => $telegramLinkCommand]));
         $slackFieldHiddenClass = $notificationChannel === 'slack' && $slackChannelAvailable ? '' : ' hidden';
         $telegramFieldHiddenClass = $notificationChannel === 'telegram' && $telegramChannelAvailable ? '' : ' hidden';
         $mailInfoHiddenClass = $notificationChannel === 'mail' ? '' : ' hidden';
@@ -5179,8 +5195,8 @@ switch ($site) {
         echo <<<HTML
         <div class="h-fit w-full p-4">
             <div class="max-w-3xl">
-                <div class="text-xl font-bold pb-2">Benachrichtigungen</div>
-                <p class="text-sm text-gray-600 pb-6">Persoenliche Benachrichtigungseinstellungen mit kanalbasiertem Versand. Slack- und Telegram-Felder erscheinen nur, wenn der Kanal global verfuegbar und von dir ausgewaehlt ist.</p>
+                <div class="text-xl font-bold pb-2">{$lang['settings_notifications_title']}</div>
+                <p class="text-sm text-gray-600 pb-6">{$lang['settings_notifications_intro']}</p>
                 {$notificationFeedbackHtml}
 
                 <form action="?set=notification_preferences" method="post" class="space-y-5">
@@ -5188,71 +5204,71 @@ switch ($site) {
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="rounded-2xl border border-slate-200 p-4">
-                            <label class="block mb-2 text-sm font-semibold" for="notification_level">Benachrichtigungslevel</label>
+                            <label class="block mb-2 text-sm font-semibold" for="notification_level">{$lang['settings_notifications_level']}</label>
                             <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_level" name="notification_level">
-                                <option value="off" $levelOff>Aus</option>
-                                <option value="minimal" $levelMinimal>Minimal</option>
-                                <option value="progress" $levelProgress>Fortschritt</option>
-                                <option value="all" $levelAll>Alles</option>
+                                <option value="off" $levelOff>{$lang['settings_notifications_level_off']}</option>
+                                <option value="minimal" $levelMinimal>{$lang['settings_notifications_level_minimal']}</option>
+                                <option value="progress" $levelProgress>{$lang['settings_notifications_level_progress']}</option>
+                                <option value="all" $levelAll>{$lang['settings_notifications_level_all']}</option>
                             </select>
-                            <div class="pt-2 text-xs text-gray-600">Minimal: fehlgeschlagene Logins. Fortschritt: zusaetzlich Tageszusammenfassungen und Abweichungen. Alles: auch erfolgreiche Logins.</div>
+                            <div class="pt-2 text-xs text-gray-600">{$lang['settings_notifications_level_hint']}</div>
                         </div>
                         <div class="rounded-2xl border border-slate-200 p-4">
-                            <label class="block mb-2 text-sm font-semibold" for="notification_channel">Kanal</label>
+                            <label class="block mb-2 text-sm font-semibold" for="notification_channel">{$lang['settings_notifications_channel']}</label>
                             <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_channel" name="notification_channel">
                                 $channelOptionsHtml
                             </select>
-                            <div class="pt-2 text-xs text-gray-600">Es werden nur Kanaele angeboten, die global aktiviert und einsatzbereit sind.</div>
+                            <div class="pt-2 text-xs text-gray-600">{$lang['settings_notifications_channel_hint']}</div>
                         </div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
-                        <div class="font-semibold text-gray-900 pb-2">Kanalstatus</div>
+                        <div class="font-semibold text-gray-900 pb-2">{$lang['settings_notifications_channel_status']}</div>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <div class="rounded-xl bg-slate-50 px-3 py-2">Mail: bereit</div>
+                            <div class="rounded-xl bg-slate-50 px-3 py-2">{$lang['settings_notifications_mail_ready']}</div>
                             <div class="rounded-xl bg-slate-50 px-3 py-2">Slack: $slackStatusSafe</div>
                             <div class="rounded-xl bg-slate-50 px-3 py-2">Telegram: $telegramStatusSafe</div>
                         </div>
                     </div>
 
                     <div id="notification_mail_info" class="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-gray-700{$mailInfoHiddenClass}">
-                        Mail wird ueber den global konfigurierten Versand in der System-Konfiguration ausgeliefert. Fuer Mail sind keine zusaetzlichen persoenlichen Felder erforderlich.
+                        {$lang['settings_notifications_mail_info']}
                     </div>
 
                     <div id="notification_slack_fields" class="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-gray-700{$slackFieldHiddenClass}">
-                        <label class="block mb-2 text-sm font-semibold" for="notification_slack_webhook_url">Slack Webhook (optional, pro Nutzer/Team)</label>
+                        <label class="block mb-2 text-sm font-semibold" for="notification_slack_webhook_url">{$lang['settings_notifications_slack_webhook_label']}</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_slack_webhook_url" type="text" name="notification_slack_webhook_url" value="{$notificationSlackWebhookSafe}" placeholder="https://hooks.slack.com/services/...">
-                        <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Slack-Benachrichtigungen ueber deinen persoenlichen oder Team-Webhook gesendet. Ohne eigenen Webhook nutzt Portflow den globalen Slack-Kanal, sofern vorhanden.</div>
+                        <div class="pt-2 text-xs text-gray-600">{$lang['settings_notifications_slack_webhook_hint']}</div>
                     </div>
 
                     <div id="notification_telegram_fields" class="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-gray-700 space-y-4{$telegramFieldHiddenClass}">
                         <div>
-                            <label class="block mb-2 text-sm font-semibold" for="notification_telegram_chat_id">Telegram Chat-ID (optional, pro Nutzer)</label>
+                            <label class="block mb-2 text-sm font-semibold" for="notification_telegram_chat_id">{$lang['settings_notifications_telegram_chat_id_label']}</label>
                             <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="notification_telegram_chat_id" type="text" name="notification_telegram_chat_id" value="{$notificationTelegramChatIdSafe}" placeholder="z.B. 123456789 oder -100...">
-                            <div class="pt-2 text-xs text-gray-600">Wenn gesetzt, werden Telegram-Benachrichtigungen an deine persoenliche Chat-ID gesendet. Andernfalls wird die globale Chat-ID verwendet, wenn sie vorhanden ist.</div>
+                            <div class="pt-2 text-xs text-gray-600">{$lang['settings_notifications_telegram_chat_id_hint']}</div>
                         </div>
 
                         <div class="rounded-xl bg-slate-50 px-4 py-4 text-sm text-gray-700 space-y-3">
-                            <div class="font-semibold text-gray-900">Telegram-Onboarding</div>
-                            <div>Gefuehrter Flow: Link-Code erzeugen, dem Bot <span class="font-mono">{$telegramLinkCommandSafe}</span> schicken, dann Verknuepfung pruefen.</div>
-                            <div>Aktiver Link-Code: <span class="font-mono">{$telegramLinkToken}</span></div>
-                            <div>Link gestartet: <span class="font-mono">{$telegramLinkStartedAt}</span></div>
-                            <div>Letzte erfolgreiche Verknuepfung: <span class="font-mono">{$telegramLinkConfirmedAt}</span></div>
-                            <div>Telegram Username: <span class="font-mono">{$telegramLinkUsername}</span></div>
+                            <div class="font-semibold text-gray-900">{$lang['settings_notifications_telegram_onboarding']}</div>
+                            <div>{$telegramFlowSafe}</div>
+                            <div>{$lang['settings_notifications_telegram_active_code']}: <span class="font-mono">{$telegramLinkToken}</span></div>
+                            <div>{$lang['settings_notifications_telegram_link_started']}: <span class="font-mono">{$telegramLinkStartedAt}</span></div>
+                            <div>{$lang['settings_notifications_telegram_last_confirmed']}: <span class="font-mono">{$telegramLinkConfirmedAt}</span></div>
+                            <div>{$lang['settings_notifications_telegram_username']}: <span class="font-mono">{$telegramLinkUsername}</span></div>
                             <div class="flex flex-wrap gap-2">
-                                <button type="submit" formaction="?set=notification_telegram_link_start" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Link-Code erzeugen</button>
-                                <button type="submit" formaction="?set=notification_telegram_link_refresh" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram-Verknuepfung pruefen</button>
-                                <button type="submit" formaction="?set=notification_telegram_disconnect" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">Telegram trennen</button>
+                                <button type="submit" formaction="?set=notification_telegram_link_start" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">{$lang['settings_notifications_generate_link_code']}</button>
+                                <button type="submit" formaction="?set=notification_telegram_link_refresh" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">{$lang['settings_notifications_check_telegram_link']}</button>
+                                <button type="submit" formaction="?set=notification_telegram_disconnect" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline">{$lang['settings_notifications_disconnect_telegram']}</button>
                             </div>
                         </div>
                     </div>
 
                     <div class="rounded-xl border border-slate-200 px-4 py-3 text-sm text-gray-700">
-                        Versandplanung fuer Tageszusammenfassungen wird ueber <span class="font-mono">NOTIFICATION_DAILY_TIME</span> und <span class="font-mono">NOTIFICATION_TIMEZONE</span> in der .env gesteuert.
+                        {$lang['settings_notifications_schedule_hint']}
                     </div>
 
                     <div class="pb-2 flex justify-between items-center">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Benachrichtigungen speichern">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="{$lang['settings_notifications_save']}">
                     </div>
                 </form>
             </div>
@@ -5413,23 +5429,23 @@ switch ($site) {
         echo '<div class="cfg-section-system' . ($activeConfigTab !== 'system' ? ' hidden' : '') . '">';
         echo '<section id="cfg-security">';
         echo '<div class="flex flex-wrap items-start justify-between gap-3 pb-3">';
-        echo '<div><div class="text-xl font-bold pb-1">System / Security Check</div><p class="text-sm text-gray-500">Prueft lokale Rechte und testet, ob sensible Pfade ueber den aktiven Webserver wirklich geblockt werden.</p></div>';
-        echo '<div class="text-xs text-gray-500">Geprueft: ' . escapeSettingValue((string)($securityCheck['checked_at'] ?? '-')) . '<br>Basis-URL: ' . escapeSettingValue((string)($securityCheck['base_url'] ?? 'nicht ermittelbar')) . '</div>';
+        echo '<div><div class="text-xl font-bold pb-1">' . settings_t('settings_config_security_title') . '</div><p class="text-sm text-gray-500">' . settings_t('settings_config_security_desc') . '</p></div>';
+        echo '<div class="text-xs text-gray-500">' . settings_t('settings_config_checked_at') . ': ' . escapeSettingValue((string)($securityCheck['checked_at'] ?? '-')) . '<br>' . settings_t('settings_config_base_url') . ': ' . escapeSettingValue((string)($securityCheck['base_url'] ?? settings_t('settings_config_base_url_unknown'))) . '</div>';
         echo '</div>';
         echo $renderFeedback($cfgFeedback, 'system');
         echo '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">';
-        echo '<div class="rounded-lg border border-red-200 p-3"><div class="text-xs text-gray-500">Kritisch</div><div class="text-lg font-semibold text-red-700">' . escapeSettingValue((string)($securityCheck['summary']['critical'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-amber-200 p-3"><div class="text-xs text-gray-500">Warnungen</div><div class="text-lg font-semibold text-amber-700">' . escapeSettingValue((string)($securityCheck['summary']['warn'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-red-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_critical') . '</div><div class="text-lg font-semibold text-red-700">' . escapeSettingValue((string)($securityCheck['summary']['critical'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-amber-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_warnings') . '</div><div class="text-lg font-semibold text-amber-700">' . escapeSettingValue((string)($securityCheck['summary']['warn'] ?? 0)) . '</div></div>';
         echo '<div class="rounded-lg border border-emerald-200 p-3"><div class="text-xs text-gray-500">OK</div><div class="text-lg font-semibold text-emerald-700">' . escapeSettingValue((string)($securityCheck['summary']['ok'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-xs text-gray-500">Hinweise</div><div class="text-lg font-semibold text-slate-700">' . escapeSettingValue((string)($securityCheck['summary']['info'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_hints') . '</div><div class="text-lg font-semibold text-slate-700">' . escapeSettingValue((string)($securityCheck['summary']['info'] ?? 0)) . '</div></div>';
         echo '</div>';
         if ($role === 'admin') {
             echo '<div class="mb-4 flex flex-wrap items-center gap-3">';
             echo '<form action="?set=config_schema_repair" method="post" class="m-0">';
             echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-            echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">Schema jetzt synchronisieren</button>';
+            echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">' . settings_t('settings_config_sync_schema_now') . '</button>';
             echo '</form>';
-            echo '<div class="text-xs text-gray-500">CLI Smoke-Test: <span class="font-mono">php cli/scripts/schema_smoke.php --repair</span></div>';
+            echo '<div class="text-xs text-gray-500">' . settings_t('settings_config_cli_smoke_test') . ': <span class="font-mono">php cli/scripts/schema_smoke.php --repair</span></div>';
             echo '</div>';
         }
         echo '<div class="space-y-3">';
@@ -5451,116 +5467,116 @@ switch ($site) {
             $severityLabel = $labelMap[$severity] ?? $labelMap['info'];
             echo '<div class="rounded-2xl border px-4 py-4 ' . $cardClasses . '">';
             echo '<div class="flex flex-wrap items-start justify-between gap-3">';
-            echo '<div><div class="text-sm font-semibold">' . escapeSettingValue((string)($securityItem['title'] ?? 'Pruefung')) . '</div><div class="pt-1 text-sm whitespace-pre-wrap">' . escapeSettingValue((string)($securityItem['message'] ?? '')) . '</div></div>';
+            echo '<div><div class="text-sm font-semibold">' . escapeSettingValue((string)($securityItem['title'] ?? settings_t('settings_config_default_check_title'))) . '</div><div class="pt-1 text-sm whitespace-pre-wrap">' . escapeSettingValue((string)($securityItem['message'] ?? '')) . '</div></div>';
             echo '<span class="rounded-full border border-current px-3 py-1 text-xs font-semibold uppercase tracking-wide">' . escapeSettingValue($severityLabel) . '</span>';
             echo '</div>';
-            echo '<div class="pt-3 text-xs opacity-80">Empfohlene Massnahme: ' . escapeSettingValue((string)($securityItem['fix'] ?? '')) . '</div>';
+            echo '<div class="pt-3 text-xs opacity-80">' . settings_t('settings_config_recommended_action') . ': ' . escapeSettingValue((string)($securityItem['fix'] ?? '')) . '</div>';
             echo '</div>';
         }
         echo '</div>';
         echo '</section>';
 
         echo '<section id="cfg-db">';
-        echo '<div class="text-xl font-bold pb-1">Datenbank</div>';
-        echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes DB Passwort beibehalten.</p>';
+        echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_db_title') . '</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_db_desc') . '</p>';
         echo $renderFeedback($cfgFeedback, 'db');
         echo '<form action="?set=config_db_save" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
-        echo '<div><label class="block mb-2" for="cfg_db_type">DB Type</label><select id="cfg_db_type" name="db_type" class="w-full py-2 px-3"><option value="pgsql"' . ((string)$dbValues['db_type'] === 'pgsql' ? ' selected' : '') . '>pgsql</option><option value="mysql"' . ((string)$dbValues['db_type'] === 'mysql' ? ' selected' : '') . '>mysql</option></select></div>';
-        echo '<div><label class="block mb-2" for="cfg_db_server">DB Server</label><input id="cfg_db_server" name="db_server" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_server']) . '" required></div>';
-        echo '<div><label class="block mb-2" for="cfg_db_port">DB Port</label><input id="cfg_db_port" name="db_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_port']) . '" required min="1" max="65535"></div>';
-        echo '<div><label class="block mb-2" for="cfg_db_name">DB Name</label><input id="cfg_db_name" name="db_name" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_name']) . '" required></div>';
-        echo '<div><label class="block mb-2" for="cfg_db_user">DB User</label><input id="cfg_db_user" name="db_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_user']) . '" required></div>';
-        echo '<div><label class="block mb-2" for="cfg_db_password">DB Password</label><input id="cfg_db_password" name="db_password" type="password" class="w-full py-2 px-3" placeholder="(unveraendert lassen)"></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_type">' . settings_t('settings_config_db_type') . '</label><select id="cfg_db_type" name="db_type" class="w-full py-2 px-3"><option value="pgsql"' . ((string)$dbValues['db_type'] === 'pgsql' ? ' selected' : '') . '>pgsql</option><option value="mysql"' . ((string)$dbValues['db_type'] === 'mysql' ? ' selected' : '') . '>mysql</option></select></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_server">' . settings_t('settings_config_db_server') . '</label><input id="cfg_db_server" name="db_server" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_server']) . '" required></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_port">' . settings_t('settings_config_db_port') . '</label><input id="cfg_db_port" name="db_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_port']) . '" required min="1" max="65535"></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_name">' . settings_t('settings_config_db_name') . '</label><input id="cfg_db_name" name="db_name" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_name']) . '" required></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_user">' . settings_t('settings_config_db_user') . '</label><input id="cfg_db_user" name="db_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$dbValues['db_user']) . '" required></div>';
+        echo '<div><label class="block mb-2" for="cfg_db_password">' . settings_t('settings_config_db_password') . '</label><input id="cfg_db_password" name="db_password" type="password" class="w-full py-2 px-3" placeholder="' . settings_t('settings_config_keep_unchanged') . '"></div>';
         echo '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
-        echo '<button type="submit" formaction="?set=config_db_test" class="bg-amber-600 hover:bg-amber-700 text-white">Verbindung testen</button>';
+        echo '<button type="submit" formaction="?set=config_db_test" class="bg-amber-600 hover:bg-amber-700 text-white">' . settings_t('settings_config_test_connection') . '</button>';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';
         echo '</form>';
         echo '</section>';
 
         echo '<section id="cfg-ldap">';
-        echo '<div class="text-xl font-bold pb-1">LDAP</div>';
-        echo '<p class="text-sm text-gray-500 pb-4">Leeres Bind-Passwort bedeutet: bestehendes LDAP Bind Passwort beibehalten.</p>';
+        echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_ldap_title') . '</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_ldap_desc') . '</p>';
         echo $renderFeedback($cfgFeedback, 'ldap');
         echo '<form action="?set=config_ldap_save" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
-        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_enabled" value="1"' . (configToBool($ldapValues['ldap_enabled'] ?? false) ? ' checked' : '') . '> LDAP aktivieren</label></div>';
-        echo '<div><label class="block mb-2" for="cfg_ldap_server">LDAP Server</label><input id="cfg_ldap_server" name="ldap_server" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_server']) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_ldap_port">LDAP Port</label><input id="cfg_ldap_port" name="ldap_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_port']) . '" min="1" max="65535"></div>';
-        echo '<div><label class="block mb-2" for="cfg_ldap_basedn">LDAP Base DN</label><input id="cfg_ldap_basedn" name="ldap_basedn" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_basedn']) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_ldap_userdn">LDAP User DN</label><input id="cfg_ldap_userdn" name="ldap_userdn" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_userdn']) . '"></div>';
-        echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_ldap_filter">LDAP Filter</label><input id="cfg_ldap_filter" name="ldap_filter" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_filter']) . '"></div>';
-        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_bind" value="1"' . (configToBool($ldapValues['ldap_bind'] ?? false) ? ' checked' : '') . '> LDAP Bind verwenden</label></div>';
-        echo '<div><label class="block mb-2" for="cfg_ldap_bind_user">LDAP Bind User</label><input id="cfg_ldap_bind_user" name="ldap_bind_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_bind_user']) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_ldap_bind_password">LDAP Bind Password</label><input id="cfg_ldap_bind_password" name="ldap_bind_password" type="password" class="w-full py-2 px-3" placeholder="(unveraendert lassen)"></div>';
-        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_trust" value="1"' . (configToBool($ldapValues['ldap_trust'] ?? false) ? ' checked' : '') . '> LDAP Trust aktivieren</label></div>';
+        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_enabled" value="1"' . (configToBool($ldapValues['ldap_enabled'] ?? false) ? ' checked' : '') . '> ' . settings_t('settings_config_ldap_enable') . '</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_server">' . settings_t('settings_config_ldap_server') . '</label><input id="cfg_ldap_server" name="ldap_server" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_server']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_port">' . settings_t('settings_config_ldap_port') . '</label><input id="cfg_ldap_port" name="ldap_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_port']) . '" min="1" max="65535"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_basedn">' . settings_t('settings_config_ldap_base_dn') . '</label><input id="cfg_ldap_basedn" name="ldap_basedn" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_basedn']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_userdn">' . settings_t('settings_config_ldap_user_dn') . '</label><input id="cfg_ldap_userdn" name="ldap_userdn" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_userdn']) . '"></div>';
+        echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_ldap_filter">' . settings_t('settings_config_ldap_filter') . '</label><input id="cfg_ldap_filter" name="ldap_filter" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_filter']) . '"></div>';
+        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_bind" value="1"' . (configToBool($ldapValues['ldap_bind'] ?? false) ? ' checked' : '') . '> ' . settings_t('settings_config_ldap_bind_use') . '</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_bind_user">' . settings_t('settings_config_ldap_bind_user') . '</label><input id="cfg_ldap_bind_user" name="ldap_bind_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$ldapValues['ldap_bind_user']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_ldap_bind_password">' . settings_t('settings_config_ldap_bind_password') . '</label><input id="cfg_ldap_bind_password" name="ldap_bind_password" type="password" class="w-full py-2 px-3" placeholder="' . settings_t('settings_config_keep_unchanged') . '"></div>';
+        echo '<div class="md:col-span-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="ldap_trust" value="1"' . (configToBool($ldapValues['ldap_trust'] ?? false) ? ' checked' : '') . '> ' . settings_t('settings_config_ldap_trust_enable') . '</label></div>';
         echo '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
-        echo '<button type="submit" formaction="?set=config_ldap_test" class="bg-amber-600 hover:bg-amber-700 text-white">LDAP testen</button>';
+        echo '<button type="submit" formaction="?set=config_ldap_test" class="bg-amber-600 hover:bg-amber-700 text-white">' . settings_t('settings_config_test_ldap') . '</button>';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';
         echo '</form>';
         echo '</section>';
 
         echo '<section id="cfg-mail">';
-        echo '<div class="text-xl font-bold pb-1">Mail</div>';
-        echo '<p class="text-sm text-gray-500 pb-4">Leeres Passwortfeld bedeutet: bestehendes Mail Passwort beibehalten.</p>';
+        echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_mail_title') . '</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_mail_desc') . '</p>';
         echo $renderFeedback($cfgFeedback, 'mail');
         echo '<form action="?set=config_mail_save" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
-        echo '<div><label class="block mb-2" for="cfg_mail_host">Mail Host</label><input id="cfg_mail_host" name="mail_host" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_host']) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_mail_port">Mail Port</label><input id="cfg_mail_port" name="mail_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_port']) . '" min="1" max="65535"></div>';
-        echo '<div><label class="block mb-2" for="cfg_mail_user">Mail User</label><input id="cfg_mail_user" name="mail_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_user']) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_mail_password">Mail Password</label><input id="cfg_mail_password" name="mail_password" type="password" class="w-full py-2 px-3" placeholder="(unveraendert lassen)"></div>';
-        echo '<div><label class="inline-flex items-center gap-2"><input type="checkbox" name="mail_smtpauth" value="1"' . (configToBool($mailValues['mail_smtpauth'] ?? false) ? ' checked' : '') . '> SMTP Auth</label></div>';
-        echo '<div><label class="block mb-2" for="cfg_mail_smtpsecure">SMTP Secure</label><select id="cfg_mail_smtpsecure" name="mail_smtpsecure" class="w-full py-2 px-3"><option value=""' . ((string)$mailValues['mail_smtpsecure'] === '' ? ' selected' : '') . '>None</option><option value="tls"' . ((string)$mailValues['mail_smtpsecure'] === 'tls' ? ' selected' : '') . '>TLS</option><option value="ssl"' . ((string)$mailValues['mail_smtpsecure'] === 'ssl' ? ' selected' : '') . '>SSL</option></select></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_host">' . settings_t('settings_config_mail_host') . '</label><input id="cfg_mail_host" name="mail_host" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_host']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_port">' . settings_t('settings_config_mail_port') . '</label><input id="cfg_mail_port" name="mail_port" type="number" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_port']) . '" min="1" max="65535"></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_user">' . settings_t('settings_config_mail_user') . '</label><input id="cfg_mail_user" name="mail_user" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$mailValues['mail_user']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_password">' . settings_t('settings_config_mail_password') . '</label><input id="cfg_mail_password" name="mail_password" type="password" class="w-full py-2 px-3" placeholder="' . settings_t('settings_config_keep_unchanged') . '"></div>';
+        echo '<div><label class="inline-flex items-center gap-2"><input type="checkbox" name="mail_smtpauth" value="1"' . (configToBool($mailValues['mail_smtpauth'] ?? false) ? ' checked' : '') . '> ' . settings_t('settings_config_mail_smtp_auth') . '</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_mail_smtpsecure">' . settings_t('settings_config_mail_smtp_secure') . '</label><select id="cfg_mail_smtpsecure" name="mail_smtpsecure" class="w-full py-2 px-3"><option value=""' . ((string)$mailValues['mail_smtpsecure'] === '' ? ' selected' : '') . '>' . settings_t('settings_config_mail_none') . '</option><option value="tls"' . ((string)$mailValues['mail_smtpsecure'] === 'tls' ? ' selected' : '') . '>TLS</option><option value="ssl"' . ((string)$mailValues['mail_smtpsecure'] === 'ssl' ? ' selected' : '') . '>SSL</option></select></div>';
         echo '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
-        echo '<button type="submit" formaction="?set=config_mail_test" class="bg-amber-600 hover:bg-amber-700 text-white">Mail testen</button>';
+        echo '<button type="submit" formaction="?set=config_mail_test" class="bg-amber-600 hover:bg-amber-700 text-white">' . settings_t('settings_config_test_mail') . '</button>';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';
         echo '</form>';
         echo '</section>';
 
         echo '<section id="cfg-scheduler">';
-        echo '<div class="text-xl font-bold pb-1">Scheduler</div>';
-        echo '<p class="text-sm text-gray-500 pb-4">Steuert, welche Aufgaben der periodische Scheduler ausfuehren darf. Der Cronjob selbst wird durch den Installer eingerichtet.</p>';
+        echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_scheduler_title') . '</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_scheduler_desc') . '</p>';
         echo $renderFeedback($cfgFeedback, 'scheduler');
         echo '<form action="?set=config_scheduler_save" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">';
-        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_queue_enabled" value="1"' . (configToBool($schedulerValues['queue_enabled'] ?? false) ? ' checked' : '') . '> <span>Queue-Automation ausfuehren</span></label>';
-        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_notifications_enabled" value="1"' . (configToBool($schedulerValues['notifications_enabled'] ?? false) ? ' checked' : '') . '> <span>Benachrichtigungen verarbeiten</span></label>';
-        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_scan_enabled" value="1"' . (configToBool($schedulerValues['snmp_scan_enabled'] ?? false) ? ' checked' : '') . '> <span>SNMP-Scan fuer alle Switches</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_queue_enabled" value="1"' . (configToBool($schedulerValues['queue_enabled'] ?? false) ? ' checked' : '') . '> <span>' . settings_t('settings_config_scheduler_queue') . '</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_notifications_enabled" value="1"' . (configToBool($schedulerValues['notifications_enabled'] ?? false) ? ' checked' : '') . '> <span>' . settings_t('settings_config_scheduler_notifications') . '</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_scan_enabled" value="1"' . (configToBool($schedulerValues['snmp_scan_enabled'] ?? false) ? ' checked' : '') . '> <span>' . settings_t('settings_config_scheduler_snmp_scan') . '</span></label>';
         echo '</div>';
         echo '<div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">';
-        echo '<div><label class="block mb-2" for="cfg_scheduler_snmp_interval">SNMP-Scan Intervall (Minuten)</label><input id="cfg_scheduler_snmp_interval" name="scheduler_snmp_scan_interval_minutes" type="number" min="5" step="5" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$schedulerValues['snmp_scan_interval_minutes']) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_scheduler_snmp_inactivity">Inaktivitaetsgrenze Ports (Tage)</label><input id="cfg_scheduler_snmp_inactivity" name="scheduler_snmp_inactivity_days" type="number" min="1" step="1" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$schedulerValues['snmp_inactivity_days']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_scheduler_snmp_interval">' . settings_t('settings_config_scheduler_snmp_interval') . '</label><input id="cfg_scheduler_snmp_interval" name="scheduler_snmp_scan_interval_minutes" type="number" min="5" step="5" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$schedulerValues['snmp_scan_interval_minutes']) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_scheduler_snmp_inactivity">' . settings_t('settings_config_scheduler_inactivity_days') . '</label><input id="cfg_scheduler_snmp_inactivity" name="scheduler_snmp_inactivity_days" type="number" min="1" step="1" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$schedulerValues['snmp_inactivity_days']) . '"></div>';
         echo '</div>';
         echo '<div class="mt-4">';
-        echo '<div class="mb-2 text-sm font-medium text-slate-700">OID-Module</div>';
+        echo '<div class="mb-2 text-sm font-medium text-slate-700">' . settings_t('settings_config_scheduler_oid_modules') . '</div>';
         echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3">';
         echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_lldp" value="1"' . (configToBool($schedulerValues['snmp_oid_lldp'] ?? false) ? ' checked' : '') . '> <span>LLDP</span></label>';
         echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_arp" value="1"' . (configToBool($schedulerValues['snmp_oid_arp'] ?? false) ? ' checked' : '') . '> <span>ARP / Node-IPs</span></label>';
         echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_poe" value="1"' . (configToBool($schedulerValues['snmp_oid_poe'] ?? false) ? ' checked' : '') . '> <span>PoE</span></label>';
-        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_entity" value="1"' . (configToBool($schedulerValues['snmp_oid_entity'] ?? false) ? ' checked' : '') . '> <span>Entity-Inventar</span></label>';
+        echo '<label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" name="scheduler_snmp_oid_entity" value="1"' . (configToBool($schedulerValues['snmp_oid_entity'] ?? false) ? ' checked' : '') . '> <span>' . settings_t('settings_config_scheduler_entity_inventory') . '</span></label>';
         echo '</div>';
         echo '</div>';
         echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">';
-        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter Lauf</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_run'] ?? '-')) . '</div></div>';
-        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter Erfolg</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_success'] ?? '-')) . '</div></div>';
-        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Letzter SNMP-Scan</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_snmp_scan_run'] ?? '-')) . '</div></div>';
-        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">Processed / OK / Fehler</div><div class="text-sm font-semibold">' . escapeSettingValue((string)((int)($schedulerStatus['processed'] ?? 0) . ' / ' . (int)($schedulerStatus['succeeded'] ?? 0) . ' / ' . (int)($schedulerStatus['failed'] ?? 0))) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_scheduler_last_run') . '</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_run'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_scheduler_last_success') . '</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_success'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_scheduler_last_snmp_scan') . '</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($schedulerStatus['last_snmp_scan_run'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-xl border border-slate-200 p-3"><div class="text-xs text-gray-500">' . settings_t('settings_config_scheduler_processed_ok_failed') . '</div><div class="text-sm font-semibold">' . escapeSettingValue((string)((int)($schedulerStatus['processed'] ?? 0) . ' / ' . (int)($schedulerStatus['succeeded'] ?? 0) . ' / ' . (int)($schedulerStatus['failed'] ?? 0))) . '</div></div>';
         echo '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Letzte Meldung</div>';
-        echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['message'] ?? 'Noch keine Scheduler-Ausfuehrung protokolliert.')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Letzte SNMP-Meldung</div>';
-        echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['last_snmp_scan_message'] ?? 'Noch kein separater SNMP-Scan protokolliert.')) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_scheduler_last_message') . '</div>';
+        echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['message'] ?? settings_t('settings_config_scheduler_no_run'))) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_scheduler_last_snmp_message') . '</div>';
+        echo '<div class="font-medium whitespace-pre-wrap">' . escapeSettingValue((string)($schedulerStatus['last_snmp_scan_message'] ?? settings_t('settings_config_scheduler_no_snmp_run'))) . '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
         echo '</div>';
@@ -5570,70 +5586,70 @@ switch ($site) {
 
         echo '<div class="cfg-section-updater' . ($activeConfigTab !== 'updater' ? ' hidden' : '') . '">';
         echo '<section id="cfg-updater">';
-        echo '<div class="text-xl font-bold pb-1">System Updater</div>';
-        echo '<p class="text-sm text-gray-500 pb-4">Zeigt den aktuellen Git-Stand und prueft, ob im Tracking-Branch neuere Commits verfuegbar sind.</p>';
+        echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_updater_title') . '</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_updater_desc') . '</p>';
         echo $renderFeedback($cfgFeedback, 'updater');
         echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
         echo '<div class="rounded-xl border border-slate-200 p-4">';
-        echo '<div class="text-sm text-gray-500">Repository</div>';
-        echo '<div class="text-base font-semibold">' . escapeSettingValue((string)($updaterValues['repo_available'] ? 'Git erkannt' : 'Kein Git-Repository')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Pfad</div>';
+        echo '<div class="text-sm text-gray-500">' . settings_t('settings_config_repository') . '</div>';
+        echo '<div class="text-base font-semibold">' . escapeSettingValue((string)($updaterValues['repo_available'] ? settings_t('settings_config_repo_detected') : settings_t('settings_config_repo_missing'))) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_path') . '</div>';
         echo '<div class="text-sm font-mono break-all">' . escapeSettingValue((string)($updaterValues['repo_path'] ?? '')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Branch</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_branch') . '</div>';
         echo '<div class="text-sm font-medium">' . escapeSettingValue((string)($updaterValues['branch'] ?? '-')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Upstream</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_upstream') . '</div>';
         echo '<div class="text-sm font-medium">' . escapeSettingValue((string)($updaterValues['upstream'] ?? '-')) . '</div>';
         echo '</div>';
         echo '<div class="rounded-xl border border-slate-200 p-4">';
-        echo '<div class="text-sm text-gray-500">Aktueller Versionsstand</div>';
+        echo '<div class="text-sm text-gray-500">' . settings_t('settings_config_current_version') . '</div>';
         echo '<div class="text-base font-semibold">' . escapeSettingValue((string)($updaterValues['current_version'] ?? '-')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Lokaler Commit</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_local_commit') . '</div>';
         echo '<div class="text-sm font-mono">' . escapeSettingValue((string)($updaterValues['current_commit'] ?? '-')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Remote-Version</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_remote_version') . '</div>';
         echo '<div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterValues['remote_version'] ?? '-')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Remote-Commit</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_remote_commit') . '</div>';
         echo '<div class="text-sm font-mono">' . escapeSettingValue((string)($updaterValues['remote_commit'] ?? '-')) . '</div>';
         echo '</div>';
         echo '</div>';
 
         echo '<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Update-Status</div><div class="text-lg font-semibold">' . escapeSettingValue(((int)($updaterValues['behind_count'] ?? 0) > 0) ? 'Update verfuegbar' : 'Aktuell') . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Behind</div><div class="text-lg font-semibold">' . escapeSettingValue((string)($updaterValues['behind_count'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Ahead</div><div class="text-lg font-semibold">' . escapeSettingValue((string)($updaterValues['ahead_count'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Worktree</div><div class="text-lg font-semibold">' . escapeSettingValue(!empty($updaterValues['working_tree_dirty']) ? 'Dirty' : 'Clean') . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_update_status') . '</div><div class="text-lg font-semibold">' . escapeSettingValue(((int)($updaterValues['behind_count'] ?? 0) > 0) ? settings_t('settings_config_update_available') : settings_t('settings_config_current')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_behind') . '</div><div class="text-lg font-semibold">' . escapeSettingValue((string)($updaterValues['behind_count'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_ahead') . '</div><div class="text-lg font-semibold">' . escapeSettingValue((string)($updaterValues['ahead_count'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_worktree') . '</div><div class="text-lg font-semibold">' . escapeSettingValue(!empty($updaterValues['working_tree_dirty']) ? settings_t('settings_config_dirty') : settings_t('settings_config_clean')) . '</div></div>';
         echo '</div>';
 
         echo '<div class="mt-4 rounded-xl border border-slate-200 p-4">';
-        echo '<div class="text-sm text-gray-500">Letzte Pruefung</div>';
+        echo '<div class="text-sm text-gray-500">' . settings_t('settings_config_last_check') . '</div>';
         echo '<div class="font-medium">' . escapeSettingValue((string)($updaterValues['last_checked_at'] ?? '-')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Ergebnis</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_result') . '</div>';
         echo '<div class="font-medium">' . escapeSettingValue((string)($updaterValues['message'] ?? 'Noch keine Update-Pruefung ausgefuehrt.')) . '</div>';
         echo '<div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Letzter Laufstatus</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterStateValues['status'] ?? 'unbekannt')) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Letzte Aktion</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterStateValues['operation'] ?? 'update-check')) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Gestartet</div><div class="text-sm font-medium">' . escapeSettingValue((string)($updaterStateValues['started_at'] ?? '-')) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">Beendet</div><div class="text-sm font-medium">' . escapeSettingValue((string)($updaterStateValues['finished_at'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_last_run_status') . '</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterStateValues['status'] ?? 'unbekannt')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_last_action') . '</div><div class="text-sm font-semibold">' . escapeSettingValue((string)($updaterStateValues['operation'] ?? 'update-check')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_started') . '</div><div class="text-sm font-medium">' . escapeSettingValue((string)($updaterStateValues['started_at'] ?? '-')) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500 text-sm">' . settings_t('settings_config_finished') . '</div><div class="text-sm font-medium">' . escapeSettingValue((string)($updaterStateValues['finished_at'] ?? '-')) . '</div></div>';
         echo '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Letzter Updater-Status</div>';
-        echo '<div class="font-medium">' . escapeSettingValue((string)($updaterStateValues['message'] ?? 'Es liegt noch kein gespeicherter Updater-Status vor.')) . '</div>';
-        echo '<div class="mt-3 text-sm text-gray-500">Rollback-Stand</div>';
-        echo '<div class="font-medium">' . escapeSettingValue(!empty($rollbackCandidate['available']) ? ((string)($rollbackCandidate['version'] ?? $rollbackCandidate['commit'] ?? '-')) : 'Kein gespeicherter Ruecksetzpunkt') . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_last_updater_status') . '</div>';
+        echo '<div class="font-medium">' . escapeSettingValue((string)($updaterStateValues['message'] ?? settings_t('settings_config_no_updater_status'))) . '</div>';
+        echo '<div class="mt-3 text-sm text-gray-500">' . settings_t('settings_config_rollback_state') . '</div>';
+        echo '<div class="font-medium">' . escapeSettingValue(!empty($rollbackCandidate['available']) ? ((string)($rollbackCandidate['version'] ?? $rollbackCandidate['commit'] ?? '-')) : settings_t('settings_config_no_rollback_point')) . '</div>';
         echo '<div class="text-xs text-gray-500">Commit: ' . escapeSettingValue((string)($rollbackCandidate['commit'] ?? '-')) . ' | Gespeichert: ' . escapeSettingValue((string)($rollbackCandidate['recorded_at'] ?? '-')) . '</div>';
         echo '<div class="pt-4 flex flex-wrap gap-3">';
         echo '<form action="?set=config_update_check" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Nach Updates suchen</button>';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">' . settings_t('settings_config_search_updates') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_update_execute" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white"' . ((!empty($updaterValues['working_tree_dirty']) || empty($updaterValues['repo_available']) || empty($updaterValues['upstream']) || (int)($updaterValues['behind_count'] ?? 0) < 1) ? ' disabled title="Vor dem Update bitte erst den Git-Status pruefen."' : '') . '>Update ausfuehren</button>';
+        echo '<button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white"' . ((!empty($updaterValues['working_tree_dirty']) || empty($updaterValues['repo_available']) || empty($updaterValues['upstream']) || (int)($updaterValues['behind_count'] ?? 0) < 1) ? ' disabled title="Vor dem Update bitte erst den Git-Status pruefen."' : '') . '>' . settings_t('settings_config_execute_update') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_update_rollback" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white"' . ((!empty($updaterValues['working_tree_dirty']) || empty($rollbackCandidate['available']) || empty($rollbackCandidate['commit'])) ? ' disabled title="Es ist kein gespeicherter Ruecksetzpunkt verfuegbar oder der Worktree ist nicht sauber."' : '') . '>Letzten Stand wiederherstellen</button>';
+        echo '<button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white"' . ((!empty($updaterValues['working_tree_dirty']) || empty($rollbackCandidate['available']) || empty($rollbackCandidate['commit'])) ? ' disabled title="Es ist kein gespeicherter Ruecksetzpunkt verfuegbar oder der Worktree ist nicht sauber."' : '') . '>' . settings_t('settings_config_restore_last_state') . '</button>';
         echo '</form>';
         echo '</div>';
-        echo '<div class="mt-3 text-xs text-gray-500">Das Update aktiviert kurzzeitig einen Wartungsmodus, blockiert jetzt auch API-Zugriffe, setzt den lokalen Branch auf den konfigurierten Tracking-Branch zurueck und fuehrt anschliessend die Datenbankmigration aus. Bei einem Fehler wird der Code automatisch auf den vorherigen Commit zurueckgesetzt. Der manuelle Rollback stellt spaeter denselben gespeicherten Code-Stand wieder her. Datenbankaenderungen werden dabei nicht automatisch rueckgaengig gemacht.</div>';
+        echo '<div class="mt-3 text-xs text-gray-500">' . settings_t('settings_config_updater_note') . '</div>';
         echo '</div>';
         echo '</section>';
         echo '</div>'; // end cfg-section-updater
@@ -5654,26 +5670,26 @@ switch ($site) {
         }
 
         echo '<section id="cfg-notification">';
-        echo '<div class="text-xl font-bold pb-1">Benachrichtigungen</div>';
-        echo '<p class="text-sm text-gray-500 pb-4">Zeitzone und Uhrzeit f&uuml;r den t&auml;glichen Benachrichtigungsversand.</p>';
+        echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_admin_notifications_title') . '</div>';
+        echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_admin_notifications_desc') . '</p>';
         echo $renderFeedback($cfgFeedback, 'notification');
         echo '<form action="?set=config_notification_save" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
-        echo '<div><label class="block mb-2" for="cfg_notification_daily_time">Versandzeit (HH:MM)</label><input id="cfg_notification_daily_time" name="notification_daily_time" type="time" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTime) . '"></div>';
-        echo '<div><label class="block mb-2" for="cfg_notification_timezone">Zeitzone</label><select id="cfg_notification_timezone" name="notification_timezone" class="w-full py-2 px-3">';
+        echo '<div><label class="block mb-2" for="cfg_notification_daily_time">' . settings_t('settings_config_send_time') . '</label><input id="cfg_notification_daily_time" name="notification_daily_time" type="time" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTime) . '"></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_timezone">' . settings_t('settings_config_timezone') . '</label><select id="cfg_notification_timezone" name="notification_timezone" class="w-full py-2 px-3">';
         foreach ($allTimezones as $tz) {
             $sel = ($tz === $currentTz) ? ' selected' : '';
             echo '<option value="' . escapeSettingValue($tz) . '"' . $sel . '>' . escapeSettingValue($tz) . '</option>';
         }
         echo '</select></div>';
-        echo '<div><label class="block mb-2" for="cfg_notification_retention">Queue-Retention (Tage)</label><input id="cfg_notification_retention" name="notification_queue_retention_days" type="number" min="1" max="365" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$currentRetentionDays) . '"></div>';
-        echo '<div class="text-sm text-gray-500 self-end">Sent/Failed Eintraege aelter als die Retention werden beim Scheduler-Lauf bereinigt.</div>';
-        echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_slack_enabled" value="1"' . ($currentSlackEnabled ? ' checked' : '') . '> Slack aktivieren</label></div>';
-        echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_notification_slack_webhook_url">Slack Webhook URL</label><input id="cfg_notification_slack_webhook_url" name="notification_slack_webhook_url" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentSlackWebhook) . '" placeholder="https://hooks.slack.com/services/..." ></div>';
-        echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_telegram_enabled" value="1"' . ($currentTelegramEnabled ? ' checked' : '') . '> Telegram aktivieren</label></div>';
-        echo '<div><label class="block mb-2" for="cfg_notification_telegram_bot_token">Telegram Bot Token</label><input id="cfg_notification_telegram_bot_token" name="notification_telegram_bot_token" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTelegramBotToken) . '" placeholder="123456:ABC..." ></div>';
-        echo '<div><label class="block mb-2" for="cfg_notification_telegram_chat_id">Telegram Chat ID</label><input id="cfg_notification_telegram_chat_id" name="notification_telegram_chat_id" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTelegramChatId) . '" placeholder="-100... oder 123..." ></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_retention">' . settings_t('settings_config_queue_retention_days') . '</label><input id="cfg_notification_retention" name="notification_queue_retention_days" type="number" min="1" max="365" class="w-full py-2 px-3" value="' . escapeSettingValue((string)$currentRetentionDays) . '"></div>';
+        echo '<div class="text-sm text-gray-500 self-end">' . settings_t('settings_config_retention_hint') . '</div>';
+        echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_slack_enabled" value="1"' . ($currentSlackEnabled ? ' checked' : '') . '> ' . settings_t('settings_config_enable_slack') . '</label></div>';
+        echo '<div class="md:col-span-2"><label class="block mb-2" for="cfg_notification_slack_webhook_url">' . settings_t('settings_config_slack_webhook_url') . '</label><input id="cfg_notification_slack_webhook_url" name="notification_slack_webhook_url" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentSlackWebhook) . '" placeholder="https://hooks.slack.com/services/..." ></div>';
+        echo '<div class="md:col-span-2 mt-2"><label class="inline-flex items-center gap-2"><input type="checkbox" name="notification_telegram_enabled" value="1"' . ($currentTelegramEnabled ? ' checked' : '') . '> ' . settings_t('settings_config_enable_telegram') . '</label></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_telegram_bot_token">' . settings_t('settings_config_telegram_bot_token') . '</label><input id="cfg_notification_telegram_bot_token" name="notification_telegram_bot_token" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTelegramBotToken) . '" placeholder="123456:ABC..." ></div>';
+        echo '<div><label class="block mb-2" for="cfg_notification_telegram_chat_id">' . settings_t('settings_config_telegram_chat_id') . '</label><input id="cfg_notification_telegram_chat_id" name="notification_telegram_chat_id" type="text" class="w-full py-2 px-3" value="' . escapeSettingValue($currentTelegramChatId) . '" placeholder="-100... oder 123..." ></div>';
         echo '</div>';
         echo '<div class="pt-4">';
         echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
@@ -5681,12 +5697,12 @@ switch ($site) {
         echo '</form>';
 
         echo '<div class="mt-5 rounded-xl border border-slate-200 p-4">';
-        echo '<div class="text-lg font-semibold pb-3">Admin-Uebersicht Queue</div>';
+        echo '<div class="text-lg font-semibold pb-3">' . settings_t('settings_config_admin_queue_overview') . '</div>';
         echo '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Total</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['total'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Pending</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['pending'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Sent</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['sent'] ?? 0)) . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Failed</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['failed'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_total') . '</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['total'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_pending') . '</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['pending'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_sent') . '</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['sent'] ?? 0)) . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_failed') . '</div><div class="text-xl font-semibold">' . escapeSettingValue((string)($notificationOverview['counts']['failed'] ?? 0)) . '</div></div>';
         echo '</div>';
 
         $lastSentAt = escapeSettingValue((string)($notificationOverview['last_sent_at'] ?? ''));
@@ -5702,17 +5718,17 @@ switch ($site) {
             $lastDailyDate = '-';
         }
         echo '<div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 text-sm">';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Letzter Send</div><div class="font-medium">' . $lastSentAt . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Letzter Daily-Run</div><div class="font-medium">' . $lastDailyAt . '</div></div>';
-        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">Daily-Datum</div><div class="font-medium">' . $lastDailyDate . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_last_send') . '</div><div class="font-medium">' . $lastSentAt . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_last_daily_run') . '</div><div class="font-medium">' . $lastDailyAt . '</div></div>';
+        echo '<div class="rounded-lg border border-slate-200 p-3"><div class="text-gray-500">' . settings_t('settings_config_daily_date') . '</div><div class="font-medium">' . $lastDailyDate . '</div></div>';
         echo '</div>';
 
         $byChannel = is_array($notificationOverview['by_channel'] ?? null) ? $notificationOverview['by_channel'] : [];
         if (!empty($byChannel)) {
             echo '<div class="mt-4">';
-            echo '<div class="text-sm font-semibold pb-2">Versand nach Kanal</div>';
+            echo '<div class="text-sm font-semibold pb-2">' . settings_t('settings_config_delivery_by_channel') . '</div>';
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
-            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Kanal</th><th class="p-2">Total</th><th class="p-2">Pending</th><th class="p-2">Sent</th><th class="p-2">Failed</th></tr></thead><tbody>';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Kanal</th><th class="p-2">' . settings_t('settings_config_total') . '</th><th class="p-2">' . settings_t('settings_config_pending') . '</th><th class="p-2">' . settings_t('settings_config_sent') . '</th><th class="p-2">' . settings_t('settings_config_failed') . '</th></tr></thead><tbody>';
             foreach ($byChannel as $channelName => $row) {
                 echo '<tr class="settings-data-row"><td class="p-2 border-b">' . escapeSettingValue((string)$channelName) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['total'] ?? 0)) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['pending'] ?? 0)) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['sent'] ?? 0)) . '</td><td class="p-2 border-b">' . escapeSettingValue((string)($row['failed'] ?? 0)) . '</td></tr>';
             }
@@ -5740,7 +5756,7 @@ switch ($site) {
         $errorsByChannel = is_array($notificationOverview['errors_by_channel'] ?? null) ? $notificationOverview['errors_by_channel'] : [];
         if (!empty($errorsByChannel)) {
             echo '<div class="mt-4">';
-            echo '<div class="text-sm font-semibold pb-2">Fehlerursachen pro Kanal</div>';
+            echo '<div class="text-sm font-semibold pb-2">' . settings_t('settings_config_error_causes_by_channel') . '</div>';
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
             echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Kanal</th><th class="p-2">Fehler</th><th class="p-2">Anzahl</th></tr></thead><tbody>';
             foreach ($errorsByChannel as $channelName => $errors) {
@@ -5753,11 +5769,11 @@ switch ($site) {
         }
 
         echo '<div class="mt-4">';
-        echo '<div class="text-sm font-semibold pb-2">Letzte Sends</div>';
+        echo '<div class="text-sm font-semibold pb-2">' . settings_t('settings_config_last_sends') . '</div>';
         $recentSent = is_array($notificationOverview['recent_sent'] ?? null) ? $notificationOverview['recent_sent'] : [];
         if (!empty($recentSent)) {
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
-            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit (UTC)</th><th class="p-2">Event</th><th class="p-2">Titel</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Versuche</th></tr></thead><tbody>';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">' . settings_t('settings_config_time_utc') . '</th><th class="p-2">Event</th><th class="p-2">Titel</th><th class="p-2">Kanal</th><th class="p-2">' . settings_t('settings_config_recipient') . '</th><th class="p-2">' . settings_t('settings_config_attempts') . '</th></tr></thead><tbody>';
             foreach ($recentSent as $entry) {
                 $sentAt = escapeSettingValue((string)($entry['sent_at'] ?? '-'));
                 $eventType = escapeSettingValue((string)($entry['event_type'] ?? '-'));
@@ -5774,16 +5790,16 @@ switch ($site) {
             }
             echo '</tbody></table></div>';
         } else {
-            echo '<div class="text-sm text-gray-500">Noch keine versendeten Benachrichtigungen vorhanden.</div>';
+            echo '<div class="text-sm text-gray-500">' . settings_t('settings_config_no_sent_notifications') . '</div>';
         }
         echo '</div>';
 
         echo '<div class="mt-4">';
-        echo '<div class="text-sm font-semibold pb-2">Ausstehende Retries</div>';
+        echo '<div class="text-sm font-semibold pb-2">' . settings_t('settings_config_pending_retries') . '</div>';
         $recentRetryPending = is_array($notificationOverview['recent_retry_pending'] ?? null) ? $notificationOverview['recent_retry_pending'] : [];
         if (!empty($recentRetryPending)) {
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
-            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Naechster Versuch</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Letzter Fehler</th><th class="p-2">Versuche</th><th class="p-2">Aktion</th></tr></thead><tbody>';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">' . settings_t('settings_config_next_attempt') . '</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">' . settings_t('settings_config_recipient') . '</th><th class="p-2">Letzter Fehler</th><th class="p-2">' . settings_t('settings_config_attempts') . '</th><th class="p-2">' . settings_t('actions') . '</th></tr></thead><tbody>';
             foreach ($recentRetryPending as $entry) {
                 $entryId = escapeSettingValue((string)($entry['id'] ?? ''));
                 $nextAttemptAt = escapeSettingValue((string)($entry['next_attempt_at'] ?? $entry['updated_at'] ?? '-'));
@@ -5799,22 +5815,22 @@ switch ($site) {
                 $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
                 $deleteAction = '-';
                 if ($entryId !== '') {
-                    $deleteAction = '<form action="?set=config_notification_delete_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white">Loeschen</button></form>';
+                    $deleteAction = '<form action="?set=config_notification_delete_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white">' . settings_t('delete') . '</button></form>';
                 }
                 echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $nextAttemptAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td><td class="p-2 border-b">' . $deleteAction . '</td></tr>';
             }
             echo '</tbody></table></div>';
         } else {
-            echo '<div class="text-sm text-gray-500">Keine pending Retries mit Fehlerhistorie vorhanden.</div>';
+            echo '<div class="text-sm text-gray-500">' . settings_t('settings_config_no_pending_retries') . '</div>';
         }
         echo '</div>';
 
         echo '<div class="mt-4">';
-        echo '<div class="text-sm font-semibold pb-2">Letzte Fehler</div>';
+        echo '<div class="text-sm font-semibold pb-2">' . settings_t('settings_config_latest_errors') . '</div>';
         $recentFailed = is_array($notificationOverview['recent_failed'] ?? null) ? $notificationOverview['recent_failed'] : [];
         if (!empty($recentFailed)) {
             echo '<div class="settings-table-wrap max-h-64 overflow-y-auto"><table class="w-full text-sm text-left">';
-            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">Empfaenger</th><th class="p-2">Fehler</th><th class="p-2">Versuche</th><th class="p-2">Aktion</th></tr></thead><tbody>';
+            echo '<thead class="bg-gray-100 sticky top-0 z-1"><tr class="border-b border-slate-200 text-gray-800"><th class="p-2">Zeit</th><th class="p-2">Event</th><th class="p-2">Kanal</th><th class="p-2">' . settings_t('settings_config_recipient') . '</th><th class="p-2">Fehler</th><th class="p-2">' . settings_t('settings_config_attempts') . '</th><th class="p-2">' . settings_t('actions') . '</th></tr></thead><tbody>';
             foreach ($recentFailed as $entry) {
                 $entryId = escapeSettingValue((string)($entry['id'] ?? ''));
                 $updatedAt = escapeSettingValue((string)($entry['updated_at'] ?? '-'));
@@ -5830,45 +5846,45 @@ switch ($site) {
                 $attempts = escapeSettingValue((string)($entry['attempts'] ?? 0));
                 $retryAction = '-';
                 if ($entryId !== '') {
-                    $retryAction = '<div class="flex gap-2"><form action="?set=config_notification_retry_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Retry</button></form><form action="?set=config_notification_delete_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white">Loeschen</button></form></div>';
+                    $retryAction = '<div class="flex gap-2"><form action="?set=config_notification_retry_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Retry</button></form><form action="?set=config_notification_delete_entry" method="post" class="m-0"><input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '"><input type="hidden" name="notification_queue_entry_id" value="' . $entryId . '"><button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white">' . settings_t('delete') . '</button></form></div>';
                 }
                 echo '<tr class="settings-data-row"><td class="p-2 border-b">' . $updatedAt . '</td><td class="p-2 border-b">' . $eventType . '</td><td class="p-2 border-b">' . $channel . '</td><td class="p-2 border-b">' . $recipient . '</td><td class="p-2 border-b">' . $error . '</td><td class="p-2 border-b">' . $attempts . '</td><td class="p-2 border-b">' . $retryAction . '</td></tr>';
             }
             echo '</tbody></table></div>';
         } else {
-            echo '<div class="text-sm text-gray-500">Keine fehlgeschlagenen Benachrichtigungen vorhanden.</div>';
+            echo '<div class="text-sm text-gray-500">' . settings_t('settings_config_no_failed_notifications') . '</div>';
         }
         echo '</div>';
 
         echo '<div class="mt-5 pt-4 border-t border-slate-200">';
-        echo '<div class="text-sm font-semibold pb-2">Admin-Aktionen</div>';
+        echo '<div class="text-sm font-semibold pb-2">' . settings_t('settings_config_admin_actions') . '</div>';
         echo '<div class="flex flex-wrap gap-3">';
         echo '<form action="?set=config_notification_enqueue_test" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">Test-Event enqueuen</button>';
+        echo '<button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white">' . settings_t('settings_config_enqueue_test_event') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_process_queue" method="post" class="m-0 flex items-center gap-2">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<input name="notification_process_limit" type="number" min="1" max="500" value="100" class="w-24 py-2 px-3" title="Maximal zu verarbeitende Queue-Eintraege">';
-        echo '<label class="inline-flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="notification_process_ignore_schedule" value="1"> Retry-Backoff ignorieren</label>';
-        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Queue jetzt verarbeiten</button>';
+        echo '<label class="inline-flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="notification_process_ignore_schedule" value="1"> ' . settings_t('settings_config_ignore_retry_backoff') . '</label>';
+        echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">' . settings_t('settings_config_process_queue_now') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_cleanup_queue" method="post" class="m-0 flex items-center gap-2">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
         echo '<input name="notification_queue_retention_days" type="number" min="0" max="365" value="' . escapeSettingValue((string)$currentRetentionDays) . '" class="w-24 py-2 px-3" title="Retention in Tagen (0 = sofort alle abgeschlossenen Eintraege entfernen)">';
-        echo '<button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white">Queue bereinigen</button>';
+        echo '<button type="submit" class="bg-slate-600 hover:bg-slate-700 text-white">' . settings_t('settings_config_cleanup_queue') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_delete_failed_entries" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-rose-700 hover:bg-rose-800 text-white">Alle Fehlgeschlagenen loeschen</button>';
+        echo '<button type="submit" class="bg-rose-700 hover:bg-rose-800 text-white">' . settings_t('settings_config_delete_all_failed') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_test_slack" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">Slack Test</button>';
+        echo '<button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white">' . settings_t('settings_config_slack_test') . '</button>';
         echo '</form>';
         echo '<form action="?set=config_notification_test_telegram" method="post" class="m-0">';
         echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
-        echo '<button type="submit" class="bg-cyan-600 hover:bg-cyan-700 text-white">Telegram Test</button>';
+        echo '<button type="submit" class="bg-cyan-600 hover:bg-cyan-700 text-white">' . settings_t('settings_config_telegram_test') . '</button>';
         echo '</form>';
         echo '</div>';
         echo '</div>';
@@ -5897,12 +5913,12 @@ switch ($site) {
         $results = $db_adapter->db_query($query);
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-4'>Accounts</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<div class='text-xl font-bold pb-4'>" . settings_t('settings_access_accounts') . "</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
             }
-            echo "<th class='p-2'>Actions</th></tr></thead><tbody>";
+            echo "<th class='p-2'>" . settings_t('actions') . "</th></tr></thead><tbody>";
             foreach ($results as $row) { 
                 $uuid = $row['uuid'];
                 $activation_code = $row['activation_code'];
@@ -5933,7 +5949,7 @@ switch ($site) {
                             <input type='hidden' name='uuid' value='$uuid'>
                             $button
                         </form>
-                        <button class='h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-700 text-white flex items-center justify-center' onclick="openEditPopup('$uuid')" title='Bearbeiten'>
+                        <button class='h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-700 text-white flex items-center justify-center' onclick="openEditPopup('$uuid')" title='" . settings_t('settings_access_edit_account') . "'>
                             <i data-lucide='pencil'></i>
                         </button>
                         <button class='h-10 w-10 rounded-full bg-yellow-400 hover:bg-yellow-600 text-white flex items-center justify-center' onclick="openDetailsPopup('$uuid')">
@@ -5954,13 +5970,13 @@ switch ($site) {
 
             echo "</tbody></table></div>";
         } else {
-            echo "No results found.";
+            echo settings_t('settings_access_no_results');
         }
 
         $results = $allRoleRows;
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-4'>Roles</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<div class='text-xl font-bold pb-4'>" . settings_t('settings_access_roles') . "</div><div class='settings-table-wrap max-h-96 overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
             foreach (array_keys($results[0]) as $header) {
                 echo "<th class='p-2'>{$header}</th>";
@@ -5975,7 +5991,7 @@ switch ($site) {
             }
             echo "</tbody></table></div>";
         } else {
-            echo "No results found.";
+            echo settings_t('settings_access_no_results');
         }
 
         $query = "SELECT access.uuid, access.role, role.caption AS role_caption, access.resource, access.access_right FROM access INNER JOIN role ON access.role = role.uuid ORDER BY role.caption, access.resource";
@@ -6012,15 +6028,15 @@ switch ($site) {
         });
 
         if ($results) {
-            echo "<div class='text-xl font-bold pb-4'>Access Rights</div><div class='settings-table-wrap max-h-[32rem] overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
+            echo "<div class='text-xl font-bold pb-4'>" . settings_t('settings_access_rights') . "</div><div class='settings-table-wrap max-h-[32rem] overflow-y-auto'><table class='w-full text-sm text-left'><thead class='bg-gray-100 sticky top-0 z-1'>";
             echo "<tr class='border-b border-slate-200 text-gray-800'>";
-            echo "<th class='p-2'>Role</th>";
+            echo "<th class='p-2'>" . settings_t('settings_access_roles') . "</th>";
             echo "<th class='p-2'>Resource</th>";
-            echo "<th class='p-2'>Read</th>";
-            echo "<th class='p-2'>Write</th>";
-            echo "<th class='p-2'>Execute</th>";
-            echo "<th class='p-2'>Wert</th>";
-            echo "<th class='p-2'>Action</th>";
+            echo "<th class='p-2'>" . settings_t('settings_access_read') . "</th>";
+            echo "<th class='p-2'>" . settings_t('settings_access_write') . "</th>";
+            echo "<th class='p-2'>" . settings_t('settings_access_execute') . "</th>";
+            echo "<th class='p-2'>" . settings_t('settings_access_value') . "</th>";
+            echo "<th class='p-2'>" . settings_t('actions') . "</th>";
             echo "</tr></thead><tbody>";
             foreach ($results as $row) {
                 $roleUuidEscaped = htmlspecialchars((string)$row['role'], ENT_QUOTES, 'UTF-8');
@@ -6043,14 +6059,14 @@ switch ($site) {
                 echo "<td class='p-2 border-b text-center'><input type='checkbox' name='access_execute' {$hasExecute}></td>";
                 echo "<td class='p-2 border-b font-mono text-gray-700'>{$accessRightValue}</td>";
                 echo "<td class='p-2 border-b'>";
-                echo "<button class='bg-blue-500 hover:bg-blue-700 text-white' type='submit'>Save</button>";
+                echo "<button class='bg-blue-500 hover:bg-blue-700 text-white' type='submit'>" . settings_t('save') . "</button>";
                 echo "</form>";
                 echo "</td>";
                 echo "</tr>";
             }
             echo "</tbody></table></div>";
         } else {
-            echo "No access rights found.";
+            echo settings_t('settings_access_no_rights');
         }
 
         echo <<<HTML
@@ -6058,7 +6074,7 @@ switch ($site) {
             <!-- Details Popup -->
             <div id="detailsPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden">
                 <div class="flex justify-between pb-6">
-                    <div class="text-xl font-bold">Details</div>
+                    <div class="text-xl font-bold">{$lang['details']}</div>
                     <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
                         <button type="button" onclick="closeDetailsPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
                     </div>
@@ -6067,7 +6083,7 @@ switch ($site) {
             </div>
             <div id="editAccountPopup" class="absolute top-0 left-0 h-full w-full p-4 bg-white rounded-lg z-2 hidden overflow-y-auto">
                 <div class="flex justify-between pb-6">
-                    <div class="text-xl font-bold">Account bearbeiten</div>
+                    <div class="text-xl font-bold">{$lang['settings_access_edit_account']}</div>
                     <div class="h-10 w-10 rounded-full bg-red-500 hover:bg-red-700 flex justify-center shadow-md">
                         <button type="button" onclick="closeEditPopup()" class="text-2xl text-white"><i data-lucide="x"></i></button>
                     </div>
@@ -6084,7 +6100,7 @@ switch ($site) {
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="edit_email" type="email" name="email" required>
                     </div>
                     <div class="pb-6">
-                        <label class="block mb-2 text-sm font-semibold" for="edit_role">Role</label>
+                        <label class="block mb-2 text-sm font-semibold" for="edit_role">{$lang['settings_access_roles']}</label>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="edit_role" name="role" required>
 HTML;
 
@@ -6098,8 +6114,8 @@ HTML;
                         </select>
                     </div>
                     <div class="flex justify-end gap-2">
-                        <button class="bg-gray-300 hover:bg-gray-400 text-gray-900 font-bold py-2 px-4 rounded-full" type="button" onclick="closeEditPopup()">Abbrechen</button>
-                        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full" type="submit">Speichern</button>
+                        <button class="bg-gray-300 hover:bg-gray-400 text-gray-900 font-bold py-2 px-4 rounded-full" type="button" onclick="closeEditPopup()">{$lang['cancel']}</button>
+                        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full" type="submit">{$lang['save']}</button>
                     </div>
                 </form>
             </div>
@@ -6108,6 +6124,7 @@ HTML;
                     ajaxGet('?get=details&uuid=' + uuid, function(response) {
                         let formatted = JSON.stringify(response, null, 2);
                         document.getElementById('detailsContent').innerHTML = '<pre>' + formatted + '</pre>';
+                    });
                 }
                 function openEditPopup(uuid) {
                     ajaxGet('?get=details&uuid=' + uuid, function(response) {
@@ -6182,8 +6199,8 @@ HTML;
             $decodedInventoryConfig['switches'] = [];
         }
         $switchInventoryJsonEscaped = htmlspecialchars($switchInventoryJson, ENT_QUOTES, 'UTF-8');
-        $passwordHint = !empty($automationSettings['ssh_password']) ? 'Gespeichert (leer lassen zum Beibehalten)' : 'Noch nicht gesetzt';
-        $privateKeyHint = !empty($automationSettings['ssh_private_key']) ? 'Gespeichert (leer lassen zum Beibehalten)' : 'Noch nicht gesetzt';
+        $passwordHint = !empty($automationSettings['ssh_password']) ? settings_t('settings_scripts_saved_keep') : settings_t('settings_scripts_not_set');
+        $privateKeyHint = !empty($automationSettings['ssh_private_key']) ? settings_t('settings_scripts_saved_keep') : settings_t('settings_scripts_not_set');
         $activeScriptsTab = getScriptsTabFromRequest();
 
         $dbTemplateOverrides = [];
@@ -6578,64 +6595,134 @@ HTML;
         if (!is_string($profileSnmpDefaultsJson)) {
             $profileSnmpDefaultsJson = '{}';
         }
+        $settingsI18nJson = json_encode($lang, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($settingsI18nJson)) {
+            $settingsI18nJson = '{}';
+        }
+
+        $scriptsTitle = escapeSettingValue(settings_t('settings_scripts_title'));
+        $scriptsDesc = settings_t('settings_scripts_desc');
+        $scriptsGlobalSshAuth = escapeSettingValue(settings_t('settings_scripts_global_ssh_auth'));
+        $scriptsSshHostDefault = escapeSettingValue(settings_t('settings_scripts_ssh_host_default'));
+        $scriptsSshPort = escapeSettingValue(settings_t('settings_scripts_ssh_port'));
+        $scriptsSshUsername = escapeSettingValue(settings_t('settings_scripts_ssh_username'));
+        $scriptsSshPassword = escapeSettingValue(settings_t('settings_scripts_ssh_password'));
+        $scriptsSshPrivateKey = escapeSettingValue(settings_t('settings_scripts_ssh_private_key'));
+        $scriptsPasswordAuth = escapeSettingValue(settings_t('settings_scripts_password_auth'));
+        $scriptsKeyAuth = escapeSettingValue(settings_t('settings_scripts_key_auth'));
+        $scriptsSaveCredentials = escapeSettingValue(settings_t('settings_scripts_save_credentials'));
+        $scriptsSwitchInventoryTitle = escapeSettingValue(settings_t('settings_scripts_switch_inventory_title'));
+        $scriptsScanAll = escapeSettingValue(settings_t('settings_scripts_scan_all'));
+        $scriptsName = escapeSettingValue(settings_t('settings_scripts_name'));
+        $scriptsMgmtIp = escapeSettingValue(settings_t('settings_scripts_mgmt_ip'));
+        $scriptsProfile = escapeSettingValue(settings_t('profile'));
+        $scriptsDeviceId = escapeSettingValue(settings_t('settings_scripts_device_id'));
+        $scriptsCredentials = escapeSettingValue(settings_t('settings_scripts_credentials'));
+        $scriptsGlobalCredentials = escapeSettingValue(settings_t('settings_scripts_global_credentials'));
+        $scriptsIndividualCredentials = escapeSettingValue(settings_t('settings_scripts_individual_credentials'));
+        $scriptsActions = escapeSettingValue(settings_t('actions'));
+        $scriptsRequiredHint = escapeSettingValue(settings_t('settings_scripts_required_hint'));
+        $scriptsSnmpTest = escapeSettingValue(settings_t('settings_scripts_snmp_test'));
+        $scriptsAddSwitch = escapeSettingValue(settings_t('settings_scripts_add_switch'));
+        $scriptsClearForm = escapeSettingValue(settings_t('settings_scripts_clear_form'));
+        $scriptsProfilesTitle = escapeSettingValue(settings_t('settings_scripts_profiles_title'));
+        $scriptsProfileId = escapeSettingValue(settings_t('settings_scripts_profile_id'));
+        $scriptsLabel = escapeSettingValue(settings_t('settings_scripts_label'));
+        $scriptsDescription = escapeSettingValue(settings_t('settings_scripts_description'));
+        $scriptsProfileDescriptionPlaceholder = escapeSettingValue(settings_t('settings_scripts_profile_desc_placeholder'));
+        $scriptsSupportsCommit = escapeSettingValue(settings_t('settings_scripts_supports_commit'));
+        $scriptsProfileSnmpDefaults = escapeSettingValue(settings_t('settings_scripts_profile_snmp_defaults'));
+        $scriptsSnmpEnabled = escapeSettingValue(settings_t('settings_scripts_snmp_enabled'));
+        $scriptsDefaultMib = escapeSettingValue(settings_t('settings_scripts_default_mib'));
+        $scriptsMibOverrides = escapeSettingValue(settings_t('settings_scripts_mib_overrides'));
+        $scriptsSaveProfile = escapeSettingValue(settings_t('settings_scripts_save_profile'));
+        $scriptsTemplatesTitle = escapeSettingValue(settings_t('settings_scripts_templates_title'));
+        $scriptsTemplateId = escapeSettingValue(settings_t('settings_scripts_template_id'));
+        $scriptsProfiles = escapeSettingValue(settings_t('settings_scripts_profiles'));
+        $scriptsCommands = escapeSettingValue(settings_t('settings_scripts_commands'));
+        $scriptsSupportedProfiles = escapeSettingValue(settings_t('settings_scripts_supported_profiles'));
+        $scriptsCommandsMultiline = escapeSettingValue(settings_t('settings_scripts_commands_multiline'));
+        $scriptsDescriptionConvention = escapeSettingValue(settings_t('settings_scripts_description_convention'));
+        $scriptsSaveTemplate = escapeSettingValue(settings_t('settings_scripts_save_template'));
+        $scriptsHistoryTitle = escapeSettingValue(settings_t('settings_scripts_history_title'));
+        $scriptsHistoryFilter = escapeSettingValue(settings_t('settings_scripts_history_filter'));
+        $scriptsTime = escapeSettingValue(settings_t('settings_scripts_time'));
+        $scriptsOperation = escapeSettingValue(settings_t('settings_scripts_operation'));
+        $scriptsUser = escapeSettingValue(settings_t('settings_scripts_user'));
+        $scriptsDetails = escapeSettingValue(settings_t('settings_scripts_details'));
+        $scriptsAdvancedJson = escapeSettingValue(settings_t('settings_scripts_advanced_json'));
+        $scriptsInventoryJsonFallback = escapeSettingValue(settings_t('settings_scripts_inventory_json_fallback'));
+        $scriptsOverridesJsonFallback = escapeSettingValue(settings_t('settings_scripts_overrides_json_fallback'));
+        $scriptsAllowedAreasHint = escapeSettingValue(settings_t('settings_scripts_allowed_areas_hint'));
+        $scriptsSaveInventoryJson = escapeSettingValue(settings_t('settings_scripts_save_inventory_json'));
+        $scriptsRunSchedulerNow = escapeSettingValue(settings_t('settings_scripts_run_scheduler_now'));
+        $scriptsUpdateSwitch = escapeSettingValue(settings_t('settings_scripts_update_switch'));
+        $scriptsItemGroupStackHint = escapeSettingValue(settings_t('settings_scripts_item_group_stack_hint'));
+        $scriptsIndividualSshUsername = escapeSettingValue(settings_t('settings_scripts_individual_ssh_username'));
+        $scriptsIndividualSshPasswordOptional = escapeSettingValue(settings_t('settings_scripts_individual_ssh_password_optional'));
+        $scriptsIndividualSshPrivateKeyOptional = escapeSettingValue(settings_t('settings_scripts_individual_ssh_private_key_optional'));
+        $scriptsEnableSwitchSnmp = escapeSettingValue(settings_t('settings_scripts_enable_switch_snmp'));
+        $scriptsTemplateLabelPlaceholder = escapeSettingValue(settings_t('settings_scripts_template_label_placeholder'));
+        $scriptsTemplateDescriptionPlaceholder = escapeSettingValue(settings_t('settings_scripts_template_description_placeholder'));
+        $scriptsSnmpMibPlaceholder = escapeSettingValue(settings_t('settings_scripts_snmp_mib_placeholder'));
 
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <div class="text-xl font-bold pb-2">Automation: Secure Settings</div>
-            <p class="text-sm text-gray-600 pb-6">SSH-Zugangsdaten und Switch-Inventar werden verschluesselt in <span class="font-semibold">data/automation/settings.json</span> gespeichert. Templates werden in <span class="font-semibold">data/automation/automation.json</span> gepflegt.</p>
+            <div class="text-xl font-bold pb-2">{$scriptsTitle}</div>
+            <p class="text-sm text-gray-600 pb-6">{$scriptsDesc}</p>
             {$testOutputHtml}
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 scripts-section-switch">
                     <div>
-                        <label class="block mb-2 text-sm font-semibold" for="ssh_host">SSH Host / Default Switch</label>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_host">{$scriptsSshHostDefault}</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_host" type="text" name="ssh_host" value="$sshHost" placeholder="192.168.1.10">
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-semibold" for="ssh_port">SSH Port</label>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_port">{$scriptsSshPort}</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_port" type="number" min="1" max="65535" name="ssh_port" value="$sshPort">
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-semibold" for="ssh_auth_method">Globale SSH Auth Methode</label>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_auth_method">{$scriptsGlobalSshAuth}</label>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_auth_method" name="ssh_auth_method">
-                            <option value="password" {$globalAuthPasswordSelected}>Passwort</option>
-                            <option value="key" {$globalAuthKeySelected}>SSH Key</option>
+                            <option value="password" {$globalAuthPasswordSelected}>{$scriptsPasswordAuth}</option>
+                            <option value="key" {$globalAuthKeySelected}>{$scriptsKeyAuth}</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-semibold" for="ssh_username">SSH Username</label>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_username">{$scriptsSshUsername}</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_username" type="text" name="ssh_username" value="$sshUsername" placeholder="netadmin">
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-semibold" for="ssh_password">SSH Password</label>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_password">{$scriptsSshPassword}</label>
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="ssh_password" type="password" name="ssh_password" placeholder="$passwordHint">
                         <p class="text-xs text-gray-500 mt-2">$passwordHint</p>
                     </div>
                     <div class="md:col-span-2">
-                        <label class="block mb-2 text-sm font-semibold" for="ssh_private_key">SSH Private Key (PEM, optional)</label>
+                        <label class="block mb-2 text-sm font-semibold" for="ssh_private_key">{$scriptsSshPrivateKey}</label>
                         <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-xs" id="ssh_private_key" name="ssh_private_key" rows="6" placeholder="$privateKeyHint">$sshPrivateKey</textarea>
                         <p class="text-xs text-gray-500 mt-2">$privateKeyHint</p>
                     </div>
                 </div>
 
                 <div class="pb-6 flex justify-end scripts-section-switch">
-                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitAutomationSettingsSave()">SSH-Zugangsdaten speichern</button>
+                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitAutomationSettingsSave()">{$scriptsSaveCredentials}</button>
                 </div>
             </div>
 
                 <div class="pb-6 scripts-section-switch">
                     <div class="flex items-center justify-between pb-2">
-                        <label class="block text-sm font-semibold">Switch Inventory (Grafische Verwaltung)</label>
-                        <button type="button" class="inline-flex items-center gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2" title="Alle Switches scannen" onclick="submitInventorySnmpScanAll()"><i data-lucide="radar" class="h-4 w-4"></i><span>Alle scannen</span></button>
+                        <label class="block text-sm font-semibold">{$scriptsSwitchInventoryTitle}</label>
+                        <button type="button" class="inline-flex items-center gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2" title="{$scriptsScanAll}" onclick="submitInventorySnmpScanAll()"><i data-lucide="radar" class="h-4 w-4"></i><span>{$scriptsScanAll}</span></button>
                     </div>
                     <div class="border border-gray-200 rounded-2xl overflow-hidden">
                         <table class="w-full text-sm text-left">
                             <thead class="bg-gray-50 text-gray-700">
                                 <tr>
-                                    <th class="py-2 px-3">Name</th>
-                                    <th class="py-2 px-3">Mgmt IP</th>
-                                    <th class="py-2 px-3">Profil</th>
-                                    <th class="py-2 px-3">Device ID</th>
-                                    <th class="py-2 px-3">Credentials</th>
-                                    <th class="py-2 px-3 text-right">Action</th>
+                                    <th class="py-2 px-3">{$scriptsName}</th>
+                                    <th class="py-2 px-3">{$scriptsMgmtIp}</th>
+                                    <th class="py-2 px-3">{$scriptsProfile}</th>
+                                    <th class="py-2 px-3">{$scriptsDeviceId}</th>
+                                    <th class="py-2 px-3">{$scriptsCredentials}</th>
+                                    <th class="py-2 px-3 text-right">{$scriptsActions}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -6643,7 +6730,7 @@ HTML;
                             </tbody>
                         </table>
                     </div>
-                    <p class="text-xs text-gray-500 mt-2">Erforderlich pro Switch: name, mgmt_ip, profile. ITAM-Verknuepfung per Dropdown, Credentials global oder individuell.</p>
+                    <p class="text-xs text-gray-500 mt-2">{$scriptsRequiredHint}</p>
 
                     <input type="hidden" id="switch_original_name" value="">
                     <div class="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
@@ -6654,8 +6741,8 @@ HTML;
                         </select>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_device_id">{$itamDeviceOptionsHtml}</select>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_credential_mode">
-                            <option value="global">globale Credentials</option>
-                            <option value="individual">individuelle Credentials</option>
+                            <option value="global">{$scriptsGlobalCredentials}</option>
+                            <option value="individual">{$scriptsIndividualCredentials}</option>
                         </select>
                         <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_auth_method">
                             <option value="password">Passwort</option>
@@ -6663,11 +6750,11 @@ HTML;
                         </select>
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-1 gap-3">
-                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_item_group_id" title="Item Group fuer Stack-Switches (mehrere Devices = ein logischer Switch)">{$itamItemGroupOptionsHtml}</select>
+                        <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_item_group_id" title="{$scriptsItemGroupStackHint}">{$itamItemGroupOptionsHtml}</select>
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_ssh_username" placeholder="individueller SSH Username">
-                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="password" id="switch_ssh_password" placeholder="individuelles SSH Passwort (optional)">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_ssh_username" placeholder="{$scriptsIndividualSshUsername}">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="password" id="switch_ssh_password" placeholder="{$scriptsIndividualSshPasswordOptional}">
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="text" id="switch_snmp_community" placeholder="SNMP Community (v2c)">
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -6691,12 +6778,12 @@ HTML;
                         <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" type="password" id="switch_snmp_v3_priv_passphrase" placeholder="SNMPv3 Priv Passphrase">
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-1 gap-3">
-                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" type="text" id="switch_snmp_mib" placeholder="SNMP MIB (optional, z. B. IF-MIB)">
+                        <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" type="text" id="switch_snmp_mib" placeholder="{$scriptsSnmpMibPlaceholder}">
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-xs" id="switch_ssh_private_key" rows="4" placeholder="individueller SSH Private Key (optional)"></textarea>
+                        <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-xs" id="switch_ssh_private_key" rows="4" placeholder="{$scriptsIndividualSshPrivateKeyOptional}"></textarea>
                         <div class="flex flex-col gap-3">
-                            <label class="inline-flex items-center gap-2"><input type="checkbox" id="switch_snmp_enabled"> SNMP fuer Switch aktivieren</label>
+                            <label class="inline-flex items-center gap-2"><input type="checkbox" id="switch_snmp_enabled"> {$scriptsEnableSwitchSnmp}</label>
                             <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="switch_snmp_version">
                                 <option value="2c">SNMP v2c</option>
                                 <option value="3">SNMP v3</option>
@@ -6704,26 +6791,26 @@ HTML;
                         </div>
                     </div>
                     <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <button class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitCurrentSnmpTest()">SNMP testen</button>
-                        <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">Switch hinzufuegen</button>
-                        <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">Formular leeren</button>
+                        <button class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitCurrentSnmpTest()">{$scriptsSnmpTest}</button>
+                        <button id="inventory_submit_button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitInventorySave()">{$scriptsAddSwitch}</button>
+                        <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetInventoryForm()">{$scriptsClearForm}</button>
                     </div>
                 </div>
 
                 <div class="pb-6 scripts-section-profile">
                     <div class="flex items-center justify-between pb-2">
-                        <label class="block text-sm font-semibold">Profile inkl. SNMP/MIB (Grafische Verwaltung)</label>
+                        <label class="block text-sm font-semibold">{$scriptsProfilesTitle}</label>
                     </div>
                     <div class="border border-gray-200 rounded-2xl overflow-hidden">
                         <table class="w-full text-sm text-left">
                             <thead class="bg-gray-50 text-gray-700">
                                 <tr>
-                                    <th class="py-2 px-3">Profile ID</th>
-                                    <th class="py-2 px-3">Label</th>
+                                    <th class="py-2 px-3">{$scriptsProfileId}</th>
+                                    <th class="py-2 px-3">{$scriptsLabel}</th>
                                     <th class="py-2 px-3">SNMP Version</th>
-                                    <th class="py-2 px-3">Default MIB</th>
-                                    <th class="py-2 px-3">MIB Overrides</th>
-                                    <th class="py-2 px-3 text-right">Action</th>
+                                    <th class="py-2 px-3">{$scriptsDefaultMib}</th>
+                                    <th class="py-2 px-3">{$scriptsMibOverrides}</th>
+                                    <th class="py-2 px-3 text-right">{$scriptsActions}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -6735,17 +6822,17 @@ HTML;
                     <div class="mt-4 space-y-3" id="profile_definition_form">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                                <label class="block mb-1 text-xs font-semibold" for="profile_id">Profile ID</label>
+                                <label class="block mb-1 text-xs font-semibold" for="profile_id">{$scriptsProfileId}</label>
                                 <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_id" type="text" placeholder="huawei_core_commit" required>
                             </div>
                             <div>
-                                <label class="block mb-1 text-xs font-semibold" for="profile_label">Label</label>
+                                <label class="block mb-1 text-xs font-semibold" for="profile_label">{$scriptsLabel}</label>
                                 <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="profile_label" type="text" placeholder="Huawei Core" required>
                             </div>
                         </div>
                         <div>
-                            <label class="block mb-1 text-xs font-semibold" for="profile_description">Beschreibung</label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="profile_description" type="text" placeholder="Kurzbeschreibung des Profils">
+                            <label class="block mb-1 text-xs font-semibold" for="profile_description">{$scriptsDescription}</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="profile_description" type="text" placeholder="{$scriptsProfileDescriptionPlaceholder}">
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                             <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_enter_config" type="text" placeholder="enter_config">
@@ -6756,13 +6843,13 @@ HTML;
                         </div>
                         <div class="flex items-center gap-2">
                             <input id="profile_supports_commit" type="checkbox" value="1">
-                            <label for="profile_supports_commit" class="text-xs text-gray-700">supports_commit aktivieren</label>
+                            <label for="profile_supports_commit" class="text-xs text-gray-700">{$scriptsSupportsCommit}</label>
                         </div>
 
                         <div class="rounded-2xl border border-gray-200 p-3 space-y-3">
-                            <div class="text-xs font-semibold text-gray-700 uppercase tracking-wide">SNMP + MIB Defaults (pro Profil)</div>
+                            <div class="text-xs font-semibold text-gray-700 uppercase tracking-wide">{$scriptsProfileSnmpDefaults}</div>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <label class="inline-flex items-center gap-2"><input type="checkbox" id="profile_snmp_enabled"> SNMP aktiv</label>
+                                <label class="inline-flex items-center gap-2"><input type="checkbox" id="profile_snmp_enabled"> {$scriptsSnmpEnabled}</label>
                                 <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_version">
                                     <option value="2c">SNMP v2c</option>
                                     <option value="3">SNMP v3</option>
@@ -6794,33 +6881,33 @@ HTML;
                                 <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_timeout" type="number" min="1" max="30" value="2" placeholder="Timeout (s)">
                                 <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="profile_snmp_retries" type="number" min="0" max="10" value="1" placeholder="Retries">
                             </div>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_snmp_default_mib" type="text" placeholder="Default MIB, z. B. IF-MIB">
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_snmp_default_mib" type="text" placeholder="{$scriptsDefaultMib}, z. B. IF-MIB">
                             <div>
-                                <label class="block mb-1 text-xs font-semibold" for="profile_snmp_mib_overrides">MIB Overrides (eine Zeile oder comma-separated)</label>
+                                <label class="block mb-1 text-xs font-semibold" for="profile_snmp_mib_overrides">{$scriptsMibOverrides}</label>
                                 <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="profile_snmp_mib_overrides" rows="4" placeholder="HUAWEI-L2IF-MIB&#10;ENTITY-MIB"></textarea>
                             </div>
                         </div>
 
                         <div class="flex items-center justify-between gap-3">
-                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetProfileDefinitionForm()">Formular leeren</button>
-                            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitProfileUpsert()">Profil speichern</button>
+                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetProfileDefinitionForm()">{$scriptsClearForm}</button>
+                            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitProfileUpsert()">{$scriptsSaveProfile}</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="pb-6 scripts-section-template">
                     <div class="flex items-center justify-between pb-2">
-                        <label class="block text-sm font-semibold">Automation Templates (Grafische Verwaltung)</label>
+                        <label class="block text-sm font-semibold">{$scriptsTemplatesTitle}</label>
                     </div>
                     <div class="border border-gray-200 rounded-2xl overflow-hidden">
                         <table class="w-full text-sm text-left">
                             <thead class="bg-gray-50 text-gray-700">
                                 <tr>
-                                    <th class="py-2 px-3">Template ID</th>
-                                    <th class="py-2 px-3">Label</th>
-                                    <th class="py-2 px-3">Profiles</th>
-                                    <th class="py-2 px-3">Commands</th>
-                                    <th class="py-2 px-3 text-right">Action</th>
+                                    <th class="py-2 px-3">{$scriptsTemplateId}</th>
+                                    <th class="py-2 px-3">{$scriptsLabel}</th>
+                                    <th class="py-2 px-3">{$scriptsProfiles}</th>
+                                    <th class="py-2 px-3">{$scriptsCommands}</th>
+                                    <th class="py-2 px-3 text-right">{$scriptsActions}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -6832,53 +6919,53 @@ HTML;
                     <div class="mt-4 space-y-3" id="template_override_form">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                                <label class="block mb-1 text-xs font-semibold" for="template_id">Template ID</label>
+                                <label class="block mb-1 text-xs font-semibold" for="template_id">{$scriptsTemplateId}</label>
                                 <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_id" type="text" placeholder="my_custom_template" required>
                             </div>
                             <div>
-                                <label class="block mb-1 text-xs font-semibold" for="template_label">Label</label>
-                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="Mein Template" required>
+                                <label class="block mb-1 text-xs font-semibold" for="template_label">{$scriptsLabel}</label>
+                                <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_label" type="text" placeholder="{$scriptsTemplateLabelPlaceholder}" required>
                             </div>
                         </div>
                         <div>
-                            <label class="block mb-1 text-xs font-semibold" for="template_description">Beschreibung</label>
-                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="Kurze Beschreibung">
+                            <label class="block mb-1 text-xs font-semibold" for="template_description">{$scriptsDescription}</label>
+                            <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" id="template_description" type="text" placeholder="{$scriptsTemplateDescriptionPlaceholder}">
                         </div>
                         <div>
-                            <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">Supported Profiles (comma-separated)</label>
+                            <label class="block mb-1 text-xs font-semibold" for="template_supported_profiles">{$scriptsSupportedProfiles}</label>
                             <input class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_supported_profiles" type="text" placeholder="huawei_core_commit,huawei_access_no_commit">
                         </div>
                         <div>
-                            <label class="block mb-1 text-xs font-semibold" for="template_commands">Commands (eine Zeile = ein Command)</label>
+                            <label class="block mb-1 text-xs font-semibold" for="template_commands">{$scriptsCommandsMultiline}</label>
                             <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="template_commands" rows="8" placeholder="interface {{interface}}&#10;shutdown&#10;quit" required></textarea>
                         </div>
                         <div class="flex items-center gap-2">
                             <input id="template_uses_description_convention" type="checkbox" value="1">
-                            <label for="template_uses_description_convention" class="text-xs text-gray-700">Description Convention verwenden</label>
+                            <label for="template_uses_description_convention" class="text-xs text-gray-700">{$scriptsDescriptionConvention}</label>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">Formular leeren</button>
-                            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">Template speichern</button>
+                            <button class="bg-gray-600 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="resetTemplateOverrideForm()">{$scriptsClearForm}</button>
+                            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="button" onclick="submitTemplateUpsert()">{$scriptsSaveTemplate}</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="pb-6 scripts-section-history">
                     <div class="flex items-center justify-between pb-2">
-                        <label class="block text-sm font-semibold">Aenderungshistorie (letzte 30)</label>
+                        <label class="block text-sm font-semibold">{$scriptsHistoryTitle}</label>
                     </div>
                     <div class="pb-3">
-                        <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="Historie filtern: Benutzer, Action, Operation, Details..." oninput="filterHistoryRows()">
+                        <input id="history_filter" type="text" class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline text-sm" placeholder="{$scriptsHistoryFilter}" oninput="filterHistoryRows()">
                     </div>
                     <div class="border border-gray-200 rounded-2xl overflow-hidden">
                         <table class="w-full text-sm text-left">
                             <thead class="bg-gray-50 text-gray-700">
                                 <tr>
-                                    <th class="py-2 px-3">Zeit</th>
-                                    <th class="py-2 px-3">Benutzer</th>
-                                    <th class="py-2 px-3">Operation</th>
-                                    <th class="py-2 px-3">Action</th>
-                                    <th class="py-2 px-3">Details</th>
+                                    <th class="py-2 px-3">{$scriptsTime}</th>
+                                    <th class="py-2 px-3">{$scriptsUser}</th>
+                                    <th class="py-2 px-3">{$scriptsOperation}</th>
+                                    <th class="py-2 px-3">{$scriptsActions}</th>
+                                    <th class="py-2 px-3">{$scriptsDetails}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -6893,34 +6980,35 @@ HTML;
                     <input type="hidden" class="scripts-active-tab-input" name="scripts_active_tab" value="$activeScriptsTab">
 
                     <details class="pb-4 scripts-section-switch">
-                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">Advanced JSON Bearbeitung</summary>
+                        <summary class="cursor-pointer text-sm font-semibold text-gray-700">{$scriptsAdvancedJson}</summary>
                         <div class="pt-3 space-y-4">
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">Switch Inventory (JSON Fallback)</label>
+                                <label class="block mb-2 text-sm font-semibold" for="switch_inventory_json">{$scriptsInventoryJsonFallback}</label>
                                 <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="switch_inventory_json" name="switch_inventory_json" rows="10" placeholder='{"switches":[{"name":"SW-Core-01","mgmt_ip":"10.0.0.10","profile":"huawei_core_commit","device_id":"uuid-from-itam"}]}'>{$switchInventoryJsonEscaped}</textarea>
                             </div>
 
                             <div>
-                                <label class="block mb-2 text-sm font-semibold" for="scripts_json">Automation Script Overrides (JSON Fallback)</label>
+                                <label class="block mb-2 text-sm font-semibold" for="scripts_json">{$scriptsOverridesJsonFallback}</label>
                                 <textarea class="appearance-none border rounded-2xl w-full py-3 px-4 leading-tight focus:outline-none focus:shadow-outline font-mono text-sm" id="scripts_json" name="scripts_json" rows="16" placeholder='{"templates": {}}'>$scriptsJsonEscaped</textarea>
-                                <p class="text-xs text-gray-500 mt-2">Erlaubte Bereiche: description_convention, profiles. Templates werden in data/automation/automation.json gepflegt.</p>
+                                <p class="text-xs text-gray-500 mt-2">{$scriptsAllowedAreasHint}</p>
                             </div>
                         </div>
                     </details>
 
                     <div class="pb-2 flex justify-end items-center gap-4 scripts-section-switch">
-                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Inventar / JSON speichern">
+                        <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="{$scriptsSaveInventoryJson}">
                     </div>
                 </form>
 
                 <form action="?set=automation_run_scheduler" method="post" class="pb-2 flex justify-end items-center scripts-section-switch">
                     <input type="hidden" name="csrf" value="$csrf">
                     <input type="hidden" class="scripts-active-tab-input" name="scripts_active_tab" value="$activeScriptsTab">
-                    <button class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit">Scheduler jetzt ausfuehren</button>
+                    <button class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit">{$scriptsRunSchedulerNow}</button>
                 </form>
 
             <script>
                 const automationCsrfToken = '$csrf';
+                const SETTINGS_I18N = $settingsI18nJson;
                 const profileSnmpDefaults = $profileSnmpDefaultsJson;
                 const initialScriptsTab = '$activeScriptsTab';
                 let currentScriptsTab = initialScriptsTab;
@@ -6971,7 +7059,7 @@ HTML;
 
                     var submitButton = document.getElementById('inventory_submit_button');
                     if (submitButton) {
-                        submitButton.textContent = 'Switch aktualisieren';
+                        submitButton.textContent = SETTINGS_I18N.settings_scripts_update_switch || 'settings_scripts_update_switch';
                         submitButton.className = 'bg-amber-500 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
                     }
 
@@ -7004,7 +7092,7 @@ HTML;
 
                     var submitButton = document.getElementById('inventory_submit_button');
                     if (submitButton) {
-                        submitButton.textContent = 'Switch hinzufuegen';
+                        submitButton.textContent = SETTINGS_I18N.settings_scripts_add_switch || 'settings_scripts_add_switch';
                         submitButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline';
                     }
 
@@ -7053,7 +7141,7 @@ HTML;
                     const action = originalName !== '' ? 'automation_inventory_update' : 'automation_inventory_add';
 
                     if (name === '' || mgmtIp === '' || profile === '') {
-                        alert('Bitte Name, Mgmt IP und Profil ausfuellen.');
+                        alert(SETTINGS_I18N.settings_scripts_alert_fill_required || 'settings_scripts_alert_fill_required');
                         return;
                     }
 
@@ -7138,7 +7226,7 @@ HTML;
                 }
 
                 function submitInventoryDelete(index) {
-                    if (!confirm('Switch-Eintrag wirklich loeschen?')) {
+                    if (!confirm(SETTINGS_I18N.settings_scripts_confirm_delete_switch || 'settings_scripts_confirm_delete_switch')) {
                         return;
                     }
                     postAutomationAction('automation_inventory_delete', {
@@ -7149,10 +7237,10 @@ HTML;
                 function submitInventorySnmpScan(button) {
                     const name = button.dataset.switchName || '';
                     if (name === '') {
-                        alert('Switch-Name fuer SNMP-Scan konnte nicht gelesen werden.');
+                        alert(SETTINGS_I18N.settings_scripts_alert_switch_name_missing || 'settings_scripts_alert_switch_name_missing');
                         return;
                     }
-                    if (!confirm('SNMP-Scan fuer ' + name + ' jetzt ausfuehren?')) {
+                    if (!confirm((SETTINGS_I18N.settings_scripts_confirm_snmp_scan_for || 'settings_scripts_confirm_snmp_scan_for').replace('{name}', name))) {
                         return;
                     }
                     postAutomationAction('automation_snmp_scan', {
@@ -7163,7 +7251,7 @@ HTML;
                 }
 
                 function submitInventorySnmpScanAll() {
-                    if (!confirm('SNMP-Scan fuer ALLE Switches ausfuehren?')) {
+                    if (!confirm(SETTINGS_I18N.settings_scripts_confirm_snmp_scan_all || 'settings_scripts_confirm_snmp_scan_all')) {
                         return;
                     }
                     postAutomationAction('automation_snmp_scan_all', {
@@ -7490,35 +7578,51 @@ HTML;
         $sizeNormalSelected = $currentFontSize === 'normal' ? 'selected' : '';
         $sizeLargeSelected = $currentFontSize === 'large' ? 'selected' : '';
 
+        $appearanceTitle = escapeSettingValue(settings_t('settings_appearance_title'));
+        $appearanceIntro = escapeSettingValue(settings_t('settings_appearance_intro'));
+        $appearanceLanguage = escapeSettingValue(settings_t('settings_appearance_language'));
+        $appearanceLanguageGerman = escapeSettingValue(settings_t('settings_appearance_language_german'));
+        $appearanceLanguageEnglish = escapeSettingValue(settings_t('settings_appearance_language_english'));
+        $appearanceTheme = escapeSettingValue(settings_t('settings_appearance_theme'));
+        $appearanceThemeLight = escapeSettingValue(settings_t('settings_appearance_theme_light'));
+        $appearanceThemeDark = escapeSettingValue(settings_t('settings_appearance_theme_dark'));
+        $appearanceThemeContrast = escapeSettingValue(settings_t('settings_appearance_theme_contrast'));
+        $appearanceFontFamily = escapeSettingValue(settings_t('settings_appearance_font_family'));
+        $appearanceFontSize = escapeSettingValue(settings_t('settings_appearance_font_size'));
+        $appearanceSizeSmall = escapeSettingValue(settings_t('settings_appearance_size_small'));
+        $appearanceSizeNormal = escapeSettingValue(settings_t('settings_appearance_size_normal'));
+        $appearanceSizeLarge = escapeSettingValue(settings_t('settings_appearance_size_large'));
+        $appearanceSave = escapeSettingValue(settings_t('settings_appearance_save'));
+
         echo <<<HTML
         <div class="h-fit w-full p-4">
-            <div class="text-xl font-bold pb-2">Darstellung</div>
-            <p class="text-sm text-gray-600 pb-6">Farbschema, Schriftart und Schriftgroesse werden in deinem Nutzerprofil gespeichert.</p>
+            <div class="text-xl font-bold pb-2">{$appearanceTitle}</div>
+            <p class="text-sm text-gray-600 pb-6">{$appearanceIntro}</p>
 
             <form action="?set=appearance_preferences" method="post" class="space-y-5">
                 <input type="hidden" name="csrf" value="$csrf">
 
                 <div class="pb-6">
                     <label class="block mb-2 text-sm font-semibold" for="language">
-                        Sprache
+                        {$appearanceLanguage}
                     </label>
                     <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="language" type="text" name="language">
-                        <option value="de-DE" $langDeSelected>Deutsch</option>
-                        <option value="en-EN" $langEnSelected>English</option>
+                        <option value="de-DE" $langDeSelected>{$appearanceLanguageGerman}</option>
+                        <option value="en-EN" $langEnSelected>{$appearanceLanguageEnglish}</option>
                     </select>
                 </div>
 
                 <div>
-                    <label class="block mb-2 text-sm font-semibold" for="theme">Farbschema</label>
+                    <label class="block mb-2 text-sm font-semibold" for="theme">{$appearanceTheme}</label>
                     <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="theme" name="theme">
-                        <option value="light" $themeLightSelected>Lightmode</option>
-                        <option value="dark" $themeDarkSelected>Darkmode</option>
-                        <option value="contrast" $themeContrastSelected>Kontrastmodus</option>
+                        <option value="light" $themeLightSelected>{$appearanceThemeLight}</option>
+                        <option value="dark" $themeDarkSelected>{$appearanceThemeDark}</option>
+                        <option value="contrast" $themeContrastSelected>{$appearanceThemeContrast}</option>
                     </select>
                 </div>
 
                 <div>
-                    <label class="block mb-2 text-sm font-semibold" for="font_family">Schriftart</label>
+                    <label class="block mb-2 text-sm font-semibold" for="font_family">{$appearanceFontFamily}</label>
                     <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_family" name="font_family">
                         <option value="jetbrains" $fontJetbrainsSelected>JetBrains Mono</option>
                         <option value="source_sans" $fontSourceSelected>Source Sans 3</option>
@@ -7527,16 +7631,16 @@ HTML;
                 </div>
 
                 <div>
-                    <label class="block mb-2 text-sm font-semibold" for="font_size">Schriftgroesse</label>
+                    <label class="block mb-2 text-sm font-semibold" for="font_size">{$appearanceFontSize}</label>
                     <select class="appearance-none border rounded-full w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="font_size" name="font_size">
-                        <option value="small" $sizeSmallSelected>Kompakt</option>
-                        <option value="normal" $sizeNormalSelected>Standard</option>
-                        <option value="large" $sizeLargeSelected>Gross</option>
+                        <option value="small" $sizeSmallSelected>{$appearanceSizeSmall}</option>
+                        <option value="normal" $sizeNormalSelected>{$appearanceSizeNormal}</option>
+                        <option value="large" $sizeLargeSelected>{$appearanceSizeLarge}</option>
                     </select>
                 </div>
 
                 <div class="pb-6 flex justify-between items-center">
-                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="Darstellung speichern">
+                    <input class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full focus:outline-none focus:shadow-outline" type="submit" value="{$appearanceSave}">
                 </div>
             </form>
         </div>

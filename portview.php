@@ -15,43 +15,48 @@ $limit = isset($_COOKIE['table_limit']) ? (int)$_COOKIE['table_limit'] : 100;
 if (!in_array($limit, [50, 100, 500, 1000], true)) {
     $limit = 100;
 }
+
+$portviewLanguage = is_array($language ?? null) ? (string) ($language[0] ?? '') : (string) ($language ?? '');
+$portviewLocale = strtolower(substr($portviewLanguage, 0, 2));
+if ($portviewLocale === '') {
+    $portviewLocale = 'en';
+}
 ?>
 
 <div class="mx-4 mb-4 mt-0 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-            <h1 class="text-2xl font-bold text-slate-900">Port View</h1>
-            <p class="text-sm text-slate-500">Verdichtete Portansicht mit Ketten-Aggregation.</p>
+            <h1 class="text-2xl font-bold text-slate-900"><?php echo $lang['portview_page_title']; ?></h1>
+            <p class="text-sm text-slate-500"><?php echo $lang['portview_page_subtitle']; ?></p>
         </div>
         <form id="searchForm" class="flex min-w-[18rem] flex-1 items-center justify-end gap-2">
             <input
                 type="text"
                 name="search"
-                placeholder="Suchen ..."
+                placeholder="<?php echo $lang['search']; ?> ..."
                 class="w-full max-w-md rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
             <button
                 type="submit"
                 class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white shadow-md transition hover:bg-blue-700"
-                title="Suche"
+                title="<?php echo $lang['search']; ?>"
             >
                 <i data-lucide="search"></i>
             </button>
         </form>
-        <button id="exportCsvButton" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100" title="CSV exportieren">
+        <button id="exportCsvButton" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100" title="<?php echo $lang['transfer_export_csv']; ?>">
             <i data-lucide="file-down" class="h-4 w-4"></i>
-            <span>CSV exportieren</span>
+            <span><?php echo $lang['transfer_export_csv']; ?></span>
         </button>
     </div>
 
     <div class="mb-3 grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
         <div class="inline-flex flex-wrap items-center gap-4">
-            <p id="count" class="text-sm font-semibold text-slate-700">Datensätze: 0</p>
-            <p id="resultSummary" class="text-sm text-slate-500">Zeige 0-0 von 0</p>
+            <p id="count" class="text-sm font-semibold text-slate-700"><?php echo $lang['datasets']; ?>: 0</p>
         </div>
         <div id="pagination" class="flex flex-row justify-center"></div>
         <div class="inline-flex items-center justify-end gap-2 text-sm">
-            <label for="table_limit_1" class="text-slate-600">Anzahl:</label>
+            <label for="table_limit_1" class="text-slate-600"><?php echo $lang['quantity']; ?>:</label>
             <select id="table_limit_1" name="limit" class="rounded-full border border-slate-300 bg-white px-3 py-1.5">
                 <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
                 <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
@@ -64,31 +69,31 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     <div class="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-                <div class="text-sm font-semibold text-slate-900">Filter</div>
-                <div class="text-xs text-slate-500">Portketten nach Raum, Endgeraet oder VLAN eingrenzen.</div>
+                <div class="text-sm font-semibold text-slate-900"><?php echo $lang['filters']; ?></div>
+                <div class="text-xs text-slate-500"><?php echo $lang['portview_filters_hint']; ?></div>
             </div>
             <button id="resetFiltersButton" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100">
                 <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
-                <span>Filter zuruecksetzen</span>
+                <span><?php echo $lang['portview_reset_filters']; ?></span>
             </button>
         </div>
         <div class="grid gap-3 md:grid-cols-3">
             <label class="flex flex-col gap-1 text-sm text-slate-600">
-                <span>Ort</span>
+                <span><?php echo $lang['portview_filter_room']; ?></span>
                 <select id="filterRoom" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
-                    <option value="">Alle Orte</option>
+                    <option value=""><?php echo $lang['portview_all_rooms']; ?></option>
                 </select>
             </label>
             <label class="flex flex-col gap-1 text-sm text-slate-600">
-                <span>Gerätetyp</span>
+                <span><?php echo $lang['portview_filter_endpoint_type']; ?></span>
                 <select id="filterEndpointType" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
-                    <option value="">Alle Gerätetypen</option>
+                    <option value=""><?php echo $lang['portview_all_endpoint_types']; ?></option>
                 </select>
             </label>
             <label class="flex flex-col gap-1 text-sm text-slate-600">
-                <span>VLAN</span>
+                <span><?php echo $lang['portview_filter_vlan']; ?></span>
                 <select id="filterVlan" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
-                    <option value="">Alle VLANs</option>
+                    <option value=""><?php echo $lang['portview_all_vlans']; ?></option>
                 </select>
             </label>
         </div>
@@ -107,10 +112,10 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         <div class="mx-auto mt-8 flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-900">Detailansicht</h2>
-                    <p class="text-sm text-slate-500">Verbindung und beteiligte Geräte</p>
+                    <h2 class="text-lg font-semibold text-slate-900"><?php echo $lang['portview_detail_title']; ?></h2>
+                    <p class="text-sm text-slate-500"><?php echo $lang['portview_detail_subtitle']; ?></p>
                 </div>
-                <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white shadow-sm hover:bg-red-700" title="Schließen" onclick="window.portViewApp.closeChainDetail()"><i data-lucide="x" class="h-4 w-4"></i></button>
+                <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white shadow-sm hover:bg-red-700" title="<?php echo $lang['button_close']; ?>" onclick="window.portViewApp.closeChainDetail()"><i data-lucide="x" class="h-4 w-4"></i></button>
             </div>
             <div id="chainDetailBody" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-5"></div>
         </div>
@@ -118,12 +123,11 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
     <div class="mt-3 grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
         <div class="inline-flex flex-wrap items-center gap-4">
-            <p id="count_bottom" class="text-sm font-semibold text-slate-700">Datensätze: 0</p>
-            <p id="resultSummaryBottom" class="text-sm text-slate-500">Zeige 0-0 von 0</p>
+            <p id="count_bottom" class="text-sm font-semibold text-slate-700"><?php echo $lang['datasets']; ?>: 0</p>
         </div>
         <div id="pagination_bottom" class="flex flex-row justify-center"></div>
         <div class="inline-flex items-center justify-end gap-2 text-sm">
-            <label for="table_limit_2" class="text-slate-600">Anzahl:</label>
+            <label for="table_limit_2" class="text-slate-600"><?php echo $lang['quantity']; ?>:</label>
             <select id="table_limit_2" name="limit" class="rounded-full border border-slate-300 bg-white px-3 py-1.5">
                 <option value="50" <?php if ($limit === 50) echo 'selected'; ?>>50</option>
                 <option value="100" <?php if ($limit === 100) echo 'selected'; ?>>100</option>
@@ -136,6 +140,15 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
 <script>
 (function () {
+    const PORTVIEW_I18N = <?php echo json_encode($lang, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const PORTVIEW_LOCALE = <?php echo json_encode($portviewLocale, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const PORTVIEW_SEARCH_PLACEHOLDER = `${PORTVIEW_I18N.search} ...`;
+    const PORTVIEW_PICKER_KIND_LABELS = {
+        locations: PORTVIEW_I18N.portview_picker_kind_location,
+        devices: PORTVIEW_I18N.portview_picker_kind_device,
+        ports: PORTVIEW_I18N.portview_picker_kind_port
+    };
+
     let currentSort = '';
     let currentOrder = 'asc';
     let currentQuery = '';
@@ -161,22 +174,34 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     };
 
     const PORTVIEW_COLUMNS = [
-        { key: 'statusValue', label: 'Status' },
-        { key: 'switchCaption', label: 'Switch' },
-        { key: 'switchPortCaption', label: 'Switch-Port' },
-        { key: 'patchpanelCaption', label: 'Patchpanel' },
-        { key: 'patchpanelPortCaption', label: 'PP-Port' },
-        { key: 'cableName', label: 'Kabel' },
-        { key: 'roomCaption', label: 'Raum' },
-        { key: 'wallplateCaption', label: 'Wallplate' },
-        { key: 'wallplatePortCaption', label: 'WP-Port' },
-        { key: 'endpointCaption', label: 'Endgerät' },
-        { key: 'endpointPortCaption', label: 'EP-Port' },
-        { key: 'endpointHostname', label: 'Hostname' },
-        { key: 'endpointMac', label: 'MAC' },
-        { key: 'vlanTaggedText', label: 'VLAN (tagged)' },
-        { key: 'vlanUntaggedText', label: 'VLAN (untagged)' }
+        { key: 'statusValue', label: PORTVIEW_I18N.portview_column_status },
+        { key: 'switchCaption', label: PORTVIEW_I18N.portview_column_switch },
+        { key: 'switchPortCaption', label: PORTVIEW_I18N.portview_column_switch_port },
+        { key: 'patchpanelCaption', label: PORTVIEW_I18N.portview_column_patchpanel },
+        { key: 'patchpanelPortCaption', label: PORTVIEW_I18N.portview_column_patchpanel_port },
+        { key: 'cableName', label: PORTVIEW_I18N.portview_column_cable },
+        { key: 'roomCaption', label: PORTVIEW_I18N.portview_column_room },
+        { key: 'wallplateCaption', label: PORTVIEW_I18N.portview_column_wallplate },
+        { key: 'wallplatePortCaption', label: PORTVIEW_I18N.portview_column_wallplate_port },
+        { key: 'endpointCaption', label: PORTVIEW_I18N.portview_column_endpoint },
+        { key: 'endpointPortCaption', label: PORTVIEW_I18N.portview_column_endpoint_port },
+        { key: 'endpointHostname', label: PORTVIEW_I18N.portview_column_hostname },
+        { key: 'endpointMac', label: PORTVIEW_I18N.portview_column_mac },
+        { key: 'vlanTaggedText', label: PORTVIEW_I18N.portview_column_vlan_tagged },
+        { key: 'vlanUntaggedText', label: PORTVIEW_I18N.portview_column_vlan_untagged }
     ];
+
+    function formatMessage(template, replacements = {}) {
+        return String(template || '').replace(/\{(\w+)\}/g, (match, key) => {
+            return Object.prototype.hasOwnProperty.call(replacements, key) ? String(replacements[key]) : match;
+        });
+    }
+
+    function summaryText(totalCount) {
+        const start = totalCount === 0 ? 0 : ((currentPage - 1) * currentLimit) + 1;
+        const end = totalCount === 0 ? 0 : Math.min(currentPage * currentLimit, totalCount);
+        return formatMessage(PORTVIEW_I18N.portview_result_summary, { start, end, total: totalCount });
+    }
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -274,7 +299,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         }).then(async (response) => {
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                throw new Error(data?.error || data?.details || 'Update fehlgeschlagen');
+                throw new Error(data?.error || data?.details || PORTVIEW_I18N.portview_update_failed);
             }
             return data;
         });
@@ -290,7 +315,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         }).then(async (response) => {
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                throw new Error(data?.error || data?.details || 'Erstellen fehlgeschlagen');
+                throw new Error(data?.error || data?.details || PORTVIEW_I18N.portview_create_failed);
             }
             return data;
         });
@@ -311,7 +336,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             .then(async (response) => {
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    throw new Error(data?.error || data?.details || ('Abruf fehlgeschlagen: ' + resource));
+                    throw new Error(data?.error || data?.details || (PORTVIEW_I18N.portview_fetch_failed + ': ' + resource));
                 }
                 return Array.isArray(data.items) ? data.items : [];
             });
@@ -424,7 +449,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 entries.push({
                     uuid,
                     caption,
-                    kind: 'Port',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.ports,
                     meta: metaParts.join(' · ')
                 });
             });
@@ -432,7 +457,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             fullPortSearchEntriesCache = entries;
             return entries;
         }).catch((error) => {
-            console.error('Vollständiger Portsuchindex konnte nicht geladen werden:', error);
+            console.error(PORTVIEW_I18N.portview_full_port_search_failed + ':', error);
             fullPortSearchEntriesCache = [];
             return [];
         }).finally(() => {
@@ -527,7 +552,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
         return {
             summary,
-            statusValue: String(statusValue || ''),
+            statusValue: statusValue === null || statusValue === undefined ? '' : String(statusValue),
             speedLabelText: speedLabel(connectionSpeed),
             switchCaption: String(switchCaption || '--'),
             switchPortCaption: String(switchPortCaption || '--'),
@@ -567,7 +592,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             return -1;
         }
 
-        return leftValue.localeCompare(rightValue, 'de', { numeric: true, sensitivity: 'base' });
+        return leftValue.localeCompare(rightValue, PORTVIEW_LOCALE, { numeric: true, sensitivity: 'base' });
     }
 
     function sortChains(chains) {
@@ -687,7 +712,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
     function renderChainDetail(chain) {
         if (!chain || chain.length === 0) {
-            return '<p class="text-sm text-slate-500">Keine Details vorhanden.</p>';
+            return '<p class="text-sm text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_no_details) + '</p>';
         }
 
         const notice = detailNotice ? `
@@ -700,46 +725,46 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <div class="text-sm font-semibold text-slate-900">Kabel-Trace</div>
-                        <div class="text-xs text-slate-500">Verfolgt den aktuellen Verbindungsweg ueber den vorhandenen Trace-Endpunkt.</div>
+                        <div class="text-sm font-semibold text-slate-900">${escapeHtml(PORTVIEW_I18N.portview_trace_title)}</div>
+                        <div class="text-xs text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_trace_subtitle)}</div>
                     </div>
-                    <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100" data-action="reload-trace" title="Trace neu laden">
-                        <i data-lucide="route"></i><span>Neu laden</span>
+                    <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100" data-action="reload-trace" title="${escapeHtml(PORTVIEW_I18N.portview_reload_trace)}">
+                        <i data-lucide="route"></i><span>${escapeHtml(PORTVIEW_I18N.portview_reload_trace)}</span>
                     </button>
                 </div>
-                <div id="chainDetailTrace" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">Lade Kabelverlauf ...</div>
+                <div id="chainDetailTrace" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_trace_loading)}</div>
             </div>
         ` : '';
 
         const addPanel = `
             <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                <div class="mb-2 text-sm font-semibold text-slate-900">Verbindung hinzufügen</div>
+                <div class="mb-2 text-sm font-semibold text-slate-900">${escapeHtml(PORTVIEW_I18N.portview_connection_add_title)}</div>
                 <form class="grid gap-3 text-sm md:grid-cols-2" data-connection-add-form="1">
-                    ${createPickerMarkup('add_src_port_caption', 'Quelle Port', '', 'ports', 'Quell-Port suchen ...')}
-                    ${createPickerMarkup('add_dst_port_caption', 'Ziel Port', '', 'ports', 'Ziel-Port suchen ...')}
+                    ${createPickerMarkup('add_src_port_caption', PORTVIEW_I18N.portview_source_port, '', 'ports', PORTVIEW_I18N.portview_source_port_placeholder)}
+                    ${createPickerMarkup('add_dst_port_caption', PORTVIEW_I18N.portview_destination_port, '', 'ports', PORTVIEW_I18N.portview_destination_port_placeholder)}
                     <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <span class="text-slate-500">Kabel</span>
-                        <input name="add_cable_name" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="optional">
+                        <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_cable)}</span>
+                        <input name="add_cable_name" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="${escapeHtml(PORTVIEW_I18N.portview_optional)}">
                     </label>
                     <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <span class="text-slate-500">Geschwindigkeit</span>
-                        <input name="add_speed" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="z.B. 1000">
+                        <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_speed)}</span>
+                        <input name="add_speed" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="${escapeHtml(PORTVIEW_I18N.portview_speed_placeholder)}">
                     </label>
                     <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <span class="text-slate-500">Länge</span>
-                        <input name="add_length" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="z.B. 12.5">
+                        <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_length)}</span>
+                        <input name="add_length" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="${escapeHtml(PORTVIEW_I18N.portview_length_placeholder)}">
                     </label>
                     <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
                         <input type="checkbox" name="add_crossover" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                        <span>Crossover</span>
+                        <span>${escapeHtml(PORTVIEW_I18N.portview_crossover)}</span>
                     </label>
                     <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3 md:col-span-2">
-                        <span class="text-slate-500">Typ</span>
-                        <input name="add_type" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="z.B. copper, fiber, trunk">
+                        <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_type)}</span>
+                        <input name="add_type" class="rounded-lg border border-slate-300 px-3 py-2" placeholder="${escapeHtml(PORTVIEW_I18N.portview_type_placeholder)}">
                     </label>
                     <div class="md:col-span-2">
-                        <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700" data-action="add-connection" title="Verbindung hinzufügen">
-                            <i data-lucide="plus"></i><span>Verbindung hinzufügen</span>
+                        <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700" data-action="add-connection" title="${escapeHtml(PORTVIEW_I18N.portview_add_connection)}">
+                            <i data-lucide="plus"></i><span>${escapeHtml(PORTVIEW_I18N.portview_add_connection)}</span>
                         </button>
                     </div>
                 </form>
@@ -765,54 +790,54 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 <div class="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <div>
-                            <div class="text-sm font-semibold text-slate-900">Bearbeiten</div>
-                            <div class="text-xs text-slate-500">Suche nach Räumen, Geräten und Ports, dann gezielt speichern.</div>
+                            <div class="text-sm font-semibold text-slate-900">${escapeHtml(PORTVIEW_I18N.button_edit)}</div>
+                            <div class="text-xs text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_edit_subtitle)}</div>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700" data-action="save-connection-edit" title="Speichern">
-                                <i data-lucide="save"></i><span>Speichern</span>
+                            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700" data-action="save-connection-edit" title="${escapeHtml(PORTVIEW_I18N.save)}">
+                                <i data-lucide="save"></i><span>${escapeHtml(PORTVIEW_I18N.save)}</span>
                             </button>
-                            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100" data-action="cancel-connection-edit" title="Abbrechen">
-                                <i data-lucide="x"></i><span>Abbrechen</span>
+                            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100" data-action="cancel-connection-edit" title="${escapeHtml(PORTVIEW_I18N.cancel)}">
+                                <i data-lucide="x"></i><span>${escapeHtml(PORTVIEW_I18N.cancel)}</span>
                             </button>
                         </div>
                     </div>
                     <form class="grid gap-3 text-sm md:grid-cols-2" data-connection-edit-form="1" data-connection-uuid="${connectionUuid}">
                         <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3 md:col-span-2">
-                            <span class="text-slate-500">Kabel / Verbindung</span>
+                            <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_connection_cable)}</span>
                             <input name="cable_name" class="rounded-lg border border-slate-300 px-3 py-2" value="${escapeHtml(conn.cable_name || '')}">
                         </label>
                         <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <span class="text-slate-500">Geschwindigkeit</span>
+                            <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_speed)}</span>
                             <input name="speed" class="rounded-lg border border-slate-300 px-3 py-2" value="${escapeHtml(conn.connection_speed ?? '')}">
                         </label>
                         <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <span class="text-slate-500">Typ</span>
+                            <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_type)}</span>
                             <input name="type" class="rounded-lg border border-slate-300 px-3 py-2" value="${escapeHtml(conn.connection_type || '')}">
                         </label>
                         <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <span class="text-slate-500">Länge</span>
+                            <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_length)}</span>
                             <input name="length" class="rounded-lg border border-slate-300 px-3 py-2" value="${escapeHtml(conn.length || '')}">
                         </label>
                         ${canDeleteConnection ? `<div class="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <button type="button" class="inline-flex h-10 items-center gap-2 rounded-full bg-red-500 px-4 text-white hover:bg-red-600" data-action="delete-connection" data-connection-uuid="${connectionUuid}" title="Verbindung löschen">
-                                <i data-lucide="trash-2"></i><span>Verbindung löschen</span>
+                            <button type="button" class="inline-flex h-10 items-center gap-2 rounded-full bg-red-500 px-4 text-white hover:bg-red-600" data-action="delete-connection" data-connection-uuid="${connectionUuid}" title="${escapeHtml(PORTVIEW_I18N.portview_delete_connection)}">
+                                <i data-lucide="trash-2"></i><span>${escapeHtml(PORTVIEW_I18N.portview_delete_connection)}</span>
                             </button>
-                        </div>` : `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">Patchpanel zu Dose ist Kernverkabelung und kann hier nicht gelöscht werden.</div>`}
-                        ${createPickerMarkup('src_location_caption', 'Quelle Ort', conn.src_location_caption || '', 'locations', 'Ort suchen ...')}
-                        ${createPickerMarkup('dst_location_caption', 'Ziel Ort', conn.dst_location_caption || '', 'locations', 'Ort suchen ...')}
-                        ${createPickerMarkup('src_device_caption', 'Quelle Gerät', conn.src_device_caption || '', 'devices', 'Gerät suchen ...')}
-                        ${createPickerMarkup('dst_device_caption', 'Ziel Gerät', conn.dst_device_caption || '', 'devices', 'Gerät suchen ...')}
-                        ${createPickerMarkup('src_port_caption', 'Quelle Port-Caption', conn.src_port_caption || '', 'ports', 'Port suchen ...')}
-                        ${createPickerMarkup('dst_port_caption', 'Ziel Port-Caption', conn.dst_port_caption || '', 'ports', 'Port suchen ...')}
-                        ${createPickerMarkup('src_port_hostname', 'Quelle Hostname', conn.src_port_hostname || '', 'ports', 'Hostname suchen ...')}
-                        ${createPickerMarkup('dst_port_hostname', 'Ziel Hostname', conn.dst_port_hostname || '', 'ports', 'Hostname suchen ...')}
+                        </div>` : `<div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_delete_blocked)}</div>`}
+                        ${createPickerMarkup('src_location_caption', PORTVIEW_I18N.portview_source_room, conn.src_location_caption || '', 'locations', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('dst_location_caption', PORTVIEW_I18N.portview_destination_room, conn.dst_location_caption || '', 'locations', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('src_device_caption', PORTVIEW_I18N.portview_source_device, conn.src_device_caption || '', 'devices', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('dst_device_caption', PORTVIEW_I18N.portview_destination_device, conn.dst_device_caption || '', 'devices', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('src_port_caption', PORTVIEW_I18N.portview_source_port_caption, conn.src_port_caption || '', 'ports', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('dst_port_caption', PORTVIEW_I18N.portview_destination_port_caption, conn.dst_port_caption || '', 'ports', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('src_port_hostname', PORTVIEW_I18N.portview_source_hostname, conn.src_port_hostname || '', 'ports', PORTVIEW_SEARCH_PLACEHOLDER)}
+                        ${createPickerMarkup('dst_port_hostname', PORTVIEW_I18N.portview_destination_hostname, conn.dst_port_hostname || '', 'ports', PORTVIEW_SEARCH_PLACEHOLDER)}
                         <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <span class="text-slate-500">Quelle MAC</span>
+                            <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_source_mac)}</span>
                             <input name="src_port_mac" class="rounded-lg border border-slate-300 px-3 py-2" value="${escapeHtml(conn.src_port_mac || '')}">
                         </label>
                         <label class="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <span class="text-slate-500">Ziel MAC</span>
+                            <span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_destination_mac)}</span>
                             <input name="dst_port_mac" class="rounded-lg border border-slate-300 px-3 py-2" value="${escapeHtml(conn.dst_port_mac || '')}">
                         </label>
                     </form>
@@ -822,22 +847,22 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             return `
                 <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                     <div class="mb-2 flex items-center justify-between gap-3">
-                        <div class="font-semibold text-slate-900">Verbindung ${index + 1}</div>
+                        <div class="font-semibold text-slate-900">${escapeHtml(PORTVIEW_I18N.connections)} ${index + 1}</div>
                         <div class="flex items-center gap-2 text-xs text-slate-500">
                             <span>${connectionUuid}</span>
-                            <button type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:bg-white" title="Bearbeiten" data-action="edit-connection" data-connection-uuid="${connectionUuid}"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+                            <button type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:bg-white" title="${escapeHtml(PORTVIEW_I18N.button_edit)}" data-action="edit-connection" data-connection-uuid="${connectionUuid}"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
                         </div>
                     </div>
                     <div class="grid gap-2 text-sm sm:grid-cols-2">
-                        <div><span class="text-slate-500">Quelle:</span> ${srcCaption} / ${srcPort}</div>
-                        <div><span class="text-slate-500">Ziel:</span> ${dstCaption} / ${dstPort}</div>
-                        <div><span class="text-slate-500">Quelle Ort:</span> ${srcLocationCaption}</div>
-                        <div><span class="text-slate-500">Ziel Ort:</span> ${dstLocationCaption}</div>
-                        <div><span class="text-slate-500">Kabel:</span> ${cable}</div>
-                        <div><span class="text-slate-500">Geschwindigkeit:</span> ${speed}</div>
-                        <div><span class="text-slate-500">Status:</span> ${srcStatus}</div>
-                        <div><span class="text-slate-500">VLAN tagged:</span> ${vlanTagged}</div>
-                        <div><span class="text-slate-500">VLAN untagged:</span> ${vlanUntagged}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_source_label)}:</span> ${srcCaption} / ${srcPort}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_destination_label)}:</span> ${dstCaption} / ${dstPort}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_source_room)}:</span> ${srcLocationCaption}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_destination_room)}:</span> ${dstLocationCaption}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_cable)}:</span> ${cable}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_speed)}:</span> ${speed}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_status_label)}:</span> ${srcStatus}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_tagged_label)}:</span> ${vlanTagged}</div>
+                        <div><span class="text-slate-500">${escapeHtml(PORTVIEW_I18N.portview_untagged_label)}:</span> ${vlanUntagged}</div>
                     </div>
                     ${editForm}
                 </div>
@@ -863,7 +888,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             return;
         }
 
-        target.innerHTML = '<div class="text-sm text-slate-500">Lade Kabelverlauf ...</div>';
+        target.innerHTML = '<div class="text-sm text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_trace_loading) + '</div>';
         try {
             const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/cable_trace?from=' + encodeURIComponent(connectionUuid) + '&kind=connection', {
                 credentials: 'same-origin',
@@ -875,7 +900,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 window.lucide.createIcons();
             }
         } catch (error) {
-            target.innerHTML = '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">Fehler: ' + escapeHtml(error.message || error) + '</div>';
+            target.innerHTML = '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml(PORTVIEW_I18N.portview_trace_error) + ': ' + escapeHtml(error.message || error) + '</div>';
         }
     }
 
@@ -888,23 +913,23 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
     function renderTraceInlineHtml(result) {
         if (!result || result.error) {
-            return '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml((result && result.error) || 'Fehler') + '</div>';
+            return '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml((result && result.error) || PORTVIEW_I18N.portview_trace_error) + '</div>';
         }
 
         if (result.kind === 'device') {
             const ports = Array.isArray(result.ports) ? result.ports : [];
             if (!ports.length) {
-                return '<div class="text-xs text-slate-500">Keine verbundenen Ports.</div>';
+                return '<div class="text-xs text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_no_connected_ports) + '</div>';
             }
             return ports.map((portTrace) => '<div class="mb-3">' + renderTraceInlineHtml(portTrace) + '</div>').join('');
         }
 
         const startLabel = result.start && (result.start.cable_name || result.start.caption)
-            ? '<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Start: ' + escapeHtml(result.start.cable_name || result.start.caption) + '</div>'
+            ? '<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_trace_start) + ': ' + escapeHtml(result.start.cable_name || result.start.caption) + '</div>'
             : '';
         const branches = Array.isArray(result.branches) ? result.branches : [];
         if (!branches.length) {
-            return startLabel + '<div class="text-xs text-slate-500">Keine weiteren Verbindungen ab diesem Punkt.</div>';
+            return startLabel + '<div class="text-xs text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_trace_no_further) + '</div>';
         }
 
         return startLabel + branches.map((branch, index) => {
@@ -916,13 +941,13 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 items.push(traceCableArrow(hop.cable || {}));
                 items.push(traceNodePill(hop.port));
             });
-            return '<div class="mb-2"><div class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pfad ' + (index + 1) + '</div><div class="flex flex-wrap items-stretch gap-1">' + items.join('') + '</div></div>';
+            return '<div class="mb-2"><div class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">' + escapeHtml(formatMessage(PORTVIEW_I18N.portview_trace_path, { index: index + 1 })) + '</div><div class="flex flex-wrap items-stretch gap-1">' + items.join('') + '</div></div>';
         }).join('');
     }
 
     function traceNodePill(node) {
         if (!node || node.type !== 'port') {
-            return '<div class="rounded-lg border border-slate-300 bg-slate-100 p-2 text-xs text-slate-700">Unbekannt</div>';
+            return '<div class="rounded-lg border border-slate-300 bg-slate-100 p-2 text-xs text-slate-700">' + escapeHtml(PORTVIEW_I18N.status_unknown) + '</div>';
         }
         const device = node.device || {};
         const location = node.location || {};
@@ -933,14 +958,14 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             admin_down: 'bg-red-100 text-red-800',
             unknown: 'bg-slate-100 text-slate-700'
         }[status];
-        const endpointBadge = node.endpoint ? '<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-blue-700">Endpunkt</span>' : '';
-        const truncated = node.truncated_reason ? '<div class="mt-1 text-[10px] text-amber-700">Hinweis: ' + escapeHtml(node.truncated_reason) + '</div>' : '';
+        const endpointBadge = node.endpoint ? '<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-blue-700">' + escapeHtml(PORTVIEW_I18N.portview_trace_endpoint) + '</span>' : '';
+        const truncated = node.truncated_reason ? '<div class="mt-1 text-[10px] text-amber-700">' + escapeHtml(PORTVIEW_I18N.portview_trace_note) + ': ' + escapeHtml(node.truncated_reason) + '</div>' : '';
         return '<div class="min-w-[170px] rounded-lg border border-slate-300 bg-white p-2 text-xs shadow-sm">'
-            + '<div class="flex items-center justify-between gap-1"><div class="font-bold text-slate-900">' + escapeHtml(device.caption || 'Device') + endpointBadge + '</div>'
+            + '<div class="flex items-center justify-between gap-1"><div class="font-bold text-slate-900">' + escapeHtml(device.caption || PORTVIEW_I18N.portview_trace_device_fallback) + endpointBadge + '</div>'
             + '<span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase ' + statusClassName + '">' + escapeHtml(device.type || '') + '</span></div>'
-            + (location.caption ? '<div class="text-[10px] text-slate-500">Ort: ' + escapeHtml(location.caption) + '</div>' : '')
-            + '<div class="mt-1 rounded bg-slate-50 px-1.5 py-0.5"><span class="font-semibold">Port:</span> ' + escapeHtml(node.caption || '—') + '</div>'
-            + (node.ip ? '<div class="text-[10px] text-slate-600">IP: ' + escapeHtml(node.ip) + '</div>' : '')
+            + (location.caption ? '<div class="text-[10px] text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_trace_location) + ': ' + escapeHtml(location.caption) + '</div>' : '')
+            + '<div class="mt-1 rounded bg-slate-50 px-1.5 py-0.5"><span class="font-semibold">' + escapeHtml(PORTVIEW_I18N.portview_trace_port) + ':</span> ' + escapeHtml(node.caption || '—') + '</div>'
+            + (node.ip ? '<div class="text-[10px] text-slate-600">' + escapeHtml(PORTVIEW_I18N.portview_trace_ip) + ': ' + escapeHtml(node.ip) + '</div>' : '')
             + truncated
             + '</div>';
     }
@@ -950,7 +975,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         if (edge.cable_name) parts.push(escapeHtml(edge.cable_name));
         if (edge.cable_type) parts.push(escapeHtml(edge.cable_type));
         if (edge.length) parts.push(escapeHtml(edge.length) + ' m');
-        const label = parts.length ? parts.join(' · ') : 'Kabel';
+        const label = parts.length ? parts.join(' · ') : escapeHtml(PORTVIEW_I18N.portview_trace_cable_fallback);
         return '<div class="flex flex-col items-center justify-center px-1 text-slate-500"><div class="text-[9px] uppercase tracking-wider">' + label + '</div>'
             + '<svg viewBox="0 0 60 12" width="60" height="12" class="my-0.5"><line x1="2" y1="6" x2="58" y2="6" stroke="#64748b" stroke-width="2" stroke-dasharray="4 3"/><polygon points="58,6 52,3 52,9" fill="#64748b"/></svg></div>';
     }
@@ -958,7 +983,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     async function saveConnectionEdit(form, extraPayload = {}) {
         const connectionUuid = String(form.dataset.connectionUuid || '');
         if (!connectionUuid) {
-            detailNotice = 'Keine Verbindung zum Speichern gefunden.';
+            detailNotice = PORTVIEW_I18N.portview_no_connection_to_save;
             renderCurrentDetail();
             return;
         }
@@ -1041,7 +1066,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         }
 
         try {
-            detailNotice = 'Speichere Änderungen ...';
+            detailNotice = PORTVIEW_I18N.portview_saving_changes;
             renderCurrentDetail();
 
             if (Object.keys(connectionPayload).length > 0) {
@@ -1059,11 +1084,11 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             }
 
             editingConnectionUuid = '';
-            detailNotice = 'Änderungen gespeichert.';
+            detailNotice = PORTVIEW_I18N.portview_changes_saved;
             await loadTable();
             renderCurrentDetail();
         } catch (error) {
-            detailNotice = error?.message || 'Speichern fehlgeschlagen.';
+            detailNotice = error?.message || PORTVIEW_I18N.portview_save_failed;
             renderCurrentDetail();
         }
     }
@@ -1085,30 +1110,30 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
         const destinationPortUuid = resolvePortUuidFromPickerInput(dstInput);
 
         if (!sourcePortUuid || !destinationPortUuid) {
-            detailNotice = 'Bitte Quelle und Ziel über die Portsuche auswählen.';
+            detailNotice = PORTVIEW_I18N.portview_select_source_destination;
             renderCurrentDetail();
             return;
         }
 
         if (sourcePortUuid === destinationPortUuid) {
-            detailNotice = 'Quelle und Ziel dürfen nicht identisch sein.';
+            detailNotice = PORTVIEW_I18N.portview_identical_ports;
             renderCurrentDetail();
             return;
         }
 
         try {
-            detailNotice = 'Erstelle neue Verbindung ...';
+            detailNotice = PORTVIEW_I18N.portview_creating_connection;
             renderCurrentDetail();
 
             const metadataPayload = {
                 status: 0,
-                caption: 'Portview Verbindung',
-                description: 'Erstellt über Portview'
+                caption: PORTVIEW_I18N.portview_new_connection_caption,
+                description: PORTVIEW_I18N.portview_new_connection_description
             };
             const metadataResult = await apiCreateResource('metadata', metadataPayload);
             const metadataUuid = extractUuidFromApiPayload(metadataResult);
             if (!metadataUuid) {
-                throw new Error('Metadata für neue Verbindung konnte nicht erstellt werden');
+                throw new Error(PORTVIEW_I18N.portview_create_metadata_failed);
             }
 
             const connectionPayload = {
@@ -1125,7 +1150,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             const connectionResult = await apiCreateResource('connection', connectionPayload);
             const newConnectionUuid = extractUuidFromApiPayload(connectionResult);
 
-            detailNotice = 'Verbindung hinzugefügt.';
+            detailNotice = PORTVIEW_I18N.portview_connection_added;
             await loadTable();
 
             if (newConnectionUuid) {
@@ -1138,7 +1163,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
             renderCurrentDetail();
         } catch (error) {
-            detailNotice = error?.message || 'Verbindung konnte nicht hinzugefügt werden.';
+            detailNotice = error?.message || PORTVIEW_I18N.portview_connection_add_failed;
             renderCurrentDetail();
         }
     }
@@ -1146,25 +1171,25 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     async function deleteConnection(connectionUuid) {
         const connection = currentDetailChain.find((conn) => String(conn.connection_uuid || '') === String(connectionUuid || '')) || null;
         if (!connection) {
-            detailNotice = 'Verbindung zum Löschen nicht gefunden.';
+            detailNotice = PORTVIEW_I18N.portview_delete_missing;
             renderCurrentDetail();
             return;
         }
 
         if (isCorePatchpanelOutletConnection(connection)) {
-            detailNotice = 'Patchpanel zu Dose ist Kernverkabelung und kann hier nicht gelöscht werden.';
+            detailNotice = PORTVIEW_I18N.portview_delete_blocked;
             renderCurrentDetail();
             return;
         }
 
-        const confirmText = 'Möchten Sie diese Verbindung vollständig löschen?';
+        const confirmText = PORTVIEW_I18N.portview_delete_confirm;
 
         if (!window.confirm(confirmText)) {
             return;
         }
 
         try {
-            detailNotice = 'Lösche Verbindung ...';
+            detailNotice = PORTVIEW_I18N.portview_deleting_connection;
             renderCurrentDetail();
 
             const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?' + new URLSearchParams({ table: 'connection', uuid: connectionUuid }).toString(), {
@@ -1173,11 +1198,11 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
 
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) {
-                throw new Error(payload?.error || payload?.details || 'Verbindung konnte nicht gelöscht werden');
+                throw new Error(payload?.error || payload?.details || PORTVIEW_I18N.portview_delete_failed);
             }
 
             editingConnectionUuid = '';
-            detailNotice = 'Verbindung gelöscht.';
+            detailNotice = PORTVIEW_I18N.portview_connection_deleted;
             currentDetailChain = [];
             currentDetailConnectionUuid = '';
             await loadTable();
@@ -1185,7 +1210,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             dialog.classList.add('hidden');
             dialog.dataset.open = '0';
         } catch (error) {
-            detailNotice = error?.message || 'Verbindung konnte nicht gelöscht werden.';
+            detailNotice = error?.message || PORTVIEW_I18N.portview_delete_failed;
             renderCurrentDetail();
         }
     }
@@ -1204,25 +1229,23 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             return;
         }
 
-        let html = '<div class="inline-flex flex-wrap items-center gap-2"><span class="mr-1 text-sm text-slate-500">Seite:</span>';
+        const pagesPerGroup = 10;
+        const pageGroup = Math.floor((currentPage - 1) / pagesPerGroup);
+        const groupStart = pageGroup * pagesPerGroup + 1;
+        const groupEnd = Math.min((pageGroup + 1) * pagesPerGroup, totalPages);
+        const prevPage = (pageGroup - 1) * pagesPerGroup + 1;
+        const nextPage = (pageGroup + 1) * pagesPerGroup + 1;
 
-        const groupSize = 10;
-        const currentGroup = Math.floor((currentPage - 1) / groupSize);
-        const groupStart = currentGroup * groupSize + 1;
-        const groupEnd = Math.min(groupStart + groupSize - 1, totalPages);
+        let html = '<div class="flex flex-wrap items-center text-sm text-slate-700"><div class="mr-2 text-slate-500">' + escapeHtml(PORTVIEW_I18N.page) + ':</div>';
 
-        if (currentGroup > 0) {
-            html += `<button type="button" class="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupStart - 1})">←</button>`;
-        }
+        html += `<button type="button" class="mr-2 cursor-pointer ${pageGroup === 0 ? 'invisible' : ''}" ${pageGroup === 0 ? 'tabindex="-1" aria-hidden="true"' : `onclick="window.portViewApp.goToPage(${prevPage})"`}>&larr;</button>`;
 
         for (let i = groupStart; i <= groupEnd; i++) {
             const isActive = i === currentPage;
-            html += `<button type="button" class="inline-flex h-9 min-w-9 items-center justify-center rounded-full px-3 text-sm font-semibold transition ${isActive ? 'bg-blue-500 text-white shadow-sm' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'}" onclick="window.portViewApp.goToPage(${i})">${i}</button>`;
+            html += `<button type="button" class="mr-2 cursor-pointer ${isActive ? 'current-page text-blue-500 font-semibold' : ''}" onclick="window.portViewApp.goToPage(${i})">${i}</button>`;
         }
 
-        if (groupEnd < totalPages) {
-            html += `<button type="button" class="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" onclick="window.portViewApp.goToPage(${groupEnd + 1})">→</button>`;
-        }
+        html += `<button type="button" class="mr-2 cursor-pointer ${groupEnd >= totalPages ? 'invisible' : ''}" ${groupEnd >= totalPages ? 'tabindex="-1" aria-hidden="true"' : `onclick="window.portViewApp.goToPage(${nextPage})"`}>&rarr;</button>`;
 
         html += '</div>';
 
@@ -1333,7 +1356,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     }
 
     function uniqueSorted(values) {
-        return Array.from(new Set(values.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'de'));
+        return Array.from(new Set(values.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), PORTVIEW_LOCALE));
     }
 
     function buildSearchIndex(chains) {
@@ -1355,39 +1378,39 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 addItem(locations, {
                     uuid: conn.src_location_uuid,
                     caption: conn.src_location_caption,
-                    kind: 'Ort',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.locations,
                     meta: conn.src_device_caption || conn.src_port_caption || ''
                 });
                 addItem(locations, {
                     uuid: conn.dst_location_uuid,
                     caption: conn.dst_location_caption,
-                    kind: 'Ort',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.locations,
                     meta: conn.dst_device_caption || conn.dst_port_caption || ''
                 });
 
                 addItem(devices, {
                     uuid: conn.src_device_uuid,
                     caption: conn.src_device_caption,
-                    kind: 'Gerät',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.devices,
                     meta: [conn.src_device_type, conn.src_location_caption].filter(Boolean).join(' · ')
                 });
                 addItem(devices, {
                     uuid: conn.dst_device_uuid,
                     caption: conn.dst_device_caption,
-                    kind: 'Gerät',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.devices,
                     meta: [conn.dst_device_type, conn.dst_location_caption].filter(Boolean).join(' · ')
                 });
 
                 addItem(ports, {
                     uuid: conn.src_port_uuid,
                     caption: conn.src_port_caption,
-                    kind: 'Port',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.ports,
                     meta: [conn.src_device_caption, conn.src_port_hostname, conn.src_port_mac].filter(Boolean).join(' · ')
                 });
                 addItem(ports, {
                     uuid: conn.dst_port_uuid,
                     caption: conn.dst_port_caption,
-                    kind: 'Port',
+                    kind: PORTVIEW_PICKER_KIND_LABELS.ports,
                     meta: [conn.dst_device_caption, conn.dst_port_hostname, conn.dst_port_mac].filter(Boolean).join(' · ')
                 });
             });
@@ -1416,7 +1439,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     function renderSearchSuggestions(kind, query) {
         const entries = searchIndexEntries(kind, query);
         if (entries.length === 0) {
-            return '<div class="px-3 py-2 text-xs text-slate-500">Keine Treffer</div>';
+            return '<div class="px-3 py-2 text-xs text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_no_search_hits) + '</div>';
         }
 
         return entries.map((entry) => {
@@ -1442,7 +1465,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 <span class="text-slate-500">${escapeHtml(label)}</span>
                 <div class="relative">
                     <input name="${name}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 shadow-sm focus:border-blue-500 focus:outline-none" value="${escapeHtml(value || '')}" placeholder="${escapeHtml(placeholder || label)}" autocomplete="off" data-search-input="1" data-search-kind="${kind}">
-                    <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800" data-search-clear="1" title="Feld leeren">
+                    <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800" data-search-clear="1" title="${escapeHtml(PORTVIEW_I18N.portview_clear_field)}">
                         <i data-lucide="x"></i>
                     </button>
                 </div>
@@ -1487,23 +1510,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     }
 
     function exportVisibleChainsAsCsv() {
-        const header = [
-            'Status',
-            'Switch',
-            'Switch-Port',
-            'Patchpanel',
-            'PP-Port',
-            'Kabel',
-            'Raum',
-            'Wallplate',
-            'WP-Port',
-            'Endgerät',
-            'EP-Port',
-            'Hostname',
-            'MAC',
-            'VLAN (tagged)',
-            'VLAN (untagged)'
-        ];
+        const header = PORTVIEW_COLUMNS.map((column) => column.label);
 
         const csvLines = [header.map(csvEscape).join(',')];
         visibleChainsCache.forEach((chain) => {
@@ -1550,9 +1557,9 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             });
         };
 
-        fillSelect(roomSelect, rooms, currentRoom, 'Alle Orte');
-        fillSelect(endpointSelect, endpointTypes, currentEndpointType, 'Alle Gerätetypen');
-        fillSelect(vlanSelect, vlans, currentVlan, 'Alle VLANs');
+        fillSelect(roomSelect, rooms, currentRoom, PORTVIEW_I18N.portview_all_rooms);
+        fillSelect(endpointSelect, endpointTypes, currentEndpointType, PORTVIEW_I18N.portview_all_endpoint_types);
+        fillSelect(vlanSelect, vlans, currentVlan, PORTVIEW_I18N.portview_all_vlans);
     }
 
     function bindFilterControls() {
@@ -1608,7 +1615,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
             const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?' + params.toString());
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                throw new Error(data?.error || data?.details || 'Portview konnte nicht geladen werden');
+                throw new Error(data?.error || data?.details || (PORTVIEW_I18N.portview_fetch_failed + ': portview'));
             }
 
             const tbody = document.getElementById('portviewTableBody');
@@ -1640,16 +1647,13 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                     tbody.innerHTML += buildRowForChain(chain, index);
                 });
             } else {
-                tbody.innerHTML = '<tr><td colspan="15" class="p-4 text-center text-slate-500">Keine Einträge gefunden</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="15" class="p-4 text-center text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_no_entries) + '</td></tr>';
             }
 
-            const startIdx = (currentPage - 1) * currentLimit + 1;
-            const endIdx = Math.min(currentPage * currentLimit, totalCount);
-            const summaryText = `Zeige ${totalCount === 0 ? 0 : startIdx}-${endIdx} von ${totalCount}`;
-            document.getElementById('count').textContent = `Datensätze: ${totalCount}`;
-            document.getElementById('count_bottom').textContent = `Datensätze: ${totalCount}`;
-            document.getElementById('resultSummary').textContent = summaryText;
-            document.getElementById('resultSummaryBottom').textContent = summaryText;
+            document.getElementById('count').textContent = `${PORTVIEW_I18N.datasets}: ${totalCount}`;
+            document.getElementById('count_bottom').textContent = `${PORTVIEW_I18N.datasets}: ${totalCount}`;
+            document.getElementById('count').setAttribute('title', summaryText(totalCount));
+            document.getElementById('count_bottom').setAttribute('title', summaryText(totalCount));
 
             renderPagination(totalCount);
 
@@ -1664,7 +1668,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
                 }
             }
         } catch (err) {
-            console.error('Error loading table:', err);
+            console.error(PORTVIEW_I18N.portview_fetch_failed + ':', err);
         }
     }
 
