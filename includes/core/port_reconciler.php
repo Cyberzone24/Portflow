@@ -80,6 +80,8 @@ class PortReconciler
                     'if_index' => $iface['if_index'] ?? null,
                     'if_name'  => $ifName,
                     'if_alias' => (string)($iface['if_alias'] ?? ''),
+                    'ip_address' => (string)($iface['ip_address'] ?? ''),
+                    'pvid' => $iface['pvid'] ?? null,
                     'stack_unit' => $stackUnit,
                     'oper'     => $iface['if_oper_status'] ?? null,
                     'admin'    => $iface['if_admin_status'] ?? null,

@@ -539,34 +539,6 @@
                     },
                     "required": false
                 },
-                "vlan": {
-                    "label": "VLAN",
-                    "type": "searchDropdown",
-                    "resource": "vlan_join_metadata",
-                    "dependencies": {
-                        "vlan": "vlan"
-                    },
-                    "required": false
-                },
-                "expected_vlan": {
-                    "label": "Expected VLAN",
-                    "type": "searchDropdown",
-                    "resource": "vlan_join_metadata",
-                    "dependencies": {
-                        "expected_vlan": "expected_vlan"
-                    },
-                    "required": false
-                },
-                "tagged": {
-                    "label": "VLAN tagged",
-                    "type": "boolean",
-                    "required": false
-                },
-                "expected_tagged": {
-                    "label": "Expected VLAN tagged",
-                    "type": "boolean",
-                    "required": false
-                },
                 "ip": {
                     "label": "IP",
                     "type": "text",

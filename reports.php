@@ -378,16 +378,33 @@ try {
                      COALESCE(vlan_current_tagged.vlan_ids, '') AS current_tagged_vlans,
                      COALESCE(vlan_expected_tagged.vlan_ids, '') AS expected_tagged_vlans,
                      COALESCE(vlan_expected_flags.has_expected_vlan, FALSE) AS has_expected_vlan,
+                                s.last_scan_run AS state_run_uuid,
                 s.if_index, s.if_name, s.if_alias,
                 s.if_admin_status, s.if_oper_status,
                 s.last_seen_active, s.updated AS state_updated,
-                r.switch_name AS last_run_switch,
-                r.started AS last_run_started
+                                COALESCE(r.switch_name, latest_inventory_run.switch_name) AS last_run_switch,
+                                COALESCE(r.started, latest_inventory_run.started) AS last_run_started,
+                                latest_inventory_run.run_uuid AS latest_inventory_run_uuid
             FROM device_port dp
          LEFT JOIN device d ON d.uuid = dp.device
          LEFT JOIN device_port_ip dpi ON dpi.uuid = dp.device_port_ip
             LEFT JOIN device_port_snmp_state s ON s.device_port = dp.uuid
          LEFT JOIN snmp_scan_run r ON r.uuid = s.last_scan_run
+                        LEFT JOIN LATERAL (
+                                SELECT sr.uuid AS run_uuid, sr.switch_name, sr.started
+                                FROM snmp_scan_run sr
+                                LEFT JOIN device run_device ON run_device.uuid = sr.device
+                                WHERE sr.status IN ('success', 'partial')
+                                    AND (
+                                        sr.device = d.uuid
+                                        OR (
+                                                d.item_group IS NOT NULL
+                                                AND run_device.item_group = d.item_group
+                                        )
+                                    )
+                                ORDER BY sr.started DESC
+                                LIMIT 1
+                        ) latest_inventory_run ON TRUE
             LEFT JOIN (
                 SELECT dpv.device_port, MIN(v.vlan::int) AS vlan_id
                 FROM device_port_vlan dpv
@@ -431,6 +448,7 @@ try {
 $neighborByPort = [];
 $connectionByPort = [];
 $knownDeviceCaptions = [];
+$driftFlagsByPort = [];
 if (!empty($driftRows)) {
     try {
         $knownDeviceRows = $db_adapter->db_query(
@@ -465,6 +483,29 @@ if (!empty($driftRows)) {
             $key = 'p' . $portIndex++;
             $placeholders[] = ':' . $key;
             $params[$key] = $portUuid;
+        }
+
+        try {
+            $driftViewRows = $db_adapter->db_query(
+                "SELECT device_port_uuid, drift_class
+                 FROM device_port_drift
+                 WHERE device_port_uuid IN (" . implode(',', $placeholders) . ")
+                 ORDER BY device_port_uuid, drift_class",
+                $params
+            ) ?: [];
+            foreach ($driftViewRows as $driftViewRow) {
+                $portUuid = trim((string)($driftViewRow['device_port_uuid'] ?? ''));
+                $driftClass = trim((string)($driftViewRow['drift_class'] ?? ''));
+                if ($portUuid === '' || $driftClass === '') {
+                    continue;
+                }
+                if (!isset($driftFlagsByPort[$portUuid])) {
+                    $driftFlagsByPort[$portUuid] = [];
+                }
+                $driftFlagsByPort[$portUuid][$driftClass] = $driftClass;
+            }
+        } catch (\Throwable $e) {
+            $driftFlagsByPort = [];
         }
 
         try {
@@ -552,8 +593,29 @@ try {
          FROM device_port_snmp_state s
          JOIN device_port dp ON dp.uuid = s.device_port
          LEFT JOIN device d ON d.uuid = dp.device
-         WHERE s.last_seen_active IS NULL
-            OR s.last_seen_active < (CURRENT_DATE - INTERVAL '" . (int)$staleDays . " days')
+         LEFT JOIN device_port_ip dpi ON dpi.uuid = dp.device_port_ip
+         WHERE (
+                s.last_seen_active IS NULL
+                OR s.last_seen_active < (CURRENT_DATE - INTERVAL '" . (int)$staleDays . " days')
+            )
+            AND (
+                dp.expected_speed IS NOT NULL
+                OR TRIM(COALESCE(dpi.expected_ip::text, '')) <> ''
+                OR TRIM(COALESCE(dpi.expected_hostname, '')) <> ''
+                OR dpi.expected_dhcp_address IS NOT NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM device_port_vlan dpv
+                    WHERE dpv.device_port = dp.uuid
+                      AND (dpv.expected_vlan IS NOT NULL OR COALESCE(dpv.expected_tagged, FALSE) = TRUE)
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM connection c
+                    WHERE c.expected_device_port_source = dp.uuid
+                       OR c.expected_device_port_destination = dp.uuid
+                )
+            )
          ORDER BY s.last_seen_active NULLS FIRST
          LIMIT 200"
     ) ?: [];
@@ -563,6 +625,16 @@ try {
 
 // Helpers
 function rep_h($v): string { return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8'); }
+function rep_t(string $key, ?string $fallback = null): string {
+    global $lang;
+
+    $value = is_array($lang ?? null) ? trim((string)($lang[$key] ?? '')) : '';
+    if ($value !== '') {
+        return $value;
+    }
+
+    return $fallback ?? $key;
+}
 function rep_dt($v, string $fallback = '-'): string {
     $raw = trim((string)($v ?? ''));
     if ($raw === '') {
@@ -659,25 +731,26 @@ function rep_meta_badge(string $label): string {
 }
 function rep_flag_label(string $flag): string {
     return match ($flag) {
-        'oper-down' => 'Oper down',
-        'name-mismatch' => 'Name',
-        'speed-mismatch' => 'Speed',
-        'pvid-mismatch' => 'PVID',
-        'tagged-vlan-mismatch' => 'Tagged VLANs',
-        'ip-mismatch' => 'IP',
-        'ip-missing' => 'IP fehlt',
-        'hostname-mismatch' => 'Hostname',
-        'dhcp-mismatch' => 'DHCP',
-        'neighbor-mismatch' => 'Neighbor',
-        'unexpected-neighbor' => 'Unexpected neighbor',
-        'neighbor-missing' => 'Neighbor fehlt',
-        'missing-scan-state' => 'Kein SNMP-State',
+        'oper-down' => rep_t('snmp_drift_oper_down', 'Oper down'),
+        'name-mismatch' => rep_t('snmp_drift_name_mismatch', 'Name'),
+        'speed-mismatch' => rep_t('snmp_drift_speed_mismatch', 'Speed'),
+        'pvid-mismatch' => rep_t('snmp_drift_pvid_mismatch', 'PVID'),
+        'tagged-vlan-mismatch' => rep_t('snmp_drift_tagged_vlan_mismatch', 'Tagged VLANs'),
+        'orphaned-port' => rep_t('snmp_drift_orphaned_port', 'Orphaned'),
+        'ip-mismatch' => rep_t('snmp_drift_ip_mismatch', 'IP'),
+        'ip-missing' => rep_t('snmp_drift_ip_missing', 'Missing IP'),
+        'hostname-mismatch' => rep_t('snmp_drift_hostname_mismatch', 'Hostname'),
+        'dhcp-mismatch' => rep_t('snmp_drift_dhcp_mismatch', 'DHCP'),
+        'neighbor-mismatch' => rep_t('snmp_drift_neighbor_mismatch', 'Neighbor'),
+        'unexpected-neighbor' => rep_t('snmp_drift_unexpected_neighbor', 'Unexpected neighbor'),
+        'neighbor-missing' => rep_t('snmp_drift_neighbor_missing', 'Missing neighbor'),
+        'missing-scan-state' => rep_t('snmp_drift_missing_scan_state', 'No SNMP state'),
         default => $flag,
     };
 }
 function rep_flag_severity(string $flag): string {
     return match ($flag) {
-        'oper-down', 'speed-mismatch', 'pvid-mismatch', 'tagged-vlan-mismatch', 'ip-mismatch', 'ip-missing', 'neighbor-mismatch', 'neighbor-missing', 'missing-scan-state' => 'warn',
+        'oper-down', 'speed-mismatch', 'pvid-mismatch', 'tagged-vlan-mismatch', 'orphaned-port', 'ip-mismatch', 'ip-missing', 'neighbor-mismatch', 'neighbor-missing', 'missing-scan-state' => 'warn',
         default => 'info',
     };
 }
@@ -686,6 +759,7 @@ function rep_flag_detail(array $row, string $flag): string {
         'speed-mismatch' => 'Ist ' . rep_num($row['current_speed'] ?? null) . ' / Soll ' . rep_num($row['expected_speed'] ?? null),
         'pvid-mismatch' => 'Ist ' . rep_num($row['current_pvid'] ?? null) . ' / Soll ' . rep_num($row['expected_pvid'] ?? null),
         'tagged-vlan-mismatch' => 'Ist ' . rep_vlan_list_label($row['current_tagged_vlans'] ?? '') . ' / Soll ' . rep_vlan_list_label($row['expected_tagged_vlans'] ?? ''),
+        'orphaned-port' => 'Port ist in Portflow vorhanden, fehlt aber im aktuellsten Scan dieses Switches oder Stacks.',
         'missing-scan-state' => 'Dieser Port hat erwartete Konfiguration, aber keinen aktuellen SNMP-State.',
         default => '',
     };
@@ -721,84 +795,93 @@ function rep_is_virtual_interface_name(string $name): bool {
     return preg_match('/^(?:br\d+|switch\d+(?:\.\d+)?|eth\d+\.\d+|bond\d+(?:\.\d+)?|vlan\d+|docker\d+|veth[a-z0-9]+|lo|dummy\d+|gre\d+|gretap\d+|erspan\d+|ip_vti\d+|ip6_vti\d+|sit\d+|ip6tnl\d+|ifb(?:ppp)?\d+|ppp\d+|tun\d+|tap\d+|tailscale\d+|wg\d+)$/', $normalized) === 1;
 }
 
+$unknownRows = [];
+$unknownVirtualRows = [];
+$unknownSwitchCount = 0;
+try {
+    $latestUnknownRunRows = $db_adapter->db_query(
+        "SELECT DISTINCT ON (r.switch_name) r.uuid, r.switch_name, r.started, r.status, r.details
+         FROM snmp_scan_run r
+         WHERE r.status IN ('success', 'partial')
+         ORDER BY r.switch_name, r.started DESC"
+    ) ?: [];
+
+    $unknownSwitches = [];
+    foreach ($latestUnknownRunRows as $runRow) {
+        $rawDetails = $runRow['details'] ?? null;
+        if (is_string($rawDetails) && $rawDetails !== '') {
+            $decoded = json_decode($rawDetails, true);
+            $runDetails = is_array($decoded) ? $decoded : [];
+        } elseif (is_array($rawDetails)) {
+            $runDetails = $rawDetails;
+        } else {
+            $runDetails = [];
+        }
+
+        $runUnknownRows = is_array($runDetails['unknown_interfaces'] ?? null) ? $runDetails['unknown_interfaces'] : [];
+        foreach ($runUnknownRows as $unknownRow) {
+            if (!is_array($unknownRow)) {
+                continue;
+            }
+            $switchName = trim((string)($runRow['switch_name'] ?? ''));
+            $enrichedRow = [
+                'run_uuid' => trim((string)($runRow['uuid'] ?? '')),
+                'switch_name' => $switchName,
+                'started' => trim((string)($runRow['started'] ?? '')),
+                'status' => trim((string)($runRow['status'] ?? '')),
+                'if_index' => $unknownRow['if_index'] ?? null,
+                'if_name' => trim((string)($unknownRow['if_name'] ?? '')),
+                'if_alias' => trim((string)($unknownRow['if_alias'] ?? '')),
+                'ip_address' => trim((string)($unknownRow['ip_address'] ?? '')),
+                'pvid' => $unknownRow['pvid'] ?? null,
+                'stack_unit' => $unknownRow['stack_unit'] ?? null,
+                'admin' => $unknownRow['admin'] ?? null,
+                'oper' => $unknownRow['oper'] ?? null,
+            ];
+            if ($switchName !== '') {
+                $unknownSwitches[$switchName] = true;
+            }
+            if (rep_is_virtual_interface_name($enrichedRow['if_name'])) {
+                $unknownVirtualRows[] = $enrichedRow;
+            } else {
+                $unknownRows[] = $enrichedRow;
+            }
+        }
+    }
+
+    $unknownSwitchCount = count($unknownSwitches);
+
+    $unknownSort = static function (array $left, array $right): int {
+        $bySwitch = strcasecmp((string)($left['switch_name'] ?? ''), (string)($right['switch_name'] ?? ''));
+        if ($bySwitch !== 0) {
+            return $bySwitch;
+        }
+        $byIfIndex = ((int)($left['if_index'] ?? 0)) <=> ((int)($right['if_index'] ?? 0));
+        if ($byIfIndex !== 0) {
+            return $byIfIndex;
+        }
+        return strcasecmp((string)($left['if_name'] ?? ''), (string)($right['if_name'] ?? ''));
+    };
+    usort($unknownRows, $unknownSort);
+    usort($unknownVirtualRows, $unknownSort);
+} catch (\Throwable $e) {
+    $unknownRows = [];
+    $unknownVirtualRows = [];
+    $unknownSwitchCount = 0;
+}
+
 // Pre-compute drift cells: which rows have differences worth flagging
 $driftFlagged = [];
 foreach ($driftRows as $i => $row) {
-    $flags = [];
     $portUuid = trim((string)($row['device_port_uuid'] ?? ''));
-    $currentIp = trim((string)($row['current_ip'] ?? ''));
-    $expectedIp = trim((string)($row['expected_ip'] ?? ''));
-    $currentHostname = trim((string)($row['current_hostname'] ?? ''));
-    $expectedHostname = trim((string)($row['expected_hostname'] ?? ''));
-    $currentDhcpRaw = $row['current_dhcp_address'] ?? null;
-    $expectedDhcpRaw = $row['expected_dhcp_address'] ?? null;
-    $currentDhcp = $currentDhcpRaw === null ? null : (bool)$currentDhcpRaw;
-    $expectedDhcp = $expectedDhcpRaw === null ? null : (bool)$expectedDhcpRaw;
-    $currentSpeed = isset($row['current_speed']) && $row['current_speed'] !== null ? (float)$row['current_speed'] : null;
-    $expectedSpeed = isset($row['expected_speed']) && $row['expected_speed'] !== null ? (float)$row['expected_speed'] : null;
-    $currentPvid = isset($row['current_pvid']) && $row['current_pvid'] !== null ? (int)$row['current_pvid'] : null;
-    $expectedPvid = isset($row['expected_pvid']) && $row['expected_pvid'] !== null ? (int)$row['expected_pvid'] : null;
-    $currentTagged = rep_csv_ints($row['current_tagged_vlans'] ?? '');
-    $expectedTagged = rep_csv_ints($row['expected_tagged_vlans'] ?? '');
-    $observedNeighbor = $portUuid !== '' ? ($neighborByPort[$portUuid] ?? null) : null;
-    $configuredNeighbor = $portUuid !== '' ? ($connectionByPort[$portUuid] ?? null) : null;
-    $hasScanState = ($row['if_index'] ?? null) !== null || trim((string)($row['if_name'] ?? '')) !== '';
-    $hasExpectedVlanConfig = !empty($row['has_expected_vlan']) || $expectedPvid !== null || $expectedTagged !== [];
-    $hasExpectedConfig = $hasExpectedVlanConfig || $expectedSpeed !== null || $expectedIp !== '' || $expectedHostname !== '' || $expectedDhcp !== null || $configuredNeighbor !== null;
-
-    if (!$hasScanState && $hasExpectedConfig) {
-        $flags[] = 'missing-scan-state';
-        $driftFlagged[$i] = $flags;
-        continue;
-    }
-
-    // Operational down on a port that has a configured caption
-    if ((int)($row['if_oper_status'] ?? 0) === 2) { $flags[] = 'oper-down'; }
-    // SNMP if_name vs configured port_caption mismatch (case-insensitive)
-    $cfg = strtolower(trim((string)($row['port_caption'] ?? '')));
-    $snm = strtolower(trim((string)($row['if_name'] ?? '')));
-    if ($cfg !== '' && $snm !== '' && $cfg !== $snm) { $flags[] = 'name-mismatch'; }
-    if ($expectedSpeed !== null && $currentSpeed !== null && abs($currentSpeed - $expectedSpeed) > 0.0001) {
-        $flags[] = 'speed-mismatch';
-    }
-    if ($hasExpectedVlanConfig && $expectedPvid !== null && $currentPvid !== $expectedPvid) {
-        $flags[] = 'pvid-mismatch';
-    }
-    if ($hasExpectedVlanConfig && $currentTagged !== $expectedTagged) {
-        $flags[] = 'tagged-vlan-mismatch';
-    }
-    if ($expectedIp !== '') {
-        if ($currentIp === '') {
-            $flags[] = 'ip-missing';
-        } elseif (strcasecmp($currentIp, $expectedIp) !== 0) {
-            $flags[] = 'ip-mismatch';
-        }
-    }
-    if ($expectedHostname !== '' && strcasecmp($currentHostname, $expectedHostname) !== 0) {
-        $flags[] = 'hostname-mismatch';
-    }
-    if ($expectedDhcp !== null && $currentDhcp !== null && $expectedDhcp !== $currentDhcp) {
-        $flags[] = 'dhcp-mismatch';
-    }
-    if ($observedNeighbor !== null && $configuredNeighbor !== null) {
-        $observedDevice = strtolower(trim((string)($observedNeighbor['remote_sys_name'] ?? '')));
-        $configuredDevice = strtolower(trim((string)($configuredNeighbor['remote_device_caption'] ?? '')));
-        $observedPort = strtolower(trim((string)($observedNeighbor['remote_port_id'] ?? '')));
-        $configuredPort = strtolower(trim((string)($configuredNeighbor['remote_port_caption'] ?? '')));
-        if (($observedDevice !== '' && $configuredDevice !== '' && $observedDevice !== $configuredDevice)
-            || ($observedPort !== '' && $configuredPort !== '' && $observedPort !== $configuredPort)) {
-            $flags[] = 'neighbor-mismatch';
-        }
-    } elseif ($observedNeighbor !== null && !empty($observedNeighbor['managed'])) {
-        $flags[] = 'unexpected-neighbor';
-    } elseif ($observedNeighbor === null && $configuredNeighbor !== null) {
-        $flags[] = 'neighbor-missing';
-    }
+    $flags = array_values($driftFlagsByPort[$portUuid] ?? []);
     $driftFlagged[$i] = $flags;
 }
 $driftCount = 0;
 foreach ($driftFlagged as $f) { if ($f) { $driftCount++; } }
 $staleCount = count($staleRows);
+$unknownCount = count($unknownRows);
+$unknownVirtualCount = count($unknownVirtualRows);
 $runsCount = count($runsRows);
 $driftOperDownCount = 0;
 $driftNeighborIssueCount = 0;
@@ -814,7 +897,7 @@ foreach ($driftFlagged as $flags) {
     if (in_array('ip-mismatch', $flags, true) || in_array('ip-missing', $flags, true) || in_array('hostname-mismatch', $flags, true) || in_array('dhcp-mismatch', $flags, true)) {
         $driftIpIssueCount++;
     }
-    if (in_array('speed-mismatch', $flags, true) || in_array('pvid-mismatch', $flags, true) || in_array('tagged-vlan-mismatch', $flags, true) || in_array('missing-scan-state', $flags, true)) {
+    if (in_array('speed-mismatch', $flags, true) || in_array('pvid-mismatch', $flags, true) || in_array('tagged-vlan-mismatch', $flags, true) || in_array('orphaned-port', $flags, true) || in_array('missing-scan-state', $flags, true)) {
         $driftLayer2IssueCount++;
     }
 }
@@ -935,11 +1018,12 @@ if ($tab === 'nodes') {
 }
 
 $tabs = [
-    'drift' => ['label' => 'Drift (' . $driftCount . ')', 'icon' => 'alert-triangle'],
-    'stale' => ['label' => 'Stale Ports (' . $staleCount . ')', 'icon' => 'eye-off'],
-    'nodes' => ['label' => 'Nodes (' . $nodeCount . ')', 'icon' => 'network'],
-    'topology' => ['label' => 'Topology', 'icon' => 'share-2'],
-    'runs' => ['label' => 'Scan Runs (' . $runsCount . ')', 'icon' => 'history'],
+    'drift' => ['label' => rep_t('snmp_tab_drift', 'Drift') . ' (' . $driftCount . ')', 'icon' => 'alert-triangle'],
+    'unknown' => ['label' => rep_t('snmp_tab_unknown_ports', 'Unknown Ports') . ' (' . $unknownCount . ')', 'icon' => 'unlink-2'],
+    'stale' => ['label' => rep_t('snmp_tab_stale_ports', 'Stale Ports') . ' (' . $staleCount . ')', 'icon' => 'eye-off'],
+    'nodes' => ['label' => rep_t('snmp_tab_nodes', 'Nodes') . ' (' . $nodeCount . ')', 'icon' => 'network'],
+    'topology' => ['label' => rep_t('snmp_tab_topology', 'Topology'), 'icon' => 'share-2'],
+    'runs' => ['label' => rep_t('snmp_tab_scan_runs', 'Scan Runs') . ' (' . $runsCount . ')', 'icon' => 'history'],
 ];
 
 // --- Topology / LLDP neighbors ----------------------------------------
@@ -1092,11 +1176,11 @@ if ($tab === 'topology') {
     <div class="rounded-2xl border border-slate-300 bg-white p-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h1 class="text-xl font-bold text-slate-900">SNMP Reports</h1>
-                <p class="text-sm text-slate-500">Discovery-Status, Drift und Scan-Historie.</p>
+                <h1 class="text-xl font-bold text-slate-900"><?php echo rep_h(rep_t('snmp_reports_title', 'SNMP Reports')); ?></h1>
+                <p class="text-sm text-slate-500"><?php echo rep_h(rep_t('snmp_reports_subtitle', 'Discovery status, drift, and scan history.')); ?></p>
             </div>
             <a href="settings.php?site=scripts&amp;tab=switch" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-                <i data-lucide="radar" class="h-4 w-4"></i><span>Inventar</span>
+                <i data-lucide="radar" class="h-4 w-4"></i><span><?php echo rep_h(rep_t('snmp_button_inventory', 'Inventory')); ?></span>
             </a>
         </div>
 
@@ -1130,42 +1214,42 @@ if ($tab === 'topology') {
                     <input type="hidden" name="ignore[]" value="<?php echo rep_h($ignoredPortUuid); ?>">
                 <?php endforeach; ?>
                 <select name="switch" class="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                    <option value="">Alle Switches</option>
+                    <option value=""><?php echo rep_h(rep_t('snmp_filter_all_switches', 'All switches')); ?></option>
                     <?php foreach ($driftSwitchOptions as $switchOption): ?>
                         <option value="<?php echo rep_h($switchOption); ?>" <?php echo strcasecmp($switchFilter, $switchOption) === 0 ? 'selected' : ''; ?>><?php echo rep_h($switchOption); ?></option>
                     <?php endforeach; ?>
                 </select>
                 <select name="class" class="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                    <option value="">Alle Drift-Klassen</option>
+                    <option value=""><?php echo rep_h(rep_t('snmp_filter_all_drift_classes', 'All drift classes')); ?></option>
                     <?php foreach ($driftClassOptions as $classOptionValue => $classOptionLabel): ?>
                         <option value="<?php echo rep_h($classOptionValue); ?>" <?php echo $classFilter === $classOptionValue ? 'selected' : ''; ?>><?php echo rep_h($classOptionLabel); ?></option>
                     <?php endforeach; ?>
                 </select>
                 <select name="severity" class="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                    <option value="">Alle Severities</option>
-                    <option value="warn" <?php echo $severityFilter === 'warn' ? 'selected' : ''; ?>>Warn</option>
-                    <option value="info" <?php echo $severityFilter === 'info' ? 'selected' : ''; ?>>Info</option>
+                    <option value=""><?php echo rep_h(rep_t('snmp_filter_all_severities', 'All severities')); ?></option>
+                    <option value="warn" <?php echo $severityFilter === 'warn' ? 'selected' : ''; ?>><?php echo rep_h(rep_t('snmp_severity_warn', 'Warn')); ?></option>
+                    <option value="info" <?php echo $severityFilter === 'info' ? 'selected' : ''; ?>><?php echo rep_h(rep_t('snmp_severity_info', 'Info')); ?></option>
                 </select>
                 <select name="status" class="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                    <option value="open" <?php echo $driftStatusFilter === 'open' ? 'selected' : ''; ?>>Offen</option>
-                    <option value="ignored" <?php echo $driftStatusFilter === 'ignored' ? 'selected' : ''; ?>>Ignoriert</option>
-                    <option value="ok" <?php echo $driftStatusFilter === 'ok' ? 'selected' : ''; ?>>OK</option>
-                    <option value="all" <?php echo $driftStatusFilter === 'all' ? 'selected' : ''; ?>>Alle</option>
+                    <option value="open" <?php echo $driftStatusFilter === 'open' ? 'selected' : ''; ?>><?php echo rep_h(rep_t('snmp_status_open', 'Open')); ?></option>
+                    <option value="ignored" <?php echo $driftStatusFilter === 'ignored' ? 'selected' : ''; ?>><?php echo rep_h(rep_t('snmp_status_ignored', 'Ignored')); ?></option>
+                    <option value="ok" <?php echo $driftStatusFilter === 'ok' ? 'selected' : ''; ?>><?php echo rep_h(rep_t('snmp_status_ok', 'OK')); ?></option>
+                    <option value="all" <?php echo $driftStatusFilter === 'all' ? 'selected' : ''; ?>><?php echo rep_h(rep_t('snmp_status_all', 'All')); ?></option>
                 </select>
                 <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                    <i data-lucide="funnel" class="h-4 w-4"></i><span>Filtern</span>
+                    <i data-lucide="funnel" class="h-4 w-4"></i><span><?php echo rep_h(rep_t('snmp_button_filter', 'Filter')); ?></span>
                 </button>
-                <a href="?tab=drift" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Zurücksetzen</a>
+                <a href="?tab=drift" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"><?php echo rep_h(rep_t('snmp_button_reset', 'Reset')); ?></a>
             </form>
             <?php if ($ignoredDriftCount > 0): ?>
                 <?php $clearIgnoreParams = $driftBaseParams; unset($clearIgnoreParams['ignore']); ?>
                 <?php $ignoredViewParams = $driftBaseParams; $ignoredViewParams['status'] = 'ignored'; ?>
                 <div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <?php echo rep_meta_badge('Temporär ignoriert ' . $ignoredDriftCount); ?>
+                    <?php echo rep_meta_badge(rep_t('snmp_badge_temp_ignored', 'Temporarily ignored') . ' ' . $ignoredDriftCount); ?>
                     <?php if ($driftStatusFilter !== 'ignored'): ?>
-                        <a href="<?php echo rep_h(rep_query_url($ignoredViewParams)); ?>" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-600 hover:bg-slate-100">Ignorierte anzeigen</a>
+                        <a href="<?php echo rep_h(rep_query_url($ignoredViewParams)); ?>" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-600 hover:bg-slate-100"><?php echo rep_h(rep_t('snmp_button_show_ignored', 'Show ignored')); ?></a>
                     <?php endif; ?>
-                    <a href="<?php echo rep_h(rep_query_url($clearIgnoreParams)); ?>" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-600 hover:bg-slate-100">Ignore zurücksetzen</a>
+                    <a href="<?php echo rep_h(rep_query_url($clearIgnoreParams)); ?>" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-600 hover:bg-slate-100"><?php echo rep_h(rep_t('snmp_button_reset_ignore', 'Reset ignore')); ?></a>
                 </div>
             <?php endif; ?>
             <div class="max-h-[500px] overflow-auto">
@@ -1218,7 +1302,7 @@ if ($tab === 'topology') {
                             <td class="p-2">
                                 <?php if ($hasFlag): ?>
                                     <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                                        <i data-lucide="alert-triangle" class="h-3 w-3"></i>Drift
+                                        <i data-lucide="alert-triangle" class="h-3 w-3"></i><?php echo rep_h(rep_t('snmp_status_drift', 'Drift')); ?>
                                     </span>
                                 <?php else: ?>
                                     <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
@@ -1286,7 +1370,7 @@ if ($tab === 'topology') {
                                             <input type="hidden" name="action" value="accept_port_config_expected">
                                             <input type="hidden" name="device_port_uuid" value="<?php echo rep_h($row['device_port_uuid']); ?>">
                                             <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs" title="Expected-Speed/VLAN auf aktuellen Scan-Stand setzen" onclick="return confirm('Expected-Werte fuer Speed und VLAN dieses Ports auf den aktuellen Scan-Stand setzen?');">
-                                                <i data-lucide="check" class="h-3 w-3"></i><span>L2 angleichen</span>
+                                                <i data-lucide="check" class="h-3 w-3"></i><span><?php echo rep_h(rep_t('snmp_button_align_l2', 'Align L2')); ?></span>
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -1296,7 +1380,7 @@ if ($tab === 'topology') {
                                             <input type="hidden" name="action" value="accept_neighbor_expected">
                                             <input type="hidden" name="device_port_uuid" value="<?php echo rep_h($row['device_port_uuid']); ?>">
                                             <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 text-xs" title="Expected-Link auf beobachteten Nachbarn setzen" onclick="return confirm('Expected-Connection dieses Ports auf den beobachteten LLDP-Nachbarn angleichen?');">
-                                                <i data-lucide="git-merge" class="h-3 w-3"></i><span>Neighbor angleichen</span>
+                                                <i data-lucide="git-merge" class="h-3 w-3"></i><span><?php echo rep_h(rep_t('snmp_button_align_neighbor', 'Align neighbor')); ?></span>
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -1309,7 +1393,7 @@ if ($tab === 'topology') {
                                             <input type="hidden" name="interface" value="<?php echo rep_h($row['if_name']); ?>">
                                             <input type="hidden" name="vlan_id" value="<?php echo rep_h((string)(int)$row['expected_pvid']); ?>">
                                             <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs" title="Switch auf erwarteten PVID setzen" onclick="return confirm('PVID fuer <?php echo rep_h($row['if_name']); ?> auf <?php echo rep_h((string)(int)$row['expected_pvid']); ?> setzen?');">
-                                                <i data-lucide="wrench" class="h-3 w-3"></i><span>PVID fix</span>
+                                                <i data-lucide="wrench" class="h-3 w-3"></i><span><?php echo rep_h(rep_t('snmp_button_fix_pvid', 'Fix PVID')); ?></span>
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -1325,7 +1409,7 @@ if ($tab === 'topology') {
                                                 <input type="hidden" name="pvid" value="<?php echo rep_h((string)(int)$row['expected_pvid']); ?>">
                                             <?php endif; ?>
                                             <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs" title="Switch auf erwartete Tagged-VLAN-Liste setzen" onclick="return confirm('Tagged-VLAN-Liste fuer <?php echo rep_h($row['if_name']); ?> auf <?php echo rep_h(rep_vlan_list_label($row['expected_tagged_vlans'] ?? '')); ?> setzen?');">
-                                                <i data-lucide="wrench" class="h-3 w-3"></i><span>Trunk fix</span>
+                                                <i data-lucide="wrench" class="h-3 w-3"></i><span><?php echo rep_h(rep_t('snmp_button_fix_trunk', 'Fix trunk')); ?></span>
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -1335,7 +1419,7 @@ if ($tab === 'topology') {
                                             <input type="hidden" name="action" value="accept_port_ip_expected">
                                             <input type="hidden" name="device_port_uuid" value="<?php echo rep_h($row['device_port_uuid']); ?>">
                                             <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs" title="Expected auf aktuellen IP-Stand setzen" onclick="return confirm('Expected-Werte fuer IP/Hostname/DHCP dieses Ports auf den aktuellen Scan-Stand setzen?');">
-                                                <i data-lucide="check" class="h-3 w-3"></i><span>Expected angleichen</span>
+                                                <i data-lucide="check" class="h-3 w-3"></i><span><?php echo rep_h(rep_t('snmp_button_align_expected', 'Align expected')); ?></span>
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -1347,13 +1431,13 @@ if ($tab === 'topology') {
                                             <input type="hidden" name="switch_name" value="<?php echo rep_h($row['last_run_switch']); ?>">
                                             <input type="hidden" name="interface" value="<?php echo rep_h($row['if_name']); ?>">
                                             <button type="submit" class="inline-flex items-center gap-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs" title="Port aktivieren (in Warteschlange)" onclick="return confirm('Port-Aktivierung fuer <?php echo rep_h($row['if_name']); ?> auf <?php echo rep_h($row['last_run_switch']); ?> in Warteschlange einreihen?');">
-                                                <i data-lucide="wrench" class="h-3 w-3"></i><span>Fix</span>
+                                                <i data-lucide="wrench" class="h-3 w-3"></i><span><?php echo rep_h(rep_t('snmp_button_fix', 'Fix')); ?></span>
                                             </button>
                                         </form>
                                     <?php endif; ?>
                                     <?php if ($portUuid !== ''): ?>
                                         <a href="<?php echo rep_h(rep_query_url($toggleIgnoreParams)); ?>" class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100" title="<?php echo $isIgnored ? 'Ignorierung aufheben' : 'Port temporär ausblenden'; ?>">
-                                            <i data-lucide="eye-off" class="h-3 w-3"></i><span><?php echo $isIgnored ? 'Einblenden' : 'Ignorieren'; ?></span>
+                                            <i data-lucide="eye-off" class="h-3 w-3"></i><span><?php echo rep_h($isIgnored ? rep_t('snmp_button_unignore', 'Show') : rep_t('snmp_button_ignore', 'Ignore')); ?></span>
                                         </a>
                                     <?php endif; ?>
                                 </div>
@@ -1361,11 +1445,99 @@ if ($tab === 'topology') {
                         </tr>
                     <?php endforeach; ?>
                     <?php if ($visibleDriftCount === 0): ?>
-                        <tr><td colspan="13" class="p-4 text-center text-sm text-slate-500">Noch keine SNMP-Daten vorhanden. Im Switch-Inventar „Scan jetzt" ausführen.</td></tr>
+                        <tr><td colspan="13" class="p-4 text-center text-sm text-slate-500"><?php echo rep_h(rep_t('snmp_empty_drift', 'No SNMP data available yet. Run "Scan now" from the switch inventory.')); ?></td></tr>
                     <?php endif; ?>
                     </tbody>
                 </table>
             </div>
+        </div>
+
+    <?php elseif ($tab === 'unknown'): ?>
+        <div class="space-y-4">
+            <div class="rounded-2xl border border-slate-300 bg-white p-4">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm text-slate-500">Unbekannte SNMP-Interfaces aus dem jeweils neuesten erfolgreichen Scan pro Switch. Virtuelle und System-Interfaces bleiben getrennt von prüfbedürftigen Ports.</p>
+                    <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <?php echo rep_meta_badge('Switches ' . $unknownSwitchCount); ?>
+                        <?php echo rep_meta_badge('Zu prüfen ' . $unknownCount); ?>
+                        <?php echo rep_meta_badge('Virtuell/System ' . $unknownVirtualCount); ?>
+                    </div>
+                </div>
+                <div class="max-h-[460px] overflow-auto">
+                    <table class="w-full text-left text-sm text-slate-700">
+                        <thead class="sticky top-0 z-10 border-b border-slate-200 bg-white text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                                <th class="p-2">Switch</th>
+                                <th class="p-2">Run</th>
+                                <th class="p-2">ifIndex</th>
+                                <th class="p-2">ifName</th>
+                                <th class="p-2">Alias</th>
+                                <th class="p-2">IP</th>
+                                <th class="p-2 text-right">PVID</th>
+                                <th class="p-2">Admin</th>
+                                <th class="p-2">Oper</th>
+                                <th class="p-2 text-right">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($unknownRows as $row): ?>
+                            <tr class="border-b border-slate-200 hover:bg-slate-50">
+                                <td class="p-2 font-medium"><?php echo rep_h($row['switch_name'] ?? ''); ?></td>
+                                <td class="p-2 text-xs"><?php echo rep_h(rep_dt($row['started'] ?? null)); ?></td>
+                                <td class="p-2 font-mono text-xs"><?php echo (int)($row['if_index'] ?? 0); ?></td>
+                                <td class="p-2 font-mono text-xs"><?php echo rep_h($row['if_name'] ?? ''); ?></td>
+                                <td class="p-2 text-xs text-slate-500"><?php echo rep_h($row['if_alias'] ?? ''); ?></td>
+                                <td class="p-2 font-mono text-xs text-cyan-700"><?php echo rep_h(trim((string)($row['ip_address'] ?? '')) !== '' ? (string)($row['ip_address'] ?? '') : '-'); ?></td>
+                                <td class="p-2 text-right text-xs"><?php echo ($row['pvid'] ?? null) !== null ? (int)$row['pvid'] : '-'; ?></td>
+                                <td class="p-2 text-xs"><?php echo rep_h(rep_admin_status_label(isset($row['admin']) ? (int)$row['admin'] : null)); ?></td>
+                                <td class="p-2"><?php echo rep_oper_pill(isset($row['oper']) ? (int)$row['oper'] : null); ?></td>
+                                <td class="p-2 text-right text-xs">
+                                    <?php if (trim((string)($row['run_uuid'] ?? '')) !== ''): ?>
+                                        <a href="?tab=runs&amp;run=<?php echo rep_h($row['run_uuid']); ?>" class="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-600 hover:bg-slate-100">Run</a>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($unknownRows)): ?>
+                            <tr><td colspan="10" class="p-4 text-center text-sm text-slate-500">Keine prüfbedürftigen unbekannten Interfaces im letzten Scan je Switch.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <details class="rounded-2xl border border-slate-300 bg-white overflow-hidden">
+                <summary class="cursor-pointer border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">Virtuell / System (<?php echo $unknownVirtualCount; ?>)</summary>
+                <div class="max-h-[360px] overflow-auto">
+                    <table class="w-full text-left text-sm text-slate-700">
+                        <thead class="sticky top-0 z-10 border-b border-slate-200 bg-white text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                                <th class="p-2">Switch</th>
+                                <th class="p-2">Run</th>
+                                <th class="p-2">ifIndex</th>
+                                <th class="p-2">ifName</th>
+                                <th class="p-2">Alias</th>
+                                <th class="p-2">Oper</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($unknownVirtualRows as $row): ?>
+                            <tr class="border-b border-slate-200 hover:bg-slate-50">
+                                <td class="p-2 font-medium"><?php echo rep_h($row['switch_name'] ?? ''); ?></td>
+                                <td class="p-2 text-xs"><?php echo rep_h(rep_dt($row['started'] ?? null)); ?></td>
+                                <td class="p-2 font-mono text-xs"><?php echo (int)($row['if_index'] ?? 0); ?></td>
+                                <td class="p-2 font-mono text-xs"><?php echo rep_h($row['if_name'] ?? ''); ?></td>
+                                <td class="p-2 text-xs text-slate-500"><?php echo rep_h($row['if_alias'] ?? ''); ?></td>
+                                <td class="p-2"><?php echo rep_oper_pill(isset($row['oper']) ? (int)$row['oper'] : null); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($unknownVirtualRows)): ?>
+                            <tr><td colspan="6" class="p-4 text-center text-sm text-slate-500">Keine virtuellen oder System-Interfaces im letzten Scan je Switch.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
         </div>
 
     <?php elseif ($tab === 'stale'): ?>
