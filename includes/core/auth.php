@@ -102,6 +102,36 @@ class Auth {
         return preg_replace('/[\r\n]+/', ' ', $normalized) ?? $normalized;
     }
 
+    private function constantToBool(string $name, bool $default = false): bool {
+        if (!defined($name)) {
+            return $default;
+        }
+
+        $value = constant($name);
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        $normalized = strtolower(trim((string)$value));
+        if ($normalized === '') {
+            return $default;
+        }
+
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function isLdapEnabled(): bool {
+        return $this->constantToBool('LDAP_ENABLED', false);
+    }
+
+    private function isLdapBindEnabled(): bool {
+        return $this->constantToBool('LDAP_BIND', false);
+    }
+
+    private function isLdapTrustEnabled(): bool {
+        return $this->constantToBool('LDAP_TRUST', true);
+    }
+
     private function writeRootEnvValues(array $updates): array {
         $envPath = dirname(__DIR__, 2) . '/.env';
         if (!file_exists($envPath)) {
@@ -331,20 +361,25 @@ class Auth {
         }
     }
 
-    private function resolveActivatedUserUuidByUsername(string $username): ?string {
+    private function resolveActivatedUserUuidByUsername(string $username, ?string $loginProvider = null): ?string {
         $candidate = trim($username);
         if ($candidate === '') {
             return null;
         }
 
         try {
-            $rows = $this->db_adapter->db_query(
-                "SELECT uuid FROM users WHERE username = :username AND activation_code = :activation_code LIMIT 1",
-                [
-                    'username' => $candidate,
-                    'activation_code' => 'activated'
-                ]
-            );
+            $query = "SELECT uuid FROM users WHERE username = :username AND activation_code = :activation_code";
+            $params = [
+                'username' => $candidate,
+                'activation_code' => 'activated'
+            ];
+            if ($loginProvider !== null && $loginProvider !== '') {
+                $query .= " AND login_provider = :login_provider";
+                $params['login_provider'] = $loginProvider;
+            }
+            $query .= " LIMIT 1";
+
+            $rows = $this->db_adapter->db_query($query, $params);
             if (!is_array($rows) || empty($rows[0]['uuid'])) {
                 return null;
             }
@@ -438,7 +473,7 @@ class Auth {
             return true;
         }
 
-        if (defined('LDAP_ENABLED') && LDAP_ENABLED === true && $this->ldap_signin(true)) {
+        if ($this->isLdapEnabled() && $this->ldap_signin(true)) {
             return true;
         }
 
@@ -663,7 +698,7 @@ class Auth {
                 exit();
             }
 
-            if (LDAP_ENABLED == TRUE) {
+            if ($this->isLdapEnabled()) {
                 $ldap_signin_result = $this->ldap_signin();
                 if ($ldap_signin_result) {
                     return true;
@@ -725,16 +760,20 @@ class Auth {
                 $this->local_signon('signin');
             }
 
-            $query = "SELECT uuid, password, email, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND activation_code = :activation_code";
-            $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'activation_code' => 'activated']);
+            $query = "SELECT uuid, password, email, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND login_provider = :login_provider AND activation_code = :activation_code";
+            $result = $this->db_adapter->db_query($query, [
+                'username' => $this->username,
+                'login_provider' => 'local',
+                'activation_code' => 'activated'
+            ]);
             $result = !empty($result) ? $result[0] : null;
-            $this->logger->log('checking if user exists and account is activated');
+            $this->logger->log('checking if local user exists and account is activated');
 
             if (empty($result)) {
                 return false;
             }
 
-            $this->logger->log('user exists and account is activated', 1);
+            $this->logger->log('local user exists and account is activated', 1);
 
             $this->uuid = $result['uuid'];
             $this->password_db = $result['password'];
@@ -844,7 +883,7 @@ class Auth {
             ldap_set_option($ldap_connection, LDAP_OPT_REFERRALS, 0);
             ldap_set_option($ldap_connection, LDAP_OPT_NETWORK_TIMEOUT, 10);
 
-            if (defined('LDAP_BIND') && LDAP_BIND) {
+            if ($this->isLdapBindEnabled()) {
                 $ldap_bind = @ldap_bind($ldap_connection, LDAP_BIND_USER, LDAP_BIND_PASSWORD);
                 $this->logger->log('trying to bind with ' . LDAP_BIND_USER, 0);
             } else {
@@ -881,7 +920,7 @@ class Auth {
             $this->logger->log('trying to bind with: ' . $this->ldap_found_user_dn, 0);
             if (!@ldap_bind($ldap_connection, $this->ldap_found_user_dn, $this->password)) {
                 $this->logger->log('password verification failed', 2);
-                $resolvedUuid = $this->resolveActivatedUserUuidByUsername((string)$this->username);
+                $resolvedUuid = $this->resolveActivatedUserUuidByUsername((string)$this->username, 'ldap');
                 if ($resolvedUuid !== null) {
                     $this->recordFailedLoginAttempt($resolvedUuid, 1);
                     $this->notifyUsers(
@@ -897,9 +936,10 @@ class Auth {
             }
 
             $this->logger->log('password verification successful', 0);
-            $this->email = $user_entries[0]['mail'][0] ?? null;
+            $ldapEmail = trim((string)($user_entries[0]['mail'][0] ?? ''));
+            $this->email = $ldapEmail !== '' ? $ldapEmail : null;
 
-            $query = "SELECT uuid, email, activation_code, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND login_provider = :login_provider";
+            $query = "SELECT uuid, email, activation_code, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND login_provider = :login_provider LIMIT 1";
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
             $result = !empty($result) ? $result[0] : null;
             $this->logger->log('checking if user exists in database');
@@ -908,7 +948,8 @@ class Auth {
                 $this->logger->log('user exists in database', 1);
 
                 $this->uuid = $result['uuid'];
-                $this->email = $result['email'];
+                $storedEmail = trim((string)($result['email'] ?? ''));
+                $this->email = $ldapEmail !== '' ? $ldapEmail : ($storedEmail !== '' ? $storedEmail : null);
                 $this->activation_code = $result['activation_code'] ?? null;
                 $this->settings = $result['settings'];
                 $this->login_attempts = $result['login_attempts'];
@@ -931,8 +972,12 @@ class Auth {
                     $this->login_attempts = null;
                 }
 
-                $query = "UPDATE users SET last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
-                $result = $this->db_adapter->db_query($query, ['login_attempts' => null, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
+                if ($this->isLdapTrustEnabled() && $this->activation_code !== 'deactivated') {
+                    $this->activation_code = 'activated';
+                }
+
+                $query = "UPDATE users SET email = :email, activation_code = :activation_code, last_login = NOW(), login_attempts = :login_attempts, ip_address = :ip_address WHERE uuid = :uuid";
+                $result = $this->db_adapter->db_query($query, ['email' => $this->email, 'activation_code' => $this->activation_code, 'login_attempts' => null, 'ip_address' => $this->ip(), 'uuid' => $this->uuid]);
             } else {
                 $this->logger->log('user does not exist in database', 1);
 
@@ -956,7 +1001,7 @@ class Auth {
                     ]
                 ];
 
-                LDAP_TRUST ? $this->activation_code = 'activated' : $this->activation_code = $this->random_string(10);
+                $this->activation_code = $this->isLdapTrustEnabled() ? 'activated' : $this->random_string(10);
 
                 $params = [
                     'role' => $result[0]['uuid'],
@@ -975,13 +1020,12 @@ class Auth {
                 $this->settings = $params['settings'];
             }
 
-            if (LDAP_TRUST === TRUE && $this->activation_code !== 'activated') {
+            if ($this->activation_code === 'deactivated') {
                 $this->logger->log("user '$this->username' not activated", 2);
                 throw new \Exception("user '$this->username' not activated");
-            } elseif (LDAP_TRUST === FALSE && $this->activation_code !== 'activated') {
-                $this->logger->log("user '$this->username' not activated", 2);
-                throw new \Exception("user '$this->username' not activated");
-            } elseif ($this->activation_code == 'deactivated') {
+            }
+
+            if (!$this->isLdapTrustEnabled() && $this->activation_code !== 'activated') {
                 $this->logger->log("user '$this->username' not activated", 2);
                 throw new \Exception("user '$this->username' not activated");
             }
