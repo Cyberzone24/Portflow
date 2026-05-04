@@ -113,7 +113,7 @@
                 <li onclick="loadTable('connection_details')" data-table="connection_details" class="itam-nav-item flex cursor-pointer items-center justify-between gap-3 whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 py-2.5 font-semibold text-slate-800 transition hover:bg-slate-100"><span class="itam-nav-item-main inline-flex min-w-0 items-center gap-2.5"><i class="h-4 w-4 flex-shrink-0" data-lucide="link-2"></i><span class="itam-nav-label truncate"><?php echo $lang['connections']; ?></span></span><span class="itam-nav-chevron"><i class="h-4 w-4 flex-shrink-0" data-lucide="chevron-right"></i></span></li>
             </ul>
         </div>
-        <button id="itamSidebarToggle" class="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-400 text-white shadow-md transition hover:bg-slate-500" type="button" title="Leiste verkleinern">
+        <button id="itamSidebarToggle" class="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-400 text-white shadow-md transition hover:bg-slate-500" type="button" title="<?php echo $lang['sidebar_collapse']; ?>">
             <i data-lucide="panel-left"></i>
         </button>
     </aside>
@@ -140,13 +140,13 @@
                         <form id="searchForm" class="flex min-w-0 flex-[0_1_30rem] items-center gap-2" enctype="multipart/form-data" onsubmit="return searchTable();">
                             <input type="text" name="search" placeholder="<?php echo $lang['search']; ?> ..." class="min-w-0 flex-1 rounded-full border border-slate-300 px-4 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
                         </form>
-                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white shadow-md hover:bg-green-700">
+                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white shadow-md hover:bg-green-700" title="<?php echo $lang['new_entry']; ?>">
                             <button form="" onclick="openNewEntry()" class="new_entry_button inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="plus"></i></button>
                         </div>
-                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-500 text-white shadow-md hover:bg-slate-700" title="<?php echo $lang['columns_customize'] ?? 'Spalten anpassen'; ?>">
+                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-500 text-white shadow-md hover:bg-slate-700" title="<?php echo $lang['columns_customize']; ?>">
                             <button type="button" onclick="openColumnPicker()" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="columns-3"></i></button>
                         </div>
-                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-sky-600 text-white shadow-md hover:bg-sky-700" title="<?php echo $lang['transfer_csv'] ?? 'CSV Import/Export'; ?>">
+                        <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-sky-600 text-white shadow-md hover:bg-sky-700" title="<?php echo $lang['transfer_csv']; ?>">
                             <button type="button" onclick="openTransferDialog()" class="inline-flex h-full w-full items-center justify-center text-2xl text-white"><i data-lucide="file-up"></i></button>
                         </div>
                     </div>
@@ -186,7 +186,7 @@
 
             <div id="detailsPopupHeader" class="mb-3 pr-14">
                 <div class="flex items-center justify-between pb-2">
-                    <div class="text-xl font-bold">Details</div>
+                    <div class="text-xl font-bold"><?php echo $lang['details_popup_title']; ?></div>
                 </div>
                 <!-- Tab Navigation für Location/Rack Details -->
                 <!-- Tab Navigation für Location/Rack Details -->
@@ -197,7 +197,7 @@
                         class="details-tab active px-3 py-2 text-sm font-semibold text-slate-600 border-b-2 border-blue-600 transition"
                         onclick="switchDetailsTab('info')"
                     >
-                        <i data-lucide="info" class="inline mr-1 h-4 w-4"></i>Informationen
+                        <i data-lucide="info" class="inline mr-1 h-4 w-4"></i><?php echo $lang['tab_information']; ?>
                     </button>
                     <button 
                         type="button"
@@ -207,7 +207,7 @@
                         onclick="switchDetailsTab('3d')"
                         style="display: none;"
                     >
-                        <i data-lucide="cube" class="inline mr-1 h-4 w-4"></i>3D Ansicht
+                        <i data-lucide="cube" class="inline mr-1 h-4 w-4"></i><?php echo $lang['tab_3d_view']; ?>
                     </button>
                     <button 
                         type="button"
@@ -217,7 +217,7 @@
                         onclick="switchDetailsTab('topology')"
                         style="display: none;"
                     >
-                        <i data-lucide="route" class="inline mr-1 h-4 w-4"></i>Topologie
+                        <i data-lucide="route" class="inline mr-1 h-4 w-4"></i><?php echo $lang['tab_topology']; ?>
                     </button>
                 </div>
             </div>
@@ -237,8 +237,8 @@
 
         <div id="itamProgressOverlay" class="absolute inset-0 z-30 hidden items-center justify-center bg-slate-900/50 p-4" aria-live="polite" aria-hidden="true">
             <div class="grid w-full max-w-2xl gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-2xl">
-                <div class="font-bold text-slate-900">Eintrag wird gespeichert</div>
-                <div id="itamProgressCopy" class="text-[0.95rem] text-slate-600">Bitte warten ...</div>
+                <div class="font-bold text-slate-900"><?php echo $lang['entry_saving']; ?></div>
+                <div id="itamProgressCopy" class="text-[0.95rem] text-slate-600"><?php echo $lang['please_wait']; ?></div>
                 <div class="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
                     <div id="itamProgressBar" class="h-full w-0 rounded-full bg-gradient-to-r from-blue-600 to-sky-400 transition-[width] duration-200 ease-out"></div>
                 </div>
@@ -251,8 +251,8 @@
                 <div class="grid min-h-0 gap-3 overflow-hidden">
                     <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-3">
                         <div>
-                            <div id="itamTransferTitle" class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_csv'] ?? 'CSV Import/Export'; ?></div>
-                            <div id="itamTransferSubtitle" class="mt-1 text-sm text-slate-500"><?php echo $lang['transfer_hint'] ?? 'Accepted and required fields for the current view.'; ?></div>
+                            <div id="itamTransferTitle" class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_csv']; ?></div>
+                            <div id="itamTransferSubtitle" class="mt-1 text-sm text-slate-500"><?php echo $lang['transfer_hint']; ?></div>
                         </div>
                         <button type="button" class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-500 text-white hover:bg-slate-700" onclick="closeTransferDialog()"><i data-lucide="x"></i></button>
                     </div>
@@ -260,11 +260,11 @@
                         <table class="w-full min-w-full table-auto text-left text-sm text-slate-700">
                             <thead class="sticky top-0 bg-slate-100 text-slate-900">
                                 <tr>
-                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_field'] ?? 'Field'; ?></th>
-                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_label'] ?? 'Label'; ?></th>
-                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_required'] ?? 'Required'; ?></th>
-                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_type'] ?? 'Type'; ?></th>
-                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_notes'] ?? 'Notes'; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_field']; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_label']; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_required']; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_type']; ?></th>
+                                    <th class="p-2 font-semibold"><?php echo $lang['transfer_notes']; ?></th>
                                 </tr>
                             </thead>
                             <tbody id="itamTransferPreviewBody"></tbody>
@@ -273,27 +273,27 @@
                 </div>
                 <div class="grid gap-4 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div class="grid gap-2">
-                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_sample_title'] ?? 'Sample file'; ?></div>
+                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_sample_title']; ?></div>
                         <button type="button" class="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow hover:bg-slate-100" onclick="downloadTransferSample()">
-                            <?php echo $lang['transfer_download_sample'] ?? 'Download sample CSV'; ?>
+                            <?php echo $lang['transfer_download_sample']; ?>
                         </button>
                     </div>
                     <div class="grid gap-2">
-                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_export_title'] ?? 'Export'; ?></div>
+                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_export_title']; ?></div>
                         <button type="button" class="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="exportCurrentTableCsv()">
-                            <?php echo $lang['transfer_export_csv'] ?? 'Export CSV'; ?>
+                            <?php echo $lang['transfer_export_csv']; ?>
                         </button>
                     </div>
                     <div class="grid gap-2">
-                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_import_title'] ?? 'Import'; ?></div>
+                        <div class="text-sm font-semibold text-slate-900"><?php echo $lang['transfer_import_title']; ?></div>
                         <input type="file" id="itamTransferFile" accept=".csv,text/csv" class="hidden" onchange="handleTransferFileSelected(this)">
                         <label for="itamTransferFile" class="cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-5 text-center text-sm text-slate-700 transition hover:border-sky-500 hover:bg-sky-50">
                             <div class="mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-700"><i data-lucide="file-up"></i></div>
-                            <div><?php echo $lang['transfer_choose_file'] ?? 'Choose CSV file'; ?></div>
-                            <div id="itamTransferFileName" class="mt-1 text-xs text-slate-500"><?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?></div>
+                            <div><?php echo $lang['transfer_choose_file']; ?></div>
+                            <div id="itamTransferFileName" class="mt-1 text-xs text-slate-500"><?php echo $lang['transfer_no_file']; ?></div>
                         </label>
                         <button type="button" id="itamTransferImportBtn" class="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300" onclick="importTransferCsv()" disabled>
-                            <?php echo $lang['transfer_import_csv'] ?? 'Import CSV'; ?>
+                            <?php echo $lang['transfer_import_csv']; ?>
                         </button>
                     </div>
                     <div id="itamTransferStatus" class="hidden rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700"></div>
@@ -303,16 +303,16 @@
 
         <div id="itamTransferDuplicateModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
             <div class="grid w-full max-w-xl gap-4 rounded-2xl border border-slate-300 bg-white p-5 shadow-2xl">
-                <div class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_duplicate_title'] ?? 'Gleichnamiger Eintrag gefunden'; ?></div>
+                <div class="text-xl font-bold text-slate-900"><?php echo $lang['transfer_duplicate_title']; ?></div>
                 <div id="itamTransferDuplicateCopy" class="text-sm text-slate-600"></div>
                 <label class="inline-flex items-center gap-2 text-sm text-slate-700">
                     <input type="checkbox" id="itamTransferDuplicateRemember" class="rounded border-slate-300">
-                    <span><?php echo $lang['transfer_duplicate_apply_all'] ?? 'Entscheidung fuer weitere gleiche Treffer merken'; ?></span>
+                    <span><?php echo $lang['transfer_duplicate_apply_all']; ?></span>
                 </label>
                 <div class="flex flex-wrap justify-end gap-2">
-                    <button type="button" id="itamTransferDuplicateKeep" class="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"><?php echo $lang['transfer_duplicate_keep'] ?? 'Alten Eintrag behalten'; ?></button>
-                    <button type="button" id="itamTransferDuplicateReplace" class="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"><?php echo $lang['transfer_duplicate_replace'] ?? 'Alten Eintrag ueberschreiben'; ?></button>
-                    <button type="button" id="itamTransferDuplicateCreate" class="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><?php echo $lang['transfer_duplicate_create'] ?? 'Zusaetzlichen Eintrag erstellen'; ?></button>
+                    <button type="button" id="itamTransferDuplicateKeep" class="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"><?php echo $lang['transfer_duplicate_keep']; ?></button>
+                    <button type="button" id="itamTransferDuplicateReplace" class="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"><?php echo $lang['transfer_duplicate_replace']; ?></button>
+                    <button type="button" id="itamTransferDuplicateCreate" class="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><?php echo $lang['transfer_duplicate_create']; ?></button>
                 </div>
             </div>
         </div>
@@ -321,22 +321,22 @@
         <div id="journalEntryModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div class="text-xl font-bold text-slate-900">Journaleintrag erstellen</div>
+                    <div class="text-xl font-bold text-slate-900"><?php echo $lang['journal_create_title']; ?></div>
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeJournalEntryModal()"><i data-lucide="x"></i></button>
                 </div>
                 <div class="mb-5 grid gap-4">
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Titel</label>
-                        <input type="text" id="journalEntryCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Kurzer Titel des Eintrags">
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_title_label']; ?></label>
+                        <input type="text" id="journalEntryCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['journal_entry_title_placeholder']; ?>">
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
-                        <textarea id="journalEntryDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Detaillierte Beschreibung des Journaleintrags"></textarea>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_description_label']; ?></label>
+                        <textarea id="journalEntryDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['journal_entry_description_placeholder']; ?>"></textarea>
                     </div>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeJournalEntryModal()">Abbrechen</button>
-                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitJournalEntry()">Speichern</button>
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeJournalEntryModal()"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitJournalEntry()"><?php echo $lang['save']; ?></button>
                 </div>
             </div>
         </div>
@@ -345,32 +345,32 @@
         <div id="lifecycleEntryModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div class="text-xl font-bold text-slate-900">Lifecycle-Eintrag erstellen</div>
+                    <div class="text-xl font-bold text-slate-900"><?php echo $lang['lifecycle_create_title']; ?></div>
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeLifecycleEntryModal()"><i data-lucide="x"></i></button>
                 </div>
                 <div class="mb-5 grid gap-4">
                     <div class="grid gap-1.5 md:grid-cols-2 md:gap-4">
                         <div class="grid gap-1.5">
-                            <label class="text-sm font-semibold text-slate-900">Event-Typ</label>
+                            <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_event_type_label']; ?></label>
                             <select id="lifecycleEntryType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"></select>
                         </div>
                         <div class="grid gap-1.5">
-                            <label class="text-sm font-semibold text-slate-900">Datum</label>
+                            <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_date_label']; ?></label>
                             <input type="date" id="lifecycleEntryDate" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                         </div>
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Titel</label>
-                        <input type="text" id="lifecycleEntryCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Kurzer Titel des Lifecycle-Eintrags">
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_title_label']; ?></label>
+                        <input type="text" id="lifecycleEntryCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['lifecycle_entry_title_placeholder']; ?>">
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
-                        <textarea id="lifecycleEntryDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Detaillierte Beschreibung des Lifecycle-Eintrags"></textarea>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_description_label']; ?></label>
+                        <textarea id="lifecycleEntryDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['lifecycle_entry_description_placeholder']; ?>"></textarea>
                     </div>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeLifecycleEntryModal()">Abbrechen</button>
-                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitLifecycleEntry()">Speichern</button>
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeLifecycleEntryModal()"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitLifecycleEntry()"><?php echo $lang['save']; ?></button>
                 </div>
             </div>
         </div>
@@ -379,24 +379,24 @@
         <div id="fileUploadModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div class="text-xl font-bold text-slate-900">Datei hochladen</div>
+                    <div class="text-xl font-bold text-slate-900"><?php echo $lang['file_upload_title']; ?></div>
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeFileUploadModal()"><i data-lucide="x"></i></button>
                 </div>
                 <div class="mb-5 grid gap-4">
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Datei</label>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_file_label']; ?></label>
                         <input type="file" id="fileUploadInput" class="hidden" onchange="updateFileSelection()">
                         <label for="fileUploadInput" class="cursor-pointer rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-blue-600 hover:bg-blue-50">
                             <div><i data-lucide="upload"></i></div>
-                            <div>Datei zum Hochladen ausw&auml;hlen oder hier ablegen</div>
+                            <div><?php echo $lang['file_upload_placeholder']; ?></div>
                         </label>
                         <div id="fileUploadFeedback" class="mt-2 hidden rounded-md border border-sky-500 bg-sky-50 p-3">
-                            <div style="font-size: 0.875rem;"><strong>Ausgewählte Datei:</strong></div>
+                            <div style="font-size: 0.875rem;"><strong><?php echo $lang['file_selected_label']; ?></strong></div>
                             <div id="fileUploadFileName" style="font-size: 0.875rem; color: #0c4a6e; margin-top: 0.25rem;"></div>
                             <div id="fileUploadFileSize" style="font-size: 0.875rem; color: #0c4a6e;"></div>
                         </div>
                         <div id="fileUploadProgress" style="display:none; margin-top: 1rem;">
-                            <div style="font-size: 0.875rem; margin-bottom: 0.5rem;">Upload läuft...</div>
+                            <div style="font-size: 0.875rem; margin-bottom: 0.5rem;"><?php echo $lang['file_upload_progress']; ?></div>
                             <div style="width: 100%; height: 8px; background-color: #e5e7eb; border-radius: 0.25rem; overflow: hidden;">
                                 <div id="fileUploadProgressBar" style="height: 100%; background-color: #0ea5e9; width: 0%; transition: width 0.3s ease;"></div>
                             </div>
@@ -404,13 +404,13 @@
                         </div>
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Beschreibung (optional)</label>
-                        <textarea id="fileUploadDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung der Datei"></textarea>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_description_optional_label']; ?></label>
+                        <textarea id="fileUploadDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['file_description_placeholder']; ?>"></textarea>
                     </div>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeFileUploadModal()" id="fileUploadCancelBtn">Abbrechen</button>
-                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitFileUpload()" id="fileUploadSubmitBtn">Hochladen</button>
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeFileUploadModal()" id="fileUploadCancelBtn"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitFileUpload()" id="fileUploadSubmitBtn"><?php echo $lang['button_upload']; ?></button>
                 </div>
             </div>
         </div>
@@ -419,22 +419,22 @@
         <div id="editJournalModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div class="text-xl font-bold text-slate-900">Journaleintrag bearbeiten</div>
+                    <div class="text-xl font-bold text-slate-900"><?php echo $lang['journal_edit_title']; ?></div>
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeEditJournalModal()"><i data-lucide="x"></i></button>
                 </div>
                 <div class="mb-5 grid gap-4">
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Titel</label>
-                        <input type="text" id="editJournalCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Titel">
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_title_label']; ?></label>
+                        <input type="text" id="editJournalCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['form_title_placeholder']; ?>">
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
-                        <textarea id="editJournalDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung"></textarea>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_description_label']; ?></label>
+                        <textarea id="editJournalDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['form_description_placeholder']; ?>"></textarea>
                     </div>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditJournalModal()">Abbrechen</button>
-                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditJournal()">Speichern</button>
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditJournalModal()"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditJournal()"><?php echo $lang['save']; ?></button>
                 </div>
             </div>
         </div>
@@ -443,32 +443,32 @@
         <div id="editLifecycleModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div class="text-xl font-bold text-slate-900">Lifecycle-Eintrag bearbeiten</div>
+                    <div class="text-xl font-bold text-slate-900"><?php echo $lang['lifecycle_edit_title']; ?></div>
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeEditLifecycleModal()"><i data-lucide="x"></i></button>
                 </div>
                 <div class="mb-5 grid gap-4">
                     <div class="grid gap-1.5 md:grid-cols-2 md:gap-4">
                         <div class="grid gap-1.5">
-                            <label class="text-sm font-semibold text-slate-900">Event-Typ</label>
+                            <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_event_type_label']; ?></label>
                             <select id="editLifecycleType" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"></select>
                         </div>
                         <div class="grid gap-1.5">
-                            <label class="text-sm font-semibold text-slate-900">Datum</label>
+                            <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_date_label']; ?></label>
                             <input type="date" id="editLifecycleDate" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                         </div>
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Titel</label>
-                        <input type="text" id="editLifecycleCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Titel">
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_title_label']; ?></label>
+                        <input type="text" id="editLifecycleCaption" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['form_title_placeholder']; ?>">
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
-                        <textarea id="editLifecycleDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung"></textarea>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_description_label']; ?></label>
+                        <textarea id="editLifecycleDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['form_description_placeholder']; ?>"></textarea>
                     </div>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditLifecycleModal()">Abbrechen</button>
-                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditLifecycle()">Speichern</button>
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditLifecycleModal()"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditLifecycle()"><?php echo $lang['save']; ?></button>
                 </div>
             </div>
         </div>
@@ -477,22 +477,22 @@
         <div id="editFileModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/70 p-4">
             <div class="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div class="text-xl font-bold text-slate-900">Anlage bearbeiten</div>
+                    <div class="text-xl font-bold text-slate-900"><?php echo $lang['file_edit_title']; ?></div>
                     <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-400 text-white hover:bg-slate-500" onclick="closeEditFileModal()"><i data-lucide="x"></i></button>
                 </div>
                 <div class="mb-5 grid gap-4">
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Dateiname</label>
-                        <input type="text" id="editFileName" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Dateiname" disabled>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_filename_label']; ?></label>
+                        <input type="text" id="editFileName" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['form_filename_label']; ?>" disabled>
                     </div>
                     <div class="grid gap-1.5">
-                        <label class="text-sm font-semibold text-slate-900">Beschreibung</label>
-                        <textarea id="editFileDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Beschreibung der Datei"></textarea>
+                        <label class="text-sm font-semibold text-slate-900"><?php echo $lang['form_description_label']; ?></label>
+                        <textarea id="editFileDescription" class="min-h-[100px] resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="<?php echo $lang['file_description_placeholder']; ?>"></textarea>
                     </div>
                 </div>
                 <div class="flex justify-end gap-3">
-                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditFileModal()">Abbrechen</button>
-                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditFile()">Speichern</button>
+                    <button type="button" class="rounded-full bg-slate-200 px-5 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300" onclick="closeEditFileModal()"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="submitEditFile()"><?php echo $lang['save']; ?></button>
                 </div>
             </div>
         </div>
@@ -517,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sidebarToggle.innerHTML = collapsed
                 ? '<i data-lucide="panel-right"></i>'
                 : '<i data-lucide="panel-left"></i>';
-            sidebarToggle.setAttribute('title', collapsed ? 'Leiste vergroessern' : 'Leiste verkleinern');
+            sidebarToggle.setAttribute('title', collapsed ? '<?php echo $lang['sidebar_expand']; ?>' : '<?php echo $lang['sidebar_collapse']; ?>');
             lucide.createIcons();
         };
 
@@ -540,16 +540,18 @@ let itamFormsConfigCache = null;
 let currentTransferFile = null;
 let currentTable = 'location_details';
 
+const ITAM_I18N = <?php echo json_encode($lang, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+
 const LIFECYCLE_EVENT_TYPES = [
-    { value: 'installation', label: 'Installation' },
-    { value: 'change', label: 'Veraenderung' },
-    { value: 'maintenance', label: 'Wartung' },
-    { value: 'inspection', label: 'Inspektion' },
-    { value: 'repair', label: 'Reparatur' },
-    { value: 'replacement', label: 'Austausch' },
-    { value: 'incident', label: 'Stoerung' },
-    { value: 'decommission', label: 'Ausserbetriebnahme' },
-    { value: 'other', label: 'Sonstiges' }
+    { value: 'installation', label: ITAM_I18N.lifecycle_type_installation },
+    { value: 'change', label: ITAM_I18N.lifecycle_type_change },
+    { value: 'maintenance', label: ITAM_I18N.lifecycle_type_maintenance },
+    { value: 'inspection', label: ITAM_I18N.lifecycle_type_inspection },
+    { value: 'repair', label: ITAM_I18N.lifecycle_type_repair },
+    { value: 'replacement', label: ITAM_I18N.lifecycle_type_replacement },
+    { value: 'incident', label: ITAM_I18N.lifecycle_type_incident },
+    { value: 'decommission', label: ITAM_I18N.lifecycle_type_decommission },
+    { value: 'other', label: ITAM_I18N.lifecycle_type_other }
 ];
 
 function searchTable() {
@@ -587,7 +589,7 @@ async function generateFormFromJSON(table = 'location_details', options = {}) {
 
             const title = document.createElement('div');
             title.className = 'text-2xl font-bold';
-            title.textContent = mode === 'edit' ? `${formConfig.formTitle} bearbeiten` : formConfig.formTitle;
+            title.textContent = mode === 'edit' ? `${formConfig.formTitle} ${ITAM_I18N.form_edit_suffix}` : formConfig.formTitle;
             header.appendChild(title);
 
             const buttonContainer = document.createElement('div');
@@ -939,7 +941,7 @@ async function getItamFormsConfig() {
 
     const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/forms.json');
     if (!response.ok) {
-        throw new Error('forms.json could not be loaded');
+        throw new Error(ITAM_I18N.forms_config_load_failed);
     }
 
     itamFormsConfigCache = await response.json();
@@ -1197,14 +1199,14 @@ function createFilterControl(def, filterState) {
         if (!def.multiple) {
             const emptyOption = document.createElement('option');
             emptyOption.value = '';
-            emptyOption.textContent = 'Alle';
+            emptyOption.textContent = ITAM_I18N.all;
             control.appendChild(emptyOption);
         }
 
         const options = def.type === 'boolean'
             ? [
-                { value: 'true', label: 'Ja' },
-                { value: 'false', label: 'Nein' }
+                { value: 'true', label: ITAM_I18N.yes },
+                { value: 'false', label: ITAM_I18N.no }
             ]
             : def.options;
 
@@ -1260,7 +1262,7 @@ function renderTableFilters(table, formConfig) {
 
     const header = document.createElement('div');
     header.className = 'mb-3 flex flex-wrap items-center justify-between gap-3';
-    header.innerHTML = '<div class="text-sm font-semibold text-slate-900">Filter</div><div class="text-xs text-slate-500">Tabellenspezifische Filter aus forms.json</div>';
+    header.innerHTML = '<div class="text-sm font-semibold text-slate-900">' + escapeHtml(ITAM_I18N.filters) + '</div><div class="text-xs text-slate-500">' + escapeHtml(ITAM_I18N.table_specific_filters_from_forms) + '</div>';
     shell.appendChild(header);
 
     const form = document.createElement('form');
@@ -1281,13 +1283,13 @@ function renderTableFilters(table, formConfig) {
     const applyButton = document.createElement('button');
     applyButton.type = 'submit';
     applyButton.className = 'rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700';
-    applyButton.textContent = 'Anwenden';
+    applyButton.textContent = ITAM_I18N.apply;
     actions.appendChild(applyButton);
 
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.className = 'rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300';
-    resetButton.textContent = 'Reset';
+    resetButton.textContent = ITAM_I18N.reset;
     resetButton.disabled = !hasActiveTableFilters(filterDefinitions, filterState);
     resetButton.addEventListener('click', () => resetCurrentTableFilters());
     actions.appendChild(resetButton);
@@ -1489,7 +1491,7 @@ function parseBooleanValue(value) {
         return false;
     }
 
-    throw new Error(`Invalid boolean value: ${value}`);
+    throw new Error(ITAM_I18N.invalid_boolean_value.replace('{value}', String(value)));
 }
 
 function normalizeCsvRecord(rawRecord, schema) {
@@ -1501,7 +1503,7 @@ function normalizeCsvRecord(rawRecord, schema) {
 
         if (value === '') {
             if (field.required) {
-                throw new Error(`Missing required field: ${field.name}`);
+                throw new Error(ITAM_I18N.missing_required_field.replace('{field}', String(field.name)));
             }
             normalized[field.name] = null;
             return;
@@ -1515,7 +1517,7 @@ function normalizeCsvRecord(rawRecord, schema) {
         if (field.type === 'number') {
             const parsed = Number(value);
             if (Number.isNaN(parsed)) {
-                throw new Error(`Invalid number in field ${field.name}: ${value}`);
+                throw new Error(ITAM_I18N.invalid_number_in_field.replace('{field}', String(field.name)).replace('{value}', String(value)));
             }
             normalized[field.name] = parsed;
             return;
@@ -1524,12 +1526,12 @@ function normalizeCsvRecord(rawRecord, schema) {
         if (field.type === 'dropdown' && field.options.length > 0) {
             const allowed = new Set(field.options.map(option => String(option.value)));
             if (!allowed.has(value)) {
-                throw new Error(`Invalid option in field ${field.name}: ${value}`);
+                throw new Error(ITAM_I18N.invalid_option_in_field.replace('{field}', String(field.name)).replace('{value}', String(value)));
             }
         }
 
         if (field.type === 'searchDropdown' && !isValidPostgresUuid(value)) {
-            throw new Error(`Field ${field.name} expects a UUID: ${value}`);
+            throw new Error(ITAM_I18N.field_expects_uuid.replace('{field}', String(field.name)).replace('{value}', String(value)));
         }
 
         normalized[field.name] = value;
@@ -1616,7 +1618,7 @@ async function fetchAllRowsForTable(table, extraParams = {}) {
 
         const response = await fetch(`${'<?php echo PORTFLOW_HOSTNAME; ?>'}/api/${table}?${params.toString()}`);
         if (!response.ok) {
-            throw new Error(`Duplicate check failed (${response.status})`);
+            throw new Error(ITAM_I18N.duplicate_check_failed.replace('{status}', String(response.status)));
         }
 
         const payload = await response.json();
@@ -1682,7 +1684,7 @@ function askDuplicateCaptionAction(caption, matchCount = 1) {
             return;
         }
 
-        copy.textContent = `<?php echo $lang['transfer_duplicate_copy'] ?? 'Es gibt bereits einen Eintrag mit dieser Caption'; ?>: "${caption}"${matchCount > 1 ? ` (${matchCount} Treffer)` : ''}`;
+        copy.textContent = `${ITAM_I18N.transfer_duplicate_copy}: "${caption}"${matchCount > 1 ? ` (${matchCount} ${ITAM_I18N.transfer_duplicate_matches})` : ''}`;
         remember.checked = false;
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -1996,7 +1998,7 @@ function setupSpecificationEditors(container) {
 
         const title = document.createElement('div');
         title.className = 'mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500';
-        title.textContent = 'Specification Preview';
+        title.textContent = ITAM_I18N.specification_preview_title;
 
         const body = document.createElement('div');
         body.className = 'text-xs text-slate-700';
@@ -2013,7 +2015,7 @@ function setupSpecificationEditors(container) {
                 const plain = String(field.value || '').trim();
                 body.innerHTML = plain
                     ? '<div class="whitespace-pre-wrap text-slate-600">' + escapeHtml(plain) + '</div>'
-                    : '<div class="text-slate-400">Keine strukturierten Werte erkannt.</div>';
+                    : `<div class="text-slate-400">${escapeHtml(ITAM_I18N.specification_preview_empty)}</div>`;
                 return;
             }
 
@@ -2188,7 +2190,7 @@ async function submitItamRecord(table, record, options = {}) {
             const parsedItemGroup = String(postData.item_group || '').trim();
 
             if (parsedItemGroup && !isValidPostgresUuid(parsedItemGroup)) {
-                throw new Error('Item Group muss eine gueltige UUID sein.');
+                throw new Error(ITAM_I18N.item_group_must_be_valid_uuid);
             }
 
             postData.item_group = parsedItemGroup || null;
@@ -2247,7 +2249,12 @@ async function submitItamRecord(table, record, options = {}) {
         }
 
         if (!response.ok) {
-            throw new Error(`API ${postConfig.table} failed (${response.status}): ${rawBody || 'no response body'}`);
+            throw new Error(
+                ITAM_I18N.api_request_failed
+                    .replace('{table}', String(postConfig.table))
+                    .replace('{status}', String(response.status))
+                    .replace('{body}', String(rawBody || ITAM_I18N.no_response_body))
+            );
         }
 
         const responseUuid = extractUuidFromApiPayload(data, rawBody);
@@ -2266,7 +2273,7 @@ async function submitItamRecord(table, record, options = {}) {
                 responseUuids[postConfig.table] = '';
                 continue;
             }
-            throw new Error(`API ${postConfig.table} returned no UUID.`);
+            throw new Error(ITAM_I18N.api_returned_no_uuid.replace('{table}', String(postConfig.table)));
         }
 
         responseUuids[postConfig.table] = effectiveUuid;
@@ -2276,10 +2283,10 @@ async function submitItamRecord(table, record, options = {}) {
         if (!editMode && postConfig.table === 'device' && autoPortConfig && autoPortConfig.groups && autoPortConfig.groups.length > 0) {
             const totalPorts = computeAllPortPositions(autoPortConfig.groups).length;
             setProgressOverlayState(true);
-            updateProgressOverlay('Auto-Ports werden erstellt ...', 0, totalPorts);
+            updateProgressOverlay(ITAM_I18N.auto_ports_creating, 0, totalPorts);
 
             await createAutoPortsForDevice(effectiveUuid, autoPortConfig.groups, (progress) => {
-                updateProgressOverlay(progress.label || 'Auto-Ports werden erstellt ...', progress.current || 0, progress.total || totalPorts);
+                updateProgressOverlay(progress.label || ITAM_I18N.auto_ports_creating, progress.current || 0, progress.total || totalPorts);
             });
         }
     }
@@ -2359,11 +2366,11 @@ function setupLocationTypeMasks(container) {
 
     const maskTitle = document.createElement('div');
     maskTitle.className = 'mb-2 text-sm font-bold text-slate-800';
-    maskTitle.textContent = 'Geometrie-Maske';
+    maskTitle.textContent = ITAM_I18N.geometry_mask;
 
     const maskHint = document.createElement('div');
     maskHint.className = 'mb-3 text-xs text-slate-600';
-    maskHint.textContent = 'Einfache Eingabe, Speicherung erfolgt automatisch als JSON.';
+    maskHint.textContent = ITAM_I18N.geometry_mask_hint;
 
     const roomPanel = document.createElement('div');
     roomPanel.className = 'grid gap-3';
@@ -2371,7 +2378,7 @@ function setupLocationTypeMasks(container) {
     const rackPanel = document.createElement('div');
     rackPanel.className = 'grid gap-3';
 
-    const roomSize = createMaskGroup('Room Size (x/y/z)');
+    const roomSize = createMaskGroup(ITAM_I18N.room_size_xyz);
     const roomSizeX = createMaskNumberInput('room-size-x', 'X', 10000);
     const roomSizeY = createMaskNumberInput('room-size-y', 'Y', 3000);
     const roomSizeZ = createMaskNumberInput('room-size-z', 'Z', 8000);
@@ -2379,7 +2386,7 @@ function setupLocationTypeMasks(container) {
     roomSize.grid.appendChild(roomSizeY.wrapper);
     roomSize.grid.appendChild(roomSizeZ.wrapper);
 
-    const roomRotation = createMaskGroup('Room Rotation (x/y/z)');
+    const roomRotation = createMaskGroup(ITAM_I18N.room_rotation_xyz);
     const roomRotX = createMaskNumberInput('room-rot-x', 'X', 0, '0.1');
     const roomRotY = createMaskNumberInput('room-rot-y', 'Y', 0, '0.1');
     const roomRotZ = createMaskNumberInput('room-rot-z', 'Z', 0, '0.1');
@@ -2390,7 +2397,7 @@ function setupLocationTypeMasks(container) {
     roomPanel.appendChild(roomSize.group);
     roomPanel.appendChild(roomRotation.group);
 
-    const roomPosition = createMaskGroup('Room Position (x/y/z)');
+    const roomPosition = createMaskGroup(ITAM_I18N.room_position_xyz);
     const roomPosX = createMaskNumberInput('room-pos-x', 'X', 0);
     const roomPosY = createMaskNumberInput('room-pos-y', 'Y', 0);
     const roomPosZ = createMaskNumberInput('room-pos-z', 'Z', 0);
@@ -2399,7 +2406,7 @@ function setupLocationTypeMasks(container) {
     roomPosition.grid.appendChild(roomPosZ.wrapper);
     roomPanel.appendChild(roomPosition.group);
 
-    const rackOuter = createMaskGroup('Rack Outer (x/y/z)');
+    const rackOuter = createMaskGroup(ITAM_I18N.rack_outer_xyz);
     const rackOuterX = createMaskNumberInput('rack-outer-x', 'X', 600);
     const rackOuterY = createMaskNumberInput('rack-outer-y', 'Y', 2200);
     const rackOuterZ = createMaskNumberInput('rack-outer-z', 'Z', 1000);
@@ -2407,7 +2414,7 @@ function setupLocationTypeMasks(container) {
     rackOuter.grid.appendChild(rackOuterY.wrapper);
     rackOuter.grid.appendChild(rackOuterZ.wrapper);
 
-    const rackInner = createMaskGroup('Rack Inner (x/y/z)');
+    const rackInner = createMaskGroup(ITAM_I18N.rack_inner_xyz);
     const rackInnerX = createMaskNumberInput('rack-inner-x', 'X', 550);
     const rackInnerY = createMaskNumberInput('rack-inner-y', 'Y', 2080);
     const rackInnerZ = createMaskNumberInput('rack-inner-z', 'Z', 920);
@@ -2415,7 +2422,7 @@ function setupLocationTypeMasks(container) {
     rackInner.grid.appendChild(rackInnerY.wrapper);
     rackInner.grid.appendChild(rackInnerZ.wrapper);
 
-    const rackBetween = createMaskGroup('Rack Between');
+    const rackBetween = createMaskGroup(ITAM_I18N.rack_between);
     const betweenXL = createMaskNumberInput('rack-between-xl', 'x_left', 25);
     const betweenXR = createMaskNumberInput('rack-between-xr', 'x_right', 25);
     const betweenYB = createMaskNumberInput('rack-between-yb', 'y_bottom', 60);
@@ -2430,7 +2437,7 @@ function setupLocationTypeMasks(container) {
     rackBetween.grid.appendChild(betweenZF.wrapper);
     rackBetween.grid.appendChild(betweenZB.wrapper);
 
-    const rackRotation = createMaskGroup('Rack Rotation (x/y/z)');
+    const rackRotation = createMaskGroup(ITAM_I18N.rack_rotation_xyz);
     const rackRotX = createMaskNumberInput('rack-rot-x', 'X', 0, '0.1');
     const rackRotY = createMaskNumberInput('rack-rot-y', 'Y', 0, '0.1');
     const rackRotZ = createMaskNumberInput('rack-rot-z', 'Z', 0, '0.1');
@@ -2443,7 +2450,7 @@ function setupLocationTypeMasks(container) {
     rackPanel.appendChild(rackBetween.group);
     rackPanel.appendChild(rackRotation.group);
 
-    const rackPosition = createMaskGroup('Rack Position im Raum (x/y/z)');
+    const rackPosition = createMaskGroup(ITAM_I18N.rack_position_room_xyz);
     const rackPosX = createMaskNumberInput('rack-pos-x', 'X', 0);
     const rackPosY = createMaskNumberInput('rack-pos-y', 'Y', 0);
     const rackPosZ = createMaskNumberInput('rack-pos-z', 'Z', 0);
@@ -2452,11 +2459,11 @@ function setupLocationTypeMasks(container) {
     rackPosition.grid.appendChild(rackPosZ.wrapper);
     rackPanel.appendChild(rackPosition.group);
 
-    const rackLimits = createMaskGroup('Rack Limits');
+    const rackLimits = createMaskGroup(ITAM_I18N.rack_limits);
     rackLimits.grid.className = 'grid grid-cols-3 gap-2';
-    const rackLimitWeight = createMaskNumberInput('rack-limit-weight', 'Gewicht (kg)', 120);
-    const rackLimitPower = createMaskNumberInput('rack-limit-power', 'Power (W)', 1200);
-    const rackLimitThermal = createMaskNumberInput('rack-limit-thermal', 'Thermal (W)', 1100);
+    const rackLimitWeight = createMaskNumberInput('rack-limit-weight', ITAM_I18N.weight_kg, 120);
+    const rackLimitPower = createMaskNumberInput('rack-limit-power', ITAM_I18N.power_w, 1200);
+    const rackLimitThermal = createMaskNumberInput('rack-limit-thermal', ITAM_I18N.thermal_w, 1100);
     rackLimits.grid.appendChild(rackLimitWeight.wrapper);
     rackLimits.grid.appendChild(rackLimitPower.wrapper);
     rackLimits.grid.appendChild(rackLimitThermal.wrapper);
@@ -2654,28 +2661,28 @@ function setupDevice3DMasks(container) {
 
     const maskTitle = document.createElement('div');
     maskTitle.className = 'mb-2 text-sm font-bold text-slate-800';
-    maskTitle.textContent = 'Device 3D-Maske';
+    maskTitle.textContent = ITAM_I18N.device_3d_mask;
 
     const maskHint = document.createElement('div');
     maskHint.className = 'mb-3 text-xs text-slate-600';
-    maskHint.textContent = 'Gefuehrte Eingabe fuer RU-Position und Geometrie, Speicherung erfolgt automatisch als JSON.';
+    maskHint.textContent = ITAM_I18N.device_3d_mask_hint;
 
     const ruInfo = document.createElement('div');
     ruInfo.className = 'mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900';
-    ruInfo.textContent = '1 RU = 44.45 mm';
+    ruInfo.textContent = ITAM_I18N.ru_unit_hint;
 
-    const ruGroup = createMaskGroup('RU Placement');
-    const startRu = createMaskNumberInput('device-ru-start', 'Start RU', 1, '1');
-    const heightRu = createMaskNumberInput('device-ru-height', 'Hoehe RU', 1, '0.5');
+    const ruGroup = createMaskGroup(ITAM_I18N.ru_placement);
+    const startRu = createMaskNumberInput('device-ru-start', ITAM_I18N.start_ru, 1, '1');
+    const heightRu = createMaskNumberInput('device-ru-height', ITAM_I18N.height_ru, 1, '0.5');
     ruGroup.grid.className = 'grid grid-cols-2 gap-2';
     ruGroup.grid.appendChild(startRu.wrapper);
     ruGroup.grid.appendChild(heightRu.wrapper);
 
-    const sizeGroup = createMaskGroup('Device Size (mm)');
-    const sizeX = createMaskNumberInput('device-size-x', 'X (Breite)', 445, '1');
-    const sizeY = createMaskNumberInput('device-size-y', 'Y (Hoehe)', 44.45, '0.01');
-    const sizeZ = createMaskNumberInput('device-size-z', 'Z (Tiefe)', 300, '1');
-    const weightKg = createMaskNumberInput('device-weight-kg', 'Gewicht (kg)', 5, '0.1');
+    const sizeGroup = createMaskGroup(ITAM_I18N.device_size_mm);
+    const sizeX = createMaskNumberInput('device-size-x', ITAM_I18N.axis_x_width, 445, '1');
+    const sizeY = createMaskNumberInput('device-size-y', ITAM_I18N.axis_y_height, 44.45, '0.01');
+    const sizeZ = createMaskNumberInput('device-size-z', ITAM_I18N.axis_z_depth, 300, '1');
+    const weightKg = createMaskNumberInput('device-weight-kg', ITAM_I18N.weight_kg, 5, '0.1');
     sizeY.input.readOnly = true;
     sizeY.input.classList.add('bg-slate-100');
     sizeGroup.grid.className = 'grid grid-cols-2 gap-2';
@@ -2684,9 +2691,9 @@ function setupDevice3DMasks(container) {
     sizeGroup.grid.appendChild(sizeZ.wrapper);
     sizeGroup.grid.appendChild(weightKg.wrapper);
 
-    const positionGroup = createMaskGroup('Device Position (mm)');
+    const positionGroup = createMaskGroup(ITAM_I18N.device_position_mm);
     const posX = createMaskNumberInput('device-pos-x', 'X', 0, '1');
-    const posY = createMaskNumberInput('device-pos-y', 'Y (aus RU)', 0, '0.01');
+    const posY = createMaskNumberInput('device-pos-y', ITAM_I18N.axis_y_from_ru, 0, '0.01');
     const posZ = createMaskNumberInput('device-pos-z', 'Z', 0, '1');
     posY.input.readOnly = true;
     posY.input.classList.add('bg-slate-100');
@@ -2694,7 +2701,7 @@ function setupDevice3DMasks(container) {
     positionGroup.grid.appendChild(posY.wrapper);
     positionGroup.grid.appendChild(posZ.wrapper);
 
-    const rotationGroup = createMaskGroup('Device Rotation (x/y/z)');
+    const rotationGroup = createMaskGroup(ITAM_I18N.device_rotation_xyz);
     const rotX = createMaskNumberInput('device-rot-x', 'X', 0, '0.1');
     const rotY = createMaskNumberInput('device-rot-y', 'Y', 0, '0.1');
     const rotZ = createMaskNumberInput('device-rot-z', 'Z', 0, '0.1');
@@ -2880,7 +2887,7 @@ async function loadDeviceTemplates() {
         .map(row => ({
             row,
             uuid: row.device_uuid || row.uuid || '',
-            caption: row.device_metadata_caption || row.metadata_caption || 'Template',
+            caption: row.device_metadata_caption || row.metadata_caption || ITAM_I18N.template_label,
             type: row.device_type || row.type || ''
         }))
         .filter(entry => !!entry.uuid)
@@ -2902,12 +2909,12 @@ function setupDeviceTemplateMode(container) {
     const newButton = document.createElement('button');
     newButton.type = 'button';
     newButton.className = 'rounded-full border border-blue-600 bg-blue-600 px-4 py-1.5 font-semibold text-white';
-    newButton.textContent = 'Neues Geraet';
+    newButton.textContent = ITAM_I18N.new_device;
 
     const templateButton = document.createElement('button');
     templateButton.type = 'button';
     templateButton.className = 'rounded-full border border-slate-300 bg-white px-4 py-1.5 font-semibold text-slate-700';
-    templateButton.textContent = 'Aus Template';
+    templateButton.textContent = ITAM_I18N.from_template;
 
     tabs.appendChild(newButton);
     tabs.appendChild(templateButton);
@@ -2917,21 +2924,21 @@ function setupDeviceTemplateMode(container) {
     picker.className = 'mb-3 grid hidden gap-2 rounded-xl border border-slate-300 bg-slate-50 p-3';
 
     const pickerInfo = document.createElement('small');
-    pickerInfo.textContent = 'Template auswaehlen, Felder werden vorbefuellt und koennen danach angepasst werden.';
+    pickerInfo.textContent = ITAM_I18N.template_picker_info;
 
     const pickerRow = document.createElement('div');
     pickerRow.className = 'flex flex-wrap gap-2';
 
     const pickerSelect = document.createElement('select');
-    pickerSelect.innerHTML = '<option value="">Template waehlen ...</option>';
+    pickerSelect.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.template_choose)}</option>`;
 
     const applyButton = document.createElement('button');
     applyButton.type = 'button';
-    applyButton.textContent = 'Template anwenden';
+    applyButton.textContent = ITAM_I18N.template_apply;
 
     const reloadButton = document.createElement('button');
     reloadButton.type = 'button';
-    reloadButton.textContent = 'Templates neu laden';
+    reloadButton.textContent = ITAM_I18N.templates_reload;
 
     pickerRow.appendChild(pickerSelect);
     pickerRow.appendChild(applyButton);
@@ -2967,11 +2974,11 @@ function setupDeviceTemplateMode(container) {
 
     const fillTemplateSelect = async () => {
         pickerSelect.disabled = true;
-        pickerSelect.innerHTML = '<option value="">Lade Templates ...</option>';
+        pickerSelect.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.templates_loading)}</option>`;
 
         try {
             templates = await loadDeviceTemplates();
-            pickerSelect.innerHTML = '<option value="">Template waehlen ...</option>';
+            pickerSelect.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.template_choose)}</option>`;
 
             templates.forEach(template => {
                 const option = document.createElement('option');
@@ -2981,11 +2988,11 @@ function setupDeviceTemplateMode(container) {
             });
 
             if (templates.length === 0) {
-                pickerSelect.innerHTML = '<option value="">Keine Device-Templates gefunden</option>';
+                pickerSelect.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.no_device_templates)}</option>`;
             }
         } catch (error) {
             console.error('Device templates konnten nicht geladen werden:', error);
-            pickerSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
+            pickerSelect.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.loading_error)}</option>`;
         }
 
         pickerSelect.disabled = false;
@@ -3095,7 +3102,7 @@ function formatSearchResultLabel(item, config) {
         || Object.keys(item).find(k => k.endsWith('_name'))
         || Object.keys(item)[0];
 
-    return item[captionKey] || item.uuid || '[kein Name]';
+    return item[captionKey] || item.uuid || ITAM_I18N.unnamed;
 }
 
 let __locationBreadcrumbCachePromise = null;
@@ -3183,8 +3190,8 @@ function renderSuggestionRow(suggestion) {
     const badge = document.createElement('div');
     badge.className = 'text-xs px-3 py-1 rounded-full bg-gray-200';
     let scopeLabel = '';
-    if (suggestion.scope === 'parent') scopeLabel = ' (übergeordneter Standort)';
-    else if (suggestion.scope === 'ancestor') scopeLabel = ' (Gebäude)';
+    if (suggestion.scope === 'parent') scopeLabel = ` (${ITAM_I18N.suggestion_scope_parent})`;
+    else if (suggestion.scope === 'ancestor') scopeLabel = ` (${ITAM_I18N.suggestion_scope_building})`;
     badge.textContent = suggestion.room + scopeLabel;
 
     title.appendChild(text);
@@ -3200,7 +3207,7 @@ function renderSuggestionRow(suggestion) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'px-4 py-2 rounded-full bg-green-500 hover:bg-green-700 text-white text-sm font-semibold';
-    button.textContent = 'Verbinden';
+    button.textContent = ITAM_I18N.connect;
     button.onclick = () => createSuggestedConnection(suggestion, button);
 
     buttonRow.appendChild(button);
@@ -3224,13 +3231,13 @@ function setupConnectionSuggestions(container, forms) {
     manualButton.type = 'button';
     manualButton.dataset.connectionView = 'manual';
     manualButton.className = 'px-4 py-2 rounded-full bg-blue-500 text-white text-sm font-semibold';
-    manualButton.textContent = 'Manuell';
+    manualButton.textContent = ITAM_I18N.manual;
 
     const suggestionsButton = document.createElement('button');
     suggestionsButton.type = 'button';
     suggestionsButton.dataset.connectionView = 'suggestions';
     suggestionsButton.className = 'px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm font-semibold';
-    suggestionsButton.textContent = 'Vorschläge';
+    suggestionsButton.textContent = ITAM_I18N.suggestions;
 
     tabBar.appendChild(manualButton);
     tabBar.appendChild(suggestionsButton);
@@ -3242,7 +3249,7 @@ function setupConnectionSuggestions(container, forms) {
 
     const suggestionHeader = document.createElement('div');
     suggestionHeader.className = 'flex items-center justify-between';
-    suggestionHeader.innerHTML = '<div class="text-lg font-bold">Vorschläge</div><div class="text-sm text-gray-500">Gleiche Portnamen im selben Standort, übergeordneten Standort oder Gebäude — unverbundene Paare</div>';
+    suggestionHeader.innerHTML = `<div class="text-lg font-bold">${escapeHtml(ITAM_I18N.suggestions)}</div><div class="text-sm text-gray-500">${escapeHtml(ITAM_I18N.suggestions_hint)}</div>`;
 
     const suggestionList = document.createElement('div');
     suggestionList.id = 'connectionSuggestionList';
@@ -3317,7 +3324,7 @@ function buildConnectionSuggestions(ports, connections, locations = []) {
             uuid,
             label,
             deviceType: (port.device_port_device_type || '').trim().toLowerCase(),
-            deviceCaption: port.device_port_device_metadata_caption || port.device_port_device_type || 'Device',
+            deviceCaption: port.device_port_device_metadata_caption || port.device_port_device_type || ITAM_I18N.device_label,
             chain
         });
     });
@@ -3330,7 +3337,7 @@ function buildConnectionSuggestions(ports, connections, locations = []) {
         p.chain.forEach((loc, level) => {
             const key = `${loc.uuid}::${p.label}`;
             if (!buckets.has(key)) {
-                buckets.set(key, { caption: loc.caption || '(ohne Bezeichnung)', locType: loc.type, entries: [] });
+                buckets.set(key, { caption: loc.caption || ITAM_I18N.without_label, locType: loc.type, entries: [] });
             }
             buckets.get(key).entries.push({ port: p, level });
         });
@@ -3388,7 +3395,7 @@ function buildConnectionSuggestions(ports, connections, locations = []) {
 }
 
 async function loadConnectionSuggestions(container) {
-    container.innerHTML = '<div class="text-sm text-gray-500">Lade Vorschläge ...</div>';
+    container.innerHTML = `<div class="text-sm text-gray-500">${escapeHtml(ITAM_I18N.suggestions_loading)}</div>`;
 
     try {
         const [portsResponse, connectionsResponse, locationsResponse] = await Promise.all([
@@ -3412,7 +3419,7 @@ async function loadConnectionSuggestions(container) {
         if (suggestions.length === 0) {
             const emptyState = document.createElement('div');
             emptyState.className = 'p-4 rounded-2xl bg-gray-50 text-gray-500';
-            emptyState.textContent = 'Keine offenen Vorschläge gefunden.';
+            emptyState.textContent = ITAM_I18N.no_open_suggestions;
             container.appendChild(emptyState);
             return;
         }
@@ -3422,14 +3429,14 @@ async function loadConnectionSuggestions(container) {
         });
     } catch (error) {
         console.error('Error loading connection suggestions:', error);
-        container.innerHTML = '<div class="p-4 rounded-2xl bg-red-50 text-red-600">Vorschläge konnten nicht geladen werden.</div>';
+        container.innerHTML = `<div class="p-4 rounded-2xl bg-red-50 text-red-600">${escapeHtml(ITAM_I18N.suggestions_load_failed)}</div>`;
     }
 }
 
 async function createSuggestedConnection(suggestion, buttonElement) {
     if (buttonElement) {
         buttonElement.disabled = true;
-        buttonElement.textContent = 'Verbinde ...';
+        buttonElement.textContent = ITAM_I18N.connecting;
     }
 
     try {
@@ -3450,7 +3457,7 @@ async function createSuggestedConnection(suggestion, buttonElement) {
         const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
 
         if (!metadataUuid) {
-            throw new Error('Metadata konnte nicht angelegt werden.');
+            throw new Error(ITAM_I18N.error_metadata_create_failed);
         }
 
         const connectionPayload = {
@@ -3472,7 +3479,7 @@ async function createSuggestedConnection(suggestion, buttonElement) {
         const connectionResult = await connectionResponse.json();
 
         if (!connectionResult || !connectionResult[0] || !connectionResult[0].uuid) {
-            throw new Error('Verbindung konnte nicht angelegt werden.');
+            throw new Error(ITAM_I18N.connection_could_not_be_created);
         }
 
         // Stay on the suggestions tab: remove the just-handled card and refresh the list.
@@ -3494,7 +3501,7 @@ async function createSuggestedConnection(suggestion, buttonElement) {
         console.error('Fehler beim Erstellen der Vorschlagsverbindung:', error);
         if (buttonElement) {
             buttonElement.disabled = false;
-            buttonElement.textContent = 'Verbinden';
+            buttonElement.textContent = ITAM_I18N.connect;
         }
     }
 }
@@ -3597,7 +3604,7 @@ function setupDevicePortAutomation() {
         const info = panel.querySelector('#pwrPhaseInfo');
         if (info) {
             if (phases === 3) {
-                info.textContent = '3-Phasen: Ausgänge werden gleichmäßig auf L1, L2, L3 verteilt.';
+                info.textContent = ITAM_I18N.power_phase_distribution_hint;
                 info.classList.remove('hidden');
             } else {
                 info.classList.add('hidden');
@@ -3618,27 +3625,27 @@ function setupDevicePortAutomation() {
         powerFieldsPanel.innerHTML = `
             <div class="rounded-xl border border-amber-300 bg-amber-50 p-4">
                 <div class="mb-3">
-                    <div class="text-lg font-bold text-amber-800"><i data-lucide="zap" class="inline w-5 h-5 mr-1"></i>Strom-Konfiguration</div>
-                    <div class="text-xs text-amber-600">Werte werden in Metadata Specification gespeichert.</div>
+                    <div class="text-lg font-bold text-amber-800"><i data-lucide="zap" class="inline w-5 h-5 mr-1"></i>${escapeHtml(ITAM_I18N.power_configuration)}</div>
+                    <div class="text-xs text-amber-600">${escapeHtml(ITAM_I18N.power_saved_in_metadata_spec)}</div>
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <label class="block">
-                        <span class="text-xs text-amber-700 font-medium">Stromverbrauch (W)</span>
-                        <input type="number" id="pwrConsumptionW" min="0" step="1" placeholder="z.B. 50" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                        <span class="text-xs text-amber-700 font-medium">${escapeHtml(ITAM_I18N.power_consumption_w)}</span>
+                        <input type="number" id="pwrConsumptionW" min="0" step="1" placeholder="${escapeHtml(ITAM_I18N.example_50)}" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
                     </label>
                     <label class="block">
-                        <span class="text-xs text-amber-700 font-medium">Ausgangsleistung (W)</span>
-                        <input type="number" id="pwrOutputW" min="0" step="1" placeholder="z.B. 3000" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                        <span class="text-xs text-amber-700 font-medium">${escapeHtml(ITAM_I18N.output_power_w)}</span>
+                        <input type="number" id="pwrOutputW" min="0" step="1" placeholder="${escapeHtml(ITAM_I18N.example_3000)}" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
                     </label>
                     <label class="block">
-                        <span class="text-xs text-amber-700 font-medium">Scheinleistung (VA)</span>
-                        <input type="number" id="pwrOutputVA" min="0" step="1" placeholder="z.B. 3750" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
+                        <span class="text-xs text-amber-700 font-medium">${escapeHtml(ITAM_I18N.apparent_power_va)}</span>
+                        <input type="number" id="pwrOutputVA" min="0" step="1" placeholder="${escapeHtml(ITAM_I18N.example_3750)}" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
                     </label>
                     <label class="block">
-                        <span class="text-xs text-amber-700 font-medium">Phasen</span>
+                        <span class="text-xs text-amber-700 font-medium">${escapeHtml(ITAM_I18N.phases)}</span>
                         <select id="pwrPhases" class="mt-0.5 w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs">
-                            <option value="1">1-Phase</option>
-                            <option value="3">3-Phasen</option>
+                            <option value="1">${escapeHtml(ITAM_I18N.single_phase)}</option>
+                            <option value="3">${escapeHtml(ITAM_I18N.three_phase)}</option>
                         </select>
                     </label>
                 </div>
@@ -3679,9 +3686,9 @@ function setupDevicePortAutomation() {
         return `<option value="${code}">${def.label}</option>`;
     }).join('');
 
-    const numberingOptions = `<option value="column-first">Column-first (Switch)</option><option value="row-first">Row-first</option>`;
+    const numberingOptions = `<option value="column-first">${escapeHtml(ITAM_I18N.numbering_column_first_switch)}</option><option value="row-first">${escapeHtml(ITAM_I18N.numbering_row_first)}</option>`;
 
-    const sideOptions = `<option value="front">Front</option><option value="rear">Rear</option>`;
+    const sideOptions = `<option value="front">${escapeHtml(ITAM_I18N.side_front)}</option><option value="rear">${escapeHtml(ITAM_I18N.side_rear)}</option>`;
 
     const ensureBuilder = () => {
         if (builderContainer) return builderContainer;
@@ -3697,25 +3704,25 @@ function setupDevicePortAutomation() {
             <div class="rounded-xl border border-slate-300 bg-slate-50 p-4">
                 <div class="mb-1 flex items-center justify-between">
                     <div>
-                        <div class="text-lg font-bold text-slate-800">Port Layout Builder</div>
-                        <div class="text-xs text-slate-500">Port-Gruppen definieren und visuell anordnen. Maße in mm.</div>
+                        <div class="text-lg font-bold text-slate-800">${escapeHtml(ITAM_I18N.port_layout_builder)}</div>
+                        <div class="text-xs text-slate-500">${escapeHtml(ITAM_I18N.port_layout_builder_hint)}</div>
                     </div>
                     <div class="flex gap-2">
-                        <select id="plbPresetSelect" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs" title="Preset laden">
+                        <select id="plbPresetSelect" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs" title="${escapeHtml(ITAM_I18N.load_preset)}">
                             ${Object.entries(getDevicePresetDefinitions()).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}
                         </select>
-                        <button type="button" id="plbApplyPreset" class="h-8 w-8 rounded-full bg-blue-500 hover:bg-blue-700 text-white flex items-center justify-center" title="Preset anwenden"><i data-lucide="download"></i></button>
-                        <button type="button" id="plbAddGroup" class="h-8 w-8 rounded-full bg-green-500 hover:bg-green-700 text-white flex items-center justify-center" title="Gruppe hinzufügen"><i data-lucide="plus"></i></button>
+                        <button type="button" id="plbApplyPreset" class="h-8 w-8 rounded-full bg-blue-500 hover:bg-blue-700 text-white flex items-center justify-center" title="${escapeHtml(ITAM_I18N.apply_preset)}"><i data-lucide="download"></i></button>
+                        <button type="button" id="plbAddGroup" class="h-8 w-8 rounded-full bg-green-500 hover:bg-green-700 text-white flex items-center justify-center" title="${escapeHtml(ITAM_I18N.add_group)}"><i data-lucide="plus"></i></button>
                     </div>
                 </div>
                 <div id="plbGroupList" class="mt-3 space-y-2"></div>
                 <div class="mt-3 grid gap-3 lg:grid-cols-2">
                     <div class="rounded-lg border border-slate-300 bg-slate-900 p-3">
-                        <div class="mb-1 text-xs font-semibold text-slate-400">Front</div>
+                        <div class="mb-1 text-xs font-semibold text-slate-400">${escapeHtml(ITAM_I18N.side_front)}</div>
                         <div id="plbCanvasFront" class="relative overflow-hidden rounded border border-slate-700 bg-slate-950" style="min-height:60px"></div>
                     </div>
                     <div class="rounded-lg border border-slate-300 bg-slate-900 p-3">
-                        <div class="mb-1 text-xs font-semibold text-slate-400">Rear</div>
+                        <div class="mb-1 text-xs font-semibold text-slate-400">${escapeHtml(ITAM_I18N.side_rear)}</div>
                         <div id="plbCanvasRear" class="relative overflow-hidden rounded border border-slate-700 bg-slate-950" style="min-height:60px"></div>
                     </div>
                 </div>
@@ -3775,7 +3782,7 @@ function setupDevicePortAutomation() {
 
         portGroups.forEach((group, idx) => {
             const typeDefs = getPortTypeDefinitions();
-            const typeLabel = (typeDefs[group.typeCode] || {}).label || 'Unknown';
+            const typeLabel = (typeDefs[group.typeCode] || {}).label || ITAM_I18N.status_unknown;
             const color = getPortLayoutPreviewColor(group.typeCode);
             const portSize = getPortTypeSizeMm(group.typeCode);
 
@@ -3786,37 +3793,37 @@ function setupDevicePortAutomation() {
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2">
                         <span class="inline-block h-3 w-3 rounded-sm" style="background:${color}"></span>
-                        <span class="font-bold text-slate-700">Gruppe ${idx + 1}: ${typeLabel}</span>
-                        <span class="text-slate-400">(${portSize.w}×${portSize.h} mm)</span>
+                        <span class="font-bold text-slate-700">${escapeHtml(ITAM_I18N.group_label)} ${idx + 1}: ${typeLabel}</span>
+                        <span class="text-slate-400">(${portSize.w}×${portSize.h} ${escapeHtml(ITAM_I18N.unit_mm)})</span>
                     </div>
                     <div class="flex gap-1">
-                        ${idx > 0 ? `<button type="button" data-action="move-up" data-idx="${idx}" class="h-6 w-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="Nach oben"><i data-lucide="chevron-up" class="w-3 h-3"></i></button>` : ''}
-                        ${idx < portGroups.length - 1 ? `<button type="button" data-action="move-down" data-idx="${idx}" class="h-6 w-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="Nach unten"><i data-lucide="chevron-down" class="w-3 h-3"></i></button>` : ''}
-                        <button type="button" data-action="remove" data-idx="${idx}" class="h-6 w-6 rounded bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center" title="Entfernen"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                        ${idx > 0 ? `<button type="button" data-action="move-up" data-idx="${idx}" class="h-6 w-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="${escapeHtml(ITAM_I18N.move_up)}"><i data-lucide="chevron-up" class="w-3 h-3"></i></button>` : ''}
+                        ${idx < portGroups.length - 1 ? `<button type="button" data-action="move-down" data-idx="${idx}" class="h-6 w-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="${escapeHtml(ITAM_I18N.move_down)}"><i data-lucide="chevron-down" class="w-3 h-3"></i></button>` : ''}
+                        <button type="button" data-action="remove" data-idx="${idx}" class="h-6 w-6 rounded bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center" title="${escapeHtml(ITAM_I18N.remove)}"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-                    <label class="block"><span class="text-slate-500">Typ</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.type_label)}</span>
                         <select data-field="typeCode" data-idx="${idx}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs">${typeOptions}</select></label>
-                    <label class="block"><span class="text-slate-500">Anzahl</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.count_label)}</span>
                         <input type="number" data-field="count" data-idx="${idx}" min="1" max="200" value="${group.count}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Reihen</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.rows_label)}</span>
                         <input type="number" data-field="rows" data-idx="${idx}" min="1" max="10" value="${group.rows}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Start-Label</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.start_label)}</span>
                         <input type="text" data-field="startLabel" data-idx="${idx}" value="${group.startLabel}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Label-Pattern</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.label_pattern)}</span>
                         <input type="text" data-field="labelPattern" data-idx="${idx}" value="${group.labelPattern || '{prefix}{index}'}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Seite</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.side_label)}</span>
                         <select data-field="side" data-idx="${idx}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs">${sideOptions}</select></label>
-                    <label class="block"><span class="text-slate-500">Offset X (mm)</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.offset_x_mm)}</span>
                         <input type="number" data-field="offsetX" data-idx="${idx}" min="0" step="1" value="${group.offsetX}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Offset Y (mm)</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.offset_y_mm)}</span>
                         <input type="number" data-field="offsetY" data-idx="${idx}" min="0" step="1" value="${group.offsetY}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Gap X (mm)</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.gap_x_mm)}</span>
                         <input type="number" data-field="gapX" data-idx="${idx}" min="0" step="0.5" value="${group.gapX}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Gap Y (mm)</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.gap_y_mm)}</span>
                         <input type="number" data-field="gapY" data-idx="${idx}" min="0" step="0.5" value="${group.gapY}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs"></label>
-                    <label class="block"><span class="text-slate-500">Nummerierung</span>
+                    <label class="block"><span class="text-slate-500">${escapeHtml(ITAM_I18N.numbering_label)}</span>
                         <select data-field="numbering" data-idx="${idx}" class="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-xs">${numberingOptions}</select></label>
                 </div>
             `;
@@ -3902,7 +3909,7 @@ function setupDevicePortAutomation() {
                 byType[l] = (byType[l] || 0) + 1;
             });
             const typeInfo = Object.entries(byType).map(([l, c]) => `${c}× ${l}`).join(', ');
-            stats.textContent = `Gesamt: ${totalPorts} Ports` + (typeInfo ? ` (${typeInfo})` : '') + ` | Gerät: ${dim.w}×${dim.h} mm`;
+            stats.textContent = `${ITAM_I18N.total_ports}: ${totalPorts} ${ITAM_I18N.ports_label}` + (typeInfo ? ` (${typeInfo})` : '') + ` | ${ITAM_I18N.device_label}: ${dim.w}×${dim.h} ${ITAM_I18N.unit_mm}`;
         }
     };
 
@@ -3928,13 +3935,13 @@ function setupDevicePortAutomation() {
         const wLabel = document.createElement('div');
         wLabel.className = 'absolute text-[9px] text-slate-500 select-none';
         wLabel.style.cssText = `bottom:-14px;left:50%;transform:translateX(-50%)`;
-        wLabel.textContent = `${dim.w} mm`;
+        wLabel.textContent = `${dim.w} ${ITAM_I18N.unit_mm}`;
         container.appendChild(wLabel);
 
         const hLabel = document.createElement('div');
         hLabel.className = 'absolute text-[9px] text-slate-500 select-none';
         hLabel.style.cssText = `right:-28px;top:50%;transform:translateY(-50%) rotate(90deg)`;
-        hLabel.textContent = `${dim.h} mm`;
+        hLabel.textContent = `${dim.h} ${ITAM_I18N.unit_mm}`;
         container.appendChild(hLabel);
 
         // Group drag state
@@ -4173,24 +4180,24 @@ function setupItemGroupHelper() {
     helper.className = 'itam-item-group-helper mt-2 grid hidden gap-2 rounded-xl border border-slate-300 bg-slate-50 p-3';
 
     const info = document.createElement('small');
-    info.textContent = 'Fuer Switch-Stacks: vorhandene Group waehlen oder neue UUID erzeugen.';
+    info.textContent = ITAM_I18N.switch_stack_group_hint;
 
     const controls = document.createElement('div');
     controls.className = 'flex flex-wrap gap-2';
 
     const select = document.createElement('select');
     select.className = 'rounded-full border border-slate-300 bg-white px-3 py-1.5';
-    select.innerHTML = '<option value="">Vorhandene Item Group waehlen ...</option>';
+    select.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.choose_existing_item_group)}</option>`;
 
     const generateButton = document.createElement('button');
     generateButton.type = 'button';
     generateButton.className = 'rounded-full border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700';
-    generateButton.textContent = 'Neue UUID erzeugen';
+    generateButton.textContent = ITAM_I18N.generate_new_uuid;
 
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
     refreshButton.className = 'rounded-full border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700';
-    refreshButton.textContent = 'Groups neu laden';
+    refreshButton.textContent = ITAM_I18N.reload_groups;
 
     controls.appendChild(select);
     controls.appendChild(generateButton);
@@ -4211,17 +4218,17 @@ function setupItemGroupHelper() {
             return;
         }
 
-        itemGroupField.setCustomValidity('Item Group muss eine gueltige UUID sein.');
+        itemGroupField.setCustomValidity(ITAM_I18N.item_group_must_be_valid_uuid);
     };
 
     const fillSelect = async () => {
         const currentValue = select.value;
         select.disabled = true;
-        select.innerHTML = '<option value="">Lade Item Groups ...</option>';
+        select.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.loading_item_groups)}</option>`;
 
         try {
             const groups = await loadExistingSwitchItemGroups();
-            select.innerHTML = '<option value="">Vorhandene Item Group waehlen ...</option>';
+            select.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.choose_existing_item_group)}</option>`;
 
             groups.forEach(group => {
                 const option = document.createElement('option');
@@ -4235,11 +4242,11 @@ function setupItemGroupHelper() {
             }
 
             if (groups.length === 0) {
-                select.innerHTML = '<option value="">Keine vorhandenen Switch-Groups gefunden</option>';
+                select.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.no_existing_switch_groups_found)}</option>`;
             }
         } catch (error) {
             console.error('Item Groups konnten nicht geladen werden:', error);
-            select.innerHTML = '<option value="">Fehler beim Laden</option>';
+            select.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.loading_error)}</option>`;
         }
 
         select.disabled = false;
@@ -4280,7 +4287,7 @@ async function createAutoPortsForDevice(deviceUuid, groups = [], onProgress = nu
     if (total === 0) return;
 
     if (typeof onProgress === 'function') {
-        onProgress({ current: 0, total, label: 'Auto-Ports werden erstellt ...' });
+        onProgress({ current: 0, total, label: ITAM_I18N.auto_ports_creating });
     }
 
     for (let i = 0; i < total; i++) {
@@ -4305,7 +4312,11 @@ async function createAutoPortsForDevice(deviceUuid, groups = [], onProgress = nu
         const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
 
         if (!metadataUuid) {
-            throw new Error(`Metadata für Port ${i + 1} (${port.label}) konnte nicht erstellt werden.`);
+            throw new Error(
+                ITAM_I18N.error_metadata_for_port_create_failed
+                    .replace('{index}', String(i + 1))
+                    .replace('{label}', String(port.label || ''))
+            );
         }
 
         const devicePortResponse = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/device_port/', {
@@ -4323,11 +4334,22 @@ async function createAutoPortsForDevice(deviceUuid, groups = [], onProgress = nu
         const devicePortResult = await devicePortResponse.json();
 
         if (!devicePortResult || !devicePortResult[0] || !devicePortResult[0].uuid) {
-            throw new Error(`Device-Port für Port ${i + 1} (${port.label}) konnte nicht erstellt werden.`);
+            throw new Error(
+                ITAM_I18N.error_device_port_for_port_create_failed
+                    .replace('{index}', String(i + 1))
+                    .replace('{label}', String(port.label || ''))
+            );
         }
 
         if (typeof onProgress === 'function') {
-            onProgress({ current: i + 1, total, label: `Port ${i + 1} von ${total} erstellt (${port.label})` });
+            onProgress({
+                current: i + 1,
+                total,
+                label: ITAM_I18N.port_created_progress
+                    .replace('{index}', String(i + 1))
+                    .replace('{total}', String(total))
+                    .replace('{label}', String(port.label || ''))
+            });
         }
     }
 }
@@ -4476,7 +4498,7 @@ function generateField(name, config) {
 
                         const entry = document.createElement('div');
                         entry.className = 'hover:bg-gray-100 cursor-pointer p-2';
-                        entry.textContent = displayLabel || item[uuidKey] || '[kein Name]';
+                        entry.textContent = displayLabel || item[uuidKey] || ITAM_I18N.unnamed;
                         entry.onclick = () => {
                             textInput.value = displayLabel || '';
                             hiddenField.value = item[uuidKey] || '';
@@ -4732,10 +4754,10 @@ async function submitForms(table) {
             if (!editMode && postConfig.table === 'device' && autoPortConfig && autoPortConfig.groups && autoPortConfig.groups.length > 0) {
                 const totalPorts = computeAllPortPositions(autoPortConfig.groups).length;
                 setProgressOverlayState(true);
-                updateProgressOverlay('Auto-Ports werden erstellt ...', 0, totalPorts);
+                updateProgressOverlay(ITAM_I18N.auto_ports_creating, 0, totalPorts);
 
                 await createAutoPortsForDevice(effectiveUuid, autoPortConfig.groups, (progress) => {
-                    updateProgressOverlay(progress.label || 'Auto-Ports werden erstellt ...', progress.current || 0, progress.total || totalPorts);
+                    updateProgressOverlay(progress.label || ITAM_I18N.auto_ports_creating, progress.current || 0, progress.total || totalPorts);
                 });
             }
         } catch (error) {
@@ -4775,7 +4797,7 @@ async function openTransferDialog() {
         const configData = await getItamFormsConfig();
         const formConfig = getItamFormConfig(configData, currentTable);
         if (!formConfig) {
-            alert('<?php echo $lang['transfer_not_available'] ?? 'Import/Export is not available for this view.'; ?>');
+            alert('<?php echo $lang['transfer_not_available']; ?>');
             return;
         }
 
@@ -4787,8 +4809,8 @@ async function openTransferDialog() {
             return;
         }
 
-        title.textContent = `${resolveCurrentTableLabel()} - <?php echo $lang['transfer_csv'] ?? 'CSV Import/Export'; ?>`;
-        subtitle.textContent = '<?php echo $lang['transfer_hint'] ?? 'Accepted and required fields for the current view.'; ?>';
+        title.textContent = `${resolveCurrentTableLabel()} - <?php echo $lang['transfer_csv']; ?>`;
+        subtitle.textContent = '<?php echo $lang['transfer_hint']; ?>';
         body.innerHTML = '';
 
         schema.forEach(field => {
@@ -4797,7 +4819,7 @@ async function openTransferDialog() {
             row.innerHTML = `
                 <td class="p-2 font-mono text-xs text-slate-900">${escapeHtml(field.name)}</td>
                 <td class="p-2">${escapeHtml(field.label)}</td>
-                <td class="p-2">${field.required ? '<?php echo $lang['yes'] ?? 'Ja'; ?>' : '<?php echo $lang['no'] ?? 'Nein'; ?>'}</td>
+                <td class="p-2">${field.required ? '<?php echo $lang['yes']; ?>' : '<?php echo $lang['no']; ?>'}</td>
                 <td class="p-2">${escapeHtml(field.type)}</td>
                 <td class="p-2 text-xs text-slate-500">${escapeHtml(getImportFieldNote(field))}</td>
             `;
@@ -4809,7 +4831,7 @@ async function openTransferDialog() {
         const fileName = document.getElementById('itamTransferFileName');
         const importBtn = document.getElementById('itamTransferImportBtn');
         if (fileInput) fileInput.value = '';
-        if (fileName) fileName.textContent = '<?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?>';
+        if (fileName) fileName.textContent = '<?php echo $lang['transfer_no_file']; ?>';
         if (importBtn) importBtn.disabled = true;
         resetTransferStatus();
 
@@ -4823,7 +4845,7 @@ async function openTransferDialog() {
         }
     } catch (error) {
         console.error('Transfer dialog could not be opened', error);
-        alert('<?php echo $lang['transfer_not_available'] ?? 'Import/Export is not available for this view.'; ?>');
+        alert('<?php echo $lang['transfer_not_available']; ?>');
     }
 }
 
@@ -4840,7 +4862,7 @@ function handleTransferFileSelected(inputEl) {
     const fileName = document.getElementById('itamTransferFileName');
     const importBtn = document.getElementById('itamTransferImportBtn');
     if (fileName) {
-        fileName.textContent = currentTransferFile ? `${currentTransferFile.name} (${Math.round(currentTransferFile.size / 1024)} KB)` : '<?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?>';
+        fileName.textContent = currentTransferFile ? `${currentTransferFile.name} (${Math.round(currentTransferFile.size / 1024)} KB)` : '<?php echo $lang['transfer_no_file']; ?>';
     }
     if (importBtn) {
         importBtn.disabled = !currentTransferFile;
@@ -4864,9 +4886,9 @@ async function downloadTransferSample() {
 
         const csv = buildCsvText(headers, [sampleRow]);
         downloadTextFile(`${currentTable}-sample.csv`, csv, 'text/csv;charset=utf-8;');
-        setTransferStatus('<?php echo $lang['transfer_sample_ready'] ?? 'Sample CSV downloaded.'; ?>', 'success');
+        setTransferStatus('<?php echo $lang['transfer_sample_ready']; ?>', 'success');
     } catch (error) {
-        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed'] ?? 'Saving failed'; ?>', 'error');
+        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed']; ?>', 'error');
     }
 }
 
@@ -4902,15 +4924,15 @@ async function exportCurrentTableCsv() {
         const csvRows = rows.map(row => mapRowToImportRecord(currentTable, formConfig, row, schema));
         const csv = buildCsvText(headers, csvRows);
         downloadTextFile(`${currentTable}-export.csv`, csv, 'text/csv;charset=utf-8;');
-        setTransferStatus('<?php echo $lang['transfer_export_ready'] ?? 'CSV export downloaded.'; ?>', 'success');
+        setTransferStatus('<?php echo $lang['transfer_export_ready']; ?>', 'success');
     } catch (error) {
-        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed'] ?? 'Saving failed'; ?>', 'error');
+        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed']; ?>', 'error');
     }
 }
 
 async function importTransferCsv() {
     if (!currentTransferFile) {
-        setTransferStatus('<?php echo $lang['transfer_no_file'] ?? 'No file selected'; ?>', 'error');
+        setTransferStatus('<?php echo $lang['transfer_no_file']; ?>', 'error');
         return;
     }
 
@@ -4933,18 +4955,18 @@ async function importTransferCsv() {
         const csvText = await currentTransferFile.text();
         const parsedRows = parseCsvText(csvText);
         if (!Array.isArray(parsedRows) || parsedRows.length === 0) {
-            throw new Error('<?php echo $lang['transfer_import_empty'] ?? 'The CSV file is empty.'; ?>');
+            throw new Error('<?php echo $lang['transfer_import_empty']; ?>');
         }
 
         const headers = (parsedRows[0] || []).map(header => String(header || '').trim()).filter(Boolean);
         const unknownHeaders = headers.filter(header => !acceptedFields.has(header));
         if (unknownHeaders.length > 0) {
-            throw new Error(`<?php echo $lang['transfer_import_unknown'] ?? 'Unknown CSV columns'; ?>: ${unknownHeaders.join(', ')}`);
+            throw new Error(`<?php echo $lang['transfer_import_unknown']; ?>: ${unknownHeaders.join(', ')}`);
         }
 
         const missingRequired = schema.filter(field => field.required && !headers.includes(field.name));
         if (missingRequired.length > 0) {
-            throw new Error(`<?php echo $lang['transfer_import_missing_required'] ?? 'Missing required columns'; ?>: ${missingRequired.map(field => field.name).join(', ')}`);
+            throw new Error(`<?php echo $lang['transfer_import_missing_required']; ?>: ${missingRequired.map(field => field.name).join(', ')}`);
         }
 
         const rawRecords = parsedRows.slice(1).map(values => {
@@ -4956,7 +4978,7 @@ async function importTransferCsv() {
         }).filter(record => Object.values(record).some(value => String(value || '').trim() !== ''));
 
         if (rawRecords.length === 0) {
-            throw new Error('<?php echo $lang['transfer_import_empty'] ?? 'The CSV file is empty.'; ?>');
+            throw new Error('<?php echo $lang['transfer_import_empty']; ?>');
         }
 
         const existingRows = await fetchAllRowsForTable(currentTable);
@@ -4964,7 +4986,7 @@ async function importTransferCsv() {
         const rememberedDuplicateActions = {};
 
         for (let index = 0; index < rawRecords.length; index += 1) {
-            setTransferStatus(`<?php echo $lang['transfer_import_progress'] ?? 'Import row'; ?> ${index + 1} / ${rawRecords.length}`);
+            setTransferStatus(`<?php echo $lang['transfer_import_progress']; ?> ${index + 1} / ${rawRecords.length}`);
             const record = normalizeCsvRecord(rawRecords[index], schema);
             const caption = String(record.caption || '').trim();
             const normalizedCaption = normalizeDuplicateCaption(caption);
@@ -5006,12 +5028,12 @@ async function importTransferCsv() {
             imported += 1;
         }
 
-        setTransferStatus(`<?php echo $lang['transfer_import_done'] ?? 'Import completed'; ?>: ${imported}${skipped > 0 ? ` | <?php echo $lang['transfer_import_skipped'] ?? 'übersprungen'; ?>: ${skipped}` : ''}`, 'success');
+        setTransferStatus(`<?php echo $lang['transfer_import_done']; ?>: ${imported}${skipped > 0 ? ` | <?php echo $lang['transfer_import_skipped']; ?>: ${skipped}` : ''}`, 'success');
         const searchEl = document.querySelector('#searchForm input[name="search"]');
         loadTable(currentTable, searchEl ? searchEl.value : '');
     } catch (error) {
         setProgressOverlayState(false);
-        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed'] ?? 'Saving failed'; ?>', 'error');
+        setTransferStatus((error && error.message) ? error.message : '<?php echo $lang['columns_save_failed']; ?>', 'error');
     } finally {
         if (importButton) {
             importButton.disabled = !currentTransferFile;
@@ -5051,7 +5073,7 @@ function ajaxPost(url, type, data, successCallback, errorCallback) {
 function generatePagination(totalPages, currentPage, search, limit) {
     var pagesPerGroup = 10;
     var pageGroup = Math.floor((currentPage - 1) / pagesPerGroup);
-    var $pagination = $('#pagination').empty().append('<div class="mr-2">Seite: </div>');
+    var $pagination = $('#pagination').empty().append('<div class="mr-2">' + escapeHtml(ITAM_I18N.page) + ': </div>');
     
     function addPageButton(text, callback, hidden = false) {
         var button = $('<div class="mr-2 cursor-pointer">').html(text).css('visibility', hidden ? 'hidden' : 'visible');
@@ -5184,11 +5206,11 @@ function displayTable(columnsConfig, userColumns, rows) {
     };
 
     const STATUS_TITLES = {
-        0: 'Aktiv',
-        2: 'Deaktiviert', 
-        4: 'Offline',
-        6: 'Ungenutzt',
-        default: 'Unbekannt'
+        0: ITAM_I18N.status_active,
+        2: ITAM_I18N.status_disabled,
+        4: ITAM_I18N.status_offline,
+        6: ITAM_I18N.status_unused,
+        default: ITAM_I18N.status_unknown
     };
 
     // Tag Farben
@@ -5208,7 +5230,7 @@ function displayTable(columnsConfig, userColumns, rows) {
             .on('click', function () { toggleColumnSort(colKey); });
         trHead.append($th);
     });
-    trHead.append($('<th class="p-2">Actions</th>'));
+    trHead.append($('<th class="p-2"></th>').text(ITAM_I18N.actions));
     $tableHead.append(trHead);
 
     // Hilfsfunktionen
@@ -5248,8 +5270,8 @@ function displayTable(columnsConfig, userColumns, rows) {
         let subnetInt = parseInt(subnet);
         let hostBits = 32 - subnetInt;
         let count = Math.pow(2, hostBits);
-        if (count > 2) return `Nutzbare Adressen: ${count - 2}`;
-        if (count > 0) return `Nutzbare Adressen: ${count}`;
+        if (count > 2) return `${ITAM_I18N.usable_addresses}: ${count - 2}`;
+        if (count > 0) return `${ITAM_I18N.usable_addresses}: ${count}`;
         return '';
     }
     
@@ -5263,7 +5285,7 @@ function displayTable(columnsConfig, userColumns, rows) {
             mask.push(256 - Math.pow(2, 8 - n));
             subnetInt -= n;
         }
-        return `Subnetz-Maske: ${mask.join('.')}`;
+        return `${ITAM_I18N.subnet_mask}: ${mask.join('.')}`;
     }
 
     function getNetworkInfo(ipRangeCidr) {
@@ -5295,8 +5317,8 @@ function displayTable(columnsConfig, userColumns, rows) {
         );
     
         let netType = isPrivate ?
-            `<i data-lucide="lock-keyhole" style="color:#6366f1;vertical-align:middle" title="Privates Netz"></i>` :
-            `<i data-lucide="lock-keyhole-open" style="color:#f59e42;vertical-align:middle" title="Öffentliches Netz"></i>`;
+            `<i data-lucide="lock-keyhole" style="color:#6366f1;vertical-align:middle" title="${escapeHtml(ITAM_I18N.network_private)}"></i>` :
+            `<i data-lucide="lock-keyhole-open" style="color:#f59e42;vertical-align:middle" title="${escapeHtml(ITAM_I18N.network_public)}"></i>`;
     
         let netClassHtml = `<span class="h-10 w-10 rounded-full bg-gray-200 text-white flex items-center justify-center font-bold"><p>${netClass}</p></span>`;
     
@@ -5342,14 +5364,14 @@ function displayTable(columnsConfig, userColumns, rows) {
                     let td;
                     if (colKey === 'location_type') {
                         const locationIcons = {
-                            '0': { icon: 'scan', title: 'Region' },
-                            '2': { icon: 'land-plot', title: 'Komplex' },
-                            '4': { icon: 'school', title: 'Gebäude' },
-                            '6': { icon: 'door-closed', title: 'Raum' },
-                            '8': { icon: 'server', title: 'Rack' }
+                            '0': { icon: 'scan', title: ITAM_I18N.location_type_region },
+                            '2': { icon: 'land-plot', title: ITAM_I18N.location_type_complex },
+                            '4': { icon: 'school', title: ITAM_I18N.location_type_building },
+                            '6': { icon: 'door-closed', title: ITAM_I18N.location_type_room },
+                            '8': { icon: 'server', title: ITAM_I18N.location_type_rack }
                         };
 
-                        const config = locationIcons[row[colKey]] || { icon: 'help-circle', title: 'Unbekannt' };
+                        const config = locationIcons[row[colKey]] || { icon: 'help-circle', title: ITAM_I18N.status_unknown };
                         const color = getStatusColor(row[tableBase + '_metadata_status']);
 
                         let iconHtml = `${dashes}<i data-lucide="${config.icon}" style="color:${color};display:inline-block;vertical-align:middle" title="${config.title}"></i>`;
@@ -5651,7 +5673,7 @@ function openColumnPicker() {
     const table = currentTable;
     const cfg = currentNavConfig && currentNavConfig[table];
     if (!cfg || !cfg.columns) {
-        alert('<?php echo $lang['columns_not_available'] ?? 'Spaltenkonfiguration nicht verfuegbar.'; ?>');
+        alert('<?php echo $lang['columns_not_available']; ?>');
         return;
     }
     const allowed = Array.isArray(cfg.picker_columns) && cfg.picker_columns.length
@@ -5679,19 +5701,19 @@ function openColumnPicker() {
                 <div class="flex items-center gap-2">
                     <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-700"><i data-lucide="columns-3" class="h-4 w-4"></i></span>
                     <div>
-                        <div class="text-sm font-bold text-slate-900"><?php echo $lang['columns_customize'] ?? 'Spalten anpassen'; ?></div>
+                        <div class="text-sm font-bold text-slate-900"><?php echo $lang['columns_customize']; ?></div>
                         <div class="text-xs text-slate-500">${escapeHtml(table)}</div>
                     </div>
                 </div>
-                <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-800 hover:bg-slate-400" onclick="closeColumnPicker()" aria-label="Schliessen"><i data-lucide="x" class="h-4 w-4"></i></button>
+                <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-800 hover:bg-slate-400" onclick="closeColumnPicker()" aria-label="${escapeHtml(ITAM_I18N.button_close)}"><i data-lucide="x" class="h-4 w-4"></i></button>
             </div>
-            <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600"><?php echo $lang['columns_hint'] ?? 'Aktivieren oder deaktivieren Sie Spalten und ziehen Sie sie zum Sortieren.'; ?></div>
+            <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600"><?php echo $lang['columns_hint']; ?></div>
             <div id="pf-column-picker-list" class="flex-1 overflow-auto p-3 space-y-1"></div>
             <div class="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
-                <button type="button" onclick="resetColumnPicker()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><i data-lucide="rotate-ccw" class="mr-1 inline-block h-3.5 w-3.5"></i><?php echo $lang['columns_reset'] ?? 'Auf Standard zuruecksetzen'; ?></button>
+                <button type="button" onclick="resetColumnPicker()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><i data-lucide="rotate-ccw" class="mr-1 inline-block h-3.5 w-3.5"></i><?php echo $lang['columns_reset']; ?></button>
                 <div class="flex items-center gap-2">
-                    <button type="button" onclick="closeColumnPicker()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><?php echo $lang['cancel'] ?? 'Abbrechen'; ?></button>
-                    <button type="button" onclick="saveColumnPicker()" class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"><?php echo $lang['save'] ?? 'Speichern'; ?></button>
+                    <button type="button" onclick="closeColumnPicker()" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><?php echo $lang['cancel']; ?></button>
+                    <button type="button" onclick="saveColumnPicker()" class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"><?php echo $lang['save']; ?></button>
                 </div>
             </div>
         </div>
@@ -5712,7 +5734,7 @@ function buildColumnPickerRow(key, label, checked) {
     row.draggable = true;
     row.dataset.colKey = key;
     row.innerHTML = `
-        <span class="cursor-grab text-slate-400 hover:text-slate-600" title="ziehen"><i data-lucide="grip-vertical" class="h-4 w-4"></i></span>
+        <span class="cursor-grab text-slate-400 hover:text-slate-600" title="${escapeHtml(ITAM_I18N.drag_label)}"><i data-lucide="grip-vertical" class="h-4 w-4"></i></span>
         <input type="checkbox" class="pf-col-check h-4 w-4 rounded border-slate-300" ${checked ? 'checked' : ''} />
         <code class="text-[10px] text-slate-400">${escapeHtml(key)}</code>
         <span class="ml-1 flex-1 text-sm text-slate-800">${escapeHtml(label)}</span>
@@ -5786,7 +5808,7 @@ async function persistColumnPicker(table, columns) {
         closeColumnPicker();
         loadTable(table);
     } catch (e) {
-        alert('<?php echo $lang['columns_save_failed'] ?? 'Speichern fehlgeschlagen'; ?>: ' + (e.message || e));
+        alert('<?php echo $lang['columns_save_failed']; ?>: ' + (e.message || e));
     }
 }
 
@@ -5836,15 +5858,15 @@ function resolveDetailsLabel(fieldKey, tableConfig) {
 function resolveStatusTitle(status) {
     switch (Number(status)) {
         case 0:
-            return 'Aktiv';
+            return ITAM_I18N.status_active;
         case 2:
-            return 'Deaktiviert';
+            return ITAM_I18N.status_disabled;
         case 4:
-            return 'Offline';
+            return ITAM_I18N.status_offline;
         case 6:
-            return 'Ungenutzt';
+            return ITAM_I18N.status_unused;
         default:
-            return 'Unbekannt';
+            return ITAM_I18N.status_unknown;
     }
 }
 
@@ -5860,7 +5882,7 @@ function resolveDetailsValue(fieldKey, rowData) {
         || fieldKey.endsWith('_metadata_status');
 
     if (typeof value === 'boolean') {
-        return value ? 'Yes' : 'No';
+        return value ? ITAM_I18N.yes : ITAM_I18N.no;
     }
 
     const normalized = String(value).trim();
@@ -5873,11 +5895,11 @@ function resolveDetailsValue(fieldKey, rowData) {
     }
 
     if (normalized === 'true' || normalized === 't' || normalized === '1') {
-        return 'Yes';
+        return ITAM_I18N.yes;
     }
 
     if (normalized === 'false' || normalized === 'f' || normalized === '0') {
-        return 'No';
+        return ITAM_I18N.no;
     }
 
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(normalized)) {
@@ -5907,7 +5929,7 @@ function formatSpecificationValueForDetails(value) {
     }).join('');
 
     return `<details class="rounded border border-slate-200 bg-white" open>`
-        + `<summary class="cursor-pointer px-2 py-1 text-xs font-semibold text-slate-700">${entries.length} technische Werte</summary>`
+        + `<summary class="cursor-pointer px-2 py-1 text-xs font-semibold text-slate-700">${entries.length} ${escapeHtml(ITAM_I18N.technical_values)}</summary>`
         + `<div class="overflow-auto px-2 pb-2 pt-1"><table class="w-full border-collapse"><tbody>${rows}</tbody></table></div>`
         + `</details>`;
 }
@@ -6255,7 +6277,7 @@ function renderLifecycleTypeOptions(selectElement, selectedValue = '') {
     }
 
     const currentValue = String(selectedValue || '').trim().toLowerCase();
-    selectElement.innerHTML = '<option value="">Bitte waehlen</option>';
+    selectElement.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.lifecycle_select_placeholder)}</option>`;
 
     LIFECYCLE_EVENT_TYPES.forEach((entry) => {
         const option = document.createElement('option');
@@ -6368,7 +6390,7 @@ async function buildDetailsPanelContent(panel, rowData) {
             && String(rowData.device_uuid || '').trim() !== '';
 
         if (!isSwitchDevice) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Skript-Ausführungen für diesen Eintrag.</div>';
+            return `<div class="itam-details-empty text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_script_executions_for_entry)}</div>`;
         }
 
         const entries = await loadSwitchScriptHistory(
@@ -6381,18 +6403,18 @@ async function buildDetailsPanelContent(panel, rowData) {
         );
 
         if (entries.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Ausführungen vorhanden.</div>';
+            return `<div class="itam-details-empty text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_executions_available)}</div>`;
         }
 
         return entries.map((entry) => {
             const changedAt = entry.changedAt ? new Date(entry.changedAt).toLocaleString() : '--';
-            const statusText = entry.ok ? (entry.warning ? 'WARNUNG' : 'OK') : 'FEHLER';
-            const scriptPreview = entry.scriptContent ? escapeHtml(entry.scriptContent) : '(kein Skriptinhalt gespeichert)';
+            const statusText = entry.ok ? (entry.warning ? ITAM_I18N.warning : ITAM_I18N.ok) : ITAM_I18N.error;
+            const scriptPreview = entry.scriptContent ? escapeHtml(entry.scriptContent) : escapeHtml(ITAM_I18N.no_script_content_saved);
 
             return `<div class="mt-2 p-2 rounded border border-slate-200 bg-slate-50">`
                 + `<div class="text-xs font-semibold">${escapeHtml(changedAt)} | ${escapeHtml(statusText)} | ${escapeHtml(entry.mode)} | ${escapeHtml(entry.template)} | cmds=${escapeHtml(entry.commandCount)}</div>`
-                + `<div class="text-xs text-slate-600">Profil: ${escapeHtml(entry.profile || '--')}</div>`
-                + `<details class="mt-1"><summary class="cursor-pointer text-xs text-slate-700">Skriptinhalt</summary><pre class="mt-1 text-xs whitespace-pre-wrap">${scriptPreview}</pre></details>`
+                + `<div class="text-xs text-slate-600">${escapeHtml(ITAM_I18N.profile_label)}: ${escapeHtml(entry.profile || '--')}</div>`
+                + `<details class="mt-1"><summary class="cursor-pointer text-xs text-slate-700">${escapeHtml(ITAM_I18N.script_content)}</summary><pre class="mt-1 text-xs whitespace-pre-wrap">${scriptPreview}</pre></details>`
                 + `</div>`;
         }).join('');
     }
@@ -6400,7 +6422,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'journal') {
         const entries = await loadJournalEntriesForRow(rowData);
         if (entries.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Journal-Einträge vorhanden.</div>';
+            return `<div class="itam-details-empty text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_journal_entries)}</div>`;
         }
 
         return entries.map((entry) => {
@@ -6415,13 +6437,13 @@ async function buildDetailsPanelContent(panel, rowData) {
             return `<div class="mt-2 p-2 rounded border border-slate-200 bg-slate-50 text-xs">`
                 + `<div class="flex flex-wrap items-baseline justify-between gap-2">`
                 + `<div class="text-xs font-bold text-slate-900">${escapeHtml(rowTitle)}</div>`
-                + `<div class="text-xs text-slate-500">Status ${escapeHtml(rowStatus)}</div>`
+                + `<div class="text-xs text-slate-500">${escapeHtml(ITAM_I18N.status_label)} ${escapeHtml(rowStatus)}</div>`
                 + `</div>`
                 + `<div class="text-xs text-slate-500">${escapeHtml(rowCreated)} | ${escapeHtml(rowUser)}</div>`
                 + (rowDescription !== '--' && rowDescription !== '' ? `<div class="mt-1 whitespace-pre-wrap text-xs text-slate-700">${escapeHtml(rowDescription)}</div>` : '')
                 + `<div class="mt-2 flex gap-2">`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditJournalModal('${escapeHtml(journalMetadataUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteJournalEntry('${escapeHtml(journalUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditJournalModal('${escapeHtml(journalMetadataUuid)}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="${escapeHtml(ITAM_I18N.button_edit)}"><i data-lucide="edit-2" class="h-3 w-3"></i> ${escapeHtml(ITAM_I18N.button_edit)}</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteJournalEntry('${escapeHtml(journalUuid)}')" title="${escapeHtml(ITAM_I18N.button_delete)}"><i data-lucide="trash-2" class="h-3 w-3"></i> ${escapeHtml(ITAM_I18N.button_delete)}</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
@@ -6430,7 +6452,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'lifecycle') {
         const entries = await loadLifecycleEntriesForRow(rowData);
         if (entries.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Lifecycle-Einträge vorhanden.</div>';
+            return `<div class="itam-details-empty text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_lifecycle_entries)}</div>`;
         }
 
         return entries.map((entry) => {
@@ -6453,8 +6475,8 @@ async function buildDetailsPanelContent(panel, rowData) {
                 + `</div>`
                 + (rowDescription !== '--' && rowDescription !== '' ? `<div class="mt-2 whitespace-pre-wrap text-xs text-slate-700">${escapeHtml(rowDescription)}</div>` : '')
                 + `<div class="mt-2 flex gap-2">`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditLifecycleModal('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}', '${escapeHtml(rowTypeValue).replace(/'/g, "\\'")}', '${escapeHtml(rowDate).replace(/'/g, "\\'")}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteLifecycleEntry('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditLifecycleModal('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}', '${escapeHtml(rowTypeValue).replace(/'/g, "\\'")}', '${escapeHtml(rowDate).replace(/'/g, "\\'")}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="${escapeHtml(ITAM_I18N.button_edit)}"><i data-lucide="edit-2" class="h-3 w-3"></i> ${escapeHtml(ITAM_I18N.button_edit)}</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteLifecycleEntry('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}')" title="${escapeHtml(ITAM_I18N.button_delete)}"><i data-lucide="trash-2" class="h-3 w-3"></i> ${escapeHtml(ITAM_I18N.button_delete)}</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
@@ -6463,11 +6485,11 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'attachments') {
         const attachments = await loadAttachmentMetadataForRow(rowData);
         if (attachments.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Anhänge vorhanden.</div>';
+            return `<div class="itam-details-empty text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_attachments)}</div>`;
         }
 
         return attachments.map((item) => {
-            const fileName = item.caption || item.metadata_caption || 'Anlage';
+            const fileName = item.caption || item.metadata_caption || ITAM_I18N.attachment_fallback;
             const description = item.description || item.metadata_description || '';
             const fileUrl = item.specification || '';
             const metadataUuid = item.uuid || item.metadata_uuid || '';
@@ -6476,7 +6498,7 @@ async function buildDetailsPanelContent(panel, rowData) {
                 ? `<?php echo PORTFLOW_HOSTNAME; ?>${fileUrl}`
                 : fileUrl;
             const preview = isImage && fileUrl
-                ? `<img class="max-h-[180px] max-w-full rounded-md border border-slate-300 bg-white object-contain" loading="lazy" src="${escapeHtml(displayUrl)}" alt="Vorschau" />`
+                ? `<img class="max-h-[180px] max-w-full rounded-md border border-slate-300 bg-white object-contain" loading="lazy" src="${escapeHtml(displayUrl)}" alt="${escapeHtml(ITAM_I18N.preview_alt)}" />`
                 : '';
 
             return `<div class="mb-2 grid gap-2 rounded-md border border-slate-200 bg-white p-2">`
@@ -6484,14 +6506,14 @@ async function buildDetailsPanelContent(panel, rowData) {
                 + (description ? `<div class="text-xs text-slate-500">${escapeHtml(description)}</div>` : '')
                 + preview
                 + `<div class="mt-1 flex gap-2">`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditFileModal('${escapeHtml(metadataUuid)}', '${escapeHtml(fileName).replace(/'/g, "\\'")}', '${escapeHtml(description).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteFile('${escapeHtml(metadataUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditFileModal('${escapeHtml(metadataUuid)}', '${escapeHtml(fileName).replace(/'/g, "\\'")}', '${escapeHtml(description).replace(/'/g, "\\'")}')" title="${escapeHtml(ITAM_I18N.button_edit)}"><i data-lucide="edit-2" class="h-3 w-3"></i> ${escapeHtml(ITAM_I18N.button_edit)}</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteFile('${escapeHtml(metadataUuid)}')" title="${escapeHtml(ITAM_I18N.button_delete)}"><i data-lucide="trash-2" class="h-3 w-3"></i> ${escapeHtml(ITAM_I18N.button_delete)}</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
     }
 
-    return '<div class="itam-details-empty text-sm text-slate-500">Panel nicht konfiguriert.</div>';
+    return `<div class="itam-details-empty text-sm text-slate-500">${escapeHtml(ITAM_I18N.panel_not_configured)}</div>`;
 }
 
 async function renderDetailsGrid(rowData) {
@@ -6508,7 +6530,7 @@ async function renderDetailsGrid(rowData) {
     const $leftCard = $('<div class="rounded-xl border border-slate-300 bg-slate-50 p-3"></div>');
     const $rightPanels = $('<div class="grid gap-3"></div>');
 
-    const primaryTitle = detailsLayout.primary_title || 'Stammdaten';
+    const primaryTitle = detailsLayout.primary_title || ITAM_I18N.master_data;
     $leftCard.append(`<div class="mb-2 text-base font-bold text-slate-900">${escapeHtml(primaryTitle)}</div>`);
     const $table = $('<table class="w-full border-collapse"><tbody></tbody></table>');
     const $tbody = $table.find('tbody');
@@ -6529,18 +6551,18 @@ async function renderDetailsGrid(rowData) {
             if (utilization) {
                 const pct = Number.isFinite(utilization.utilizationPct) ? Math.max(0, utilization.utilizationPct) : null;
                 const width = pct === null ? 0 : Math.min(pct, 100);
-                const text = pct === null ? 'Kapazitaet fehlt in Specification' : `${pct.toFixed(1)}%`;
+                const text = pct === null ? ITAM_I18N.capacity_missing_in_specification : `${pct.toFixed(1)}%`;
 
                 $leftCard.append(`
                     <div class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
-                        <div class="mb-1 text-sm font-bold text-amber-900">USV/PDU Auslastung</div>
+                        <div class="mb-1 text-sm font-bold text-amber-900">${escapeHtml(ITAM_I18N.ups_pdu_utilization)}</div>
                         <div class="grid grid-cols-3 gap-2 text-xs text-amber-800">
-                            <div>Last: <strong>${escapeHtml(utilization.totalLoadW.toFixed(1))} W</strong></div>
-                            <div>Kapazitaet: <strong>${utilization.capacityW > 0 ? `${escapeHtml(utilization.capacityW.toFixed(1))} W` : '--'}</strong></div>
-                            <div>Verbraucher: <strong>${escapeHtml(utilization.connectedDevices)}</strong></div>
+                            <div>${escapeHtml(ITAM_I18N.load_label)}: <strong>${escapeHtml(utilization.totalLoadW.toFixed(1))} W</strong></div>
+                            <div>${escapeHtml(ITAM_I18N.capacity_label)}: <strong>${utilization.capacityW > 0 ? `${escapeHtml(utilization.capacityW.toFixed(1))} W` : '--'}</strong></div>
+                            <div>${escapeHtml(ITAM_I18N.consumers_label)}: <strong>${escapeHtml(utilization.connectedDevices)}</strong></div>
                         </div>
                         <div class="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-amber-200"><div class="h-full ${pct !== null && pct > 100 ? 'bg-red-600' : 'bg-amber-500'}" style="width:${width}%"></div></div>
-                        <div class="mt-1 text-xs text-amber-700">Auslastung: ${escapeHtml(text)}</div>
+                        <div class="mt-1 text-xs text-amber-700">${escapeHtml(ITAM_I18N.utilization_label)}: ${escapeHtml(text)}</div>
                     </div>
                 `);
             }
@@ -6565,7 +6587,7 @@ async function renderDetailsGrid(rowData) {
     if (currentTable === 'location_details' && (locationType == 8 || locationType === '8' || Number(locationType) === 8)) {
         console.log('[3D-VIEW] ✓ Rack erkannt - Füge 3D-Button hinzu');
         const $actionDiv = $('<div class="mt-4 flex gap-2 flex-wrap"></div>');
-        const $3dBtn = $('<button type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="openLocationIn3D(\'' + escapeHtml(rowData.location_uuid || rowData.uuid) + '\')"><i data-lucide="cube" class="h-4 w-4"></i>3D Ansicht öffnen</button>');
+        const $3dBtn = $('<button type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" onclick="openLocationIn3D(\'' + escapeHtml(rowData.location_uuid || rowData.uuid) + '\')"><i data-lucide="cube" class="h-4 w-4"></i>' + escapeHtml(ITAM_I18N.open_3d_view) + '</button>');
         $actionDiv.append($3dBtn);
         $leftCard.append($actionDiv);
     }
@@ -6580,29 +6602,29 @@ async function renderDetailsGrid(rowData) {
         let panelType = panel.type?.toLowerCase() || '';
         if (panelType.includes('journal')) {
             const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
-            const $journalBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openJournalEntryModal()"><i data-lucide="message-square-plus"></i>Journaleintrag erstellen</button>');
+            const $journalBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openJournalEntryModal()"><i data-lucide="message-square-plus"></i>' + escapeHtml(ITAM_I18N.create_journal_entry) + '</button>');
             $actions.append($journalBtn);
             $panelCard.append($actions);
         } else if (panelType.includes('lifecycle')) {
             const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
-            const $lifecycleBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openLifecycleEntryModal()"><i data-lucide="history"></i>Lifecycle-Eintrag erstellen</button>');
+            const $lifecycleBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openLifecycleEntryModal()"><i data-lucide="history"></i>' + escapeHtml(ITAM_I18N.create_lifecycle_entry) + '</button>');
             $actions.append($lifecycleBtn);
             $panelCard.append($actions);
         } else if (panelType.includes('attachment') || panelType.includes('anhang') || panelType.includes('file')) {
             const $actions = $('<div class="mb-4 flex flex-wrap gap-2"></div>');
-            const $uploadBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openFileUploadModal()"><i data-lucide="upload"></i>Datei hochladen</button>');
+            const $uploadBtn = $('<button type="button" class="inline-flex w-full items-center justify-center gap-1 rounded-full border border-slate-300 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700" onclick="openFileUploadModal()"><i data-lucide="upload"></i>' + escapeHtml(ITAM_I18N.upload_file) + '</button>');
             $actions.append($uploadBtn);
             $panelCard.append($actions);
         }
         
-        $panelCard.append('<div class="itam-details-empty text-sm text-slate-500">Lade Daten ...</div>');
+        $panelCard.append('<div class="itam-details-empty text-sm text-slate-500">' + escapeHtml(ITAM_I18N.loading_data) + '</div>');
         $rightPanels.append($panelCard);
 
         try {
             const html = await buildDetailsPanelContent(panel, rowData);
             $panelCard.find('.itam-details-empty').replaceWith(html);
         } catch (error) {
-            $panelCard.find('.itam-details-empty').replaceWith('<div class="itam-details-empty">Daten konnten nicht geladen werden.</div>');
+            $panelCard.find('.itam-details-empty').replaceWith('<div class="itam-details-empty">' + escapeHtml(ITAM_I18N.data_could_not_be_loaded) + '</div>');
         }
     }
 
@@ -6780,7 +6802,7 @@ function renderTopologyTab(rowData) {
     if (!container) return;
     const ctx = resolveTopologyContext(rowData);
     if (!ctx) {
-        container.innerHTML = '<div class="text-sm text-slate-500">Keine Topologie verfuegbar.</div>';
+        container.innerHTML = `<div class="text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_topology_available)}</div>`;
         return;
     }
     container.innerHTML = '';
@@ -6789,7 +6811,7 @@ function renderTopologyTab(rowData) {
         // Render the trace inline (no separate modal needed since this IS the trace view).
         const wrap = document.createElement('div');
         wrap.className = 'rounded-xl border border-slate-200 bg-white p-3';
-        wrap.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Kabelverlauf</div><div id="topologyInlineTrace" class="text-sm text-slate-600">Lade ...</div>';
+        wrap.innerHTML = `<div class="mb-2 text-sm font-bold text-slate-900">${escapeHtml(ITAM_I18N.cable_trace)}</div><div id="topologyInlineTrace" class="text-sm text-slate-600">${escapeHtml(ITAM_I18N.loading_short)}</div>`;
         container.appendChild(wrap);
         loadInlineTrace('connection', ctx.connectionUuid, '#topologyInlineTrace');
         return;
@@ -6801,11 +6823,11 @@ function renderTopologyTab(rowData) {
         top.className = 'space-y-3';
         const header = document.createElement('div');
         header.className = 'rounded-xl border border-slate-200 bg-white p-3';
-        header.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Switch-Ansicht</div><div id="topologySwitchView"></div>';
+        header.innerHTML = `<div class="mb-2 text-sm font-bold text-slate-900">${escapeHtml(ITAM_I18N.switch_view)}</div><div id="topologySwitchView"></div>`;
         top.appendChild(header);
         const trace = document.createElement('div');
         trace.className = 'rounded-xl border border-slate-200 bg-white p-3';
-        trace.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Kabelverlauf ab diesem Port</div><div id="topologyInlineTrace" class="text-sm text-slate-600">Lade ...</div>';
+        trace.innerHTML = `<div class="mb-2 text-sm font-bold text-slate-900">${escapeHtml(ITAM_I18N.cable_trace_from_port)}</div><div id="topologyInlineTrace" class="text-sm text-slate-600">${escapeHtml(ITAM_I18N.loading_short)}</div>`;
         top.appendChild(trace);
         container.appendChild(top);
         if (ctx.deviceUuid) {
@@ -6817,7 +6839,7 @@ function renderTopologyTab(rowData) {
                 }
             });
         } else {
-            document.getElementById('topologySwitchView').innerHTML = '<div class="text-xs text-slate-500">Geraet nicht aufloesbar.</div>';
+            document.getElementById('topologySwitchView').innerHTML = `<div class="text-xs text-slate-500">${escapeHtml(ITAM_I18N.device_not_resolvable)}</div>`;
         }
         loadInlineTrace('device_port', ctx.portUuid, '#topologyInlineTrace');
         return;
@@ -6828,11 +6850,11 @@ function renderTopologyTab(rowData) {
     wrap.className = 'space-y-3';
     const card = document.createElement('div');
     card.className = 'rounded-xl border border-slate-200 bg-white p-3';
-    card.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Switch-Ansicht</div><div id="topologySwitchView"></div>';
+    card.innerHTML = `<div class="mb-2 text-sm font-bold text-slate-900">${escapeHtml(ITAM_I18N.switch_view)}</div><div id="topologySwitchView"></div>`;
     wrap.appendChild(card);
     const trace = document.createElement('div');
     trace.className = 'rounded-xl border border-slate-200 bg-white p-3';
-    trace.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Kabelverlauf</div><div id="topologyInlineTrace" class="text-sm text-slate-500">Noch kein Port gewaehlt.</div>';
+    trace.innerHTML = `<div class="mb-2 text-sm font-bold text-slate-900">${escapeHtml(ITAM_I18N.cable_trace)}</div><div id="topologyInlineTrace" class="text-sm text-slate-500">${escapeHtml(ITAM_I18N.no_port_selected)}</div>`;
     wrap.appendChild(trace);
     container.appendChild(wrap);
 
@@ -6848,7 +6870,7 @@ function renderTopologyTab(rowData) {
 async function loadInlineTrace(kind, uuid, selector) {
     const target = document.querySelector(selector);
     if (!target || !uuid) return;
-    target.innerHTML = '<div class="text-sm text-slate-500">Lade Kabelverlauf ...</div>';
+    target.innerHTML = `<div class="text-sm text-slate-500">${escapeHtml(ITAM_I18N.loading_cable_trace)}</div>`;
     try {
         const r = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/cable_trace?from=' + encodeURIComponent(uuid) + '&kind=' + encodeURIComponent(kind), {
             credentials: 'same-origin', headers: { 'Accept': 'application/json' }
@@ -6864,19 +6886,19 @@ async function loadInlineTrace(kind, uuid, selector) {
         target.innerHTML = renderTraceInlineHtml(result);
         if (window.lucide) window.lucide.createIcons();
     } catch (e) {
-        target.innerHTML = '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">Fehler: ' + escapeHtml(e.message || e) + '</div>';
+        target.innerHTML = '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml(ITAM_I18N.error) + ': ' + escapeHtml(e.message || e) + '</div>';
     }
 }
 
 function renderTraceInlineHtml(result) {
-    if (!result || result.error) return '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml(result && result.error || 'Fehler') + '</div>';
+    if (!result || result.error) return '<div class="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">' + escapeHtml(result && result.error || ITAM_I18N.error) + '</div>';
     if (result.kind === 'device') {
         const ports = Array.isArray(result.ports) ? result.ports : [];
-        if (!ports.length) return '<div class="text-xs text-slate-500">Keine verbundenen Ports.</div>';
+        if (!ports.length) return '<div class="text-xs text-slate-500">' + escapeHtml(ITAM_I18N.no_connected_ports) + '</div>';
         return ports.map(p => '<div class="mb-3">' + renderTraceInlineHtml(p) + '</div>').join('');
     }
     const branches = Array.isArray(result.branches) ? result.branches : [];
-    if (!branches.length) return '<div class="text-xs text-slate-500">Keine Verbindungen ab diesem Punkt.</div>';
+    if (!branches.length) return '<div class="text-xs text-slate-500">' + escapeHtml(ITAM_I18N.no_connections_from_this_point) + '</div>';
     return branches.map((branch, idx) => {
         const items = [];
         if (result.kind === 'device_port' && result.start) items.push(traceNodePill(result.start));
@@ -6884,25 +6906,25 @@ function renderTraceInlineHtml(result) {
             items.push(traceCableArrow(hop.cable || {}));
             items.push(traceNodePill(hop.port));
         }
-        return '<div class="mb-2"><div class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pfad ' + (idx + 1) + '</div>' +
+        return '<div class="mb-2"><div class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">' + escapeHtml(ITAM_I18N.path_label) + ' ' + (idx + 1) + '</div>' +
                '<div class="flex flex-wrap items-stretch gap-1">' + items.join('') + '</div></div>';
     }).join('');
 }
 
 function traceNodePill(node) {
-    if (!node || node.type !== 'port') return '<div class="rounded-lg border border-slate-300 bg-slate-100 p-2 text-xs text-slate-700">Unbekannt</div>';
+    if (!node || node.type !== 'port') return '<div class="rounded-lg border border-slate-300 bg-slate-100 p-2 text-xs text-slate-700">' + escapeHtml(ITAM_I18N.status_unknown) + '</div>';
     const dev = node.device || {};
     const loc = node.location || {};
     const status = node.snmp && node.snmp.oper_status === 1 ? 'up' : node.snmp && node.snmp.admin_status === 2 ? 'admin_down' : node.snmp && node.snmp.oper_status === 2 ? 'down' : 'unknown';
     const sc = { up: 'bg-emerald-100 text-emerald-800', down: 'bg-amber-100 text-amber-800', admin_down: 'bg-red-100 text-red-800', unknown: 'bg-slate-100 text-slate-700' }[status];
-    const endpointBadge = node.endpoint ? '<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-blue-700">Endpunkt</span>' : '';
+    const endpointBadge = node.endpoint ? '<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-blue-700">' + escapeHtml(ITAM_I18N.endpoint) + '</span>' : '';
     const truncated = node.truncated_reason ? '<div class="mt-1 text-[10px] text-amber-700">⚠ ' + escapeHtml(node.truncated_reason) + '</div>' : '';
     return '<div class="min-w-[170px] rounded-lg border border-slate-300 bg-white p-2 text-xs shadow-sm">' +
-        '<div class="flex items-center justify-between gap-1"><div class="font-bold text-slate-900">' + escapeHtml(dev.caption || 'Device') + endpointBadge + '</div>' +
+        '<div class="flex items-center justify-between gap-1"><div class="font-bold text-slate-900">' + escapeHtml(dev.caption || ITAM_I18N.device_label) + endpointBadge + '</div>' +
         '<span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase ' + sc + '">' + escapeHtml(dev.type || '') + '</span></div>' +
         (loc.caption ? '<div class="text-[10px] text-slate-500">📍 ' + escapeHtml(loc.caption) + '</div>' : '') +
-        '<div class="mt-1 rounded bg-slate-50 px-1.5 py-0.5"><span class="font-semibold">Port:</span> ' + escapeHtml(node.caption || '—') + '</div>' +
-        (node.ip ? '<div class="text-[10px] text-slate-600">IP: ' + escapeHtml(node.ip) + '</div>' : '') +
+        '<div class="mt-1 rounded bg-slate-50 px-1.5 py-0.5"><span class="font-semibold">' + escapeHtml(ITAM_I18N.port_label) + ':</span> ' + escapeHtml(node.caption || '—') + '</div>' +
+        (node.ip ? '<div class="text-[10px] text-slate-600">' + escapeHtml(ITAM_I18N.ip_label) + ': ' + escapeHtml(node.ip) + '</div>' : '') +
         truncated +
         '</div>';
 }
@@ -6912,7 +6934,7 @@ function traceCableArrow(edge) {
     if (edge.cable_name) parts.push(escapeHtml(edge.cable_name));
     if (edge.cable_type) parts.push(escapeHtml(edge.cable_type));
     if (edge.length) parts.push(escapeHtml(edge.length) + ' m');
-    const label = parts.length ? parts.join(' · ') : 'Kabel';
+    const label = parts.length ? parts.join(' · ') : ITAM_I18N.cable_label;
     return '<div class="flex flex-col items-center justify-center px-1 text-slate-500"><div class="text-[9px] uppercase tracking-wider">' + label + '</div>' +
         '<svg viewBox="0 0 60 12" width="60" height="12" class="my-0.5"><line x1="2" y1="6" x2="58" y2="6" stroke="#64748b" stroke-width="2" stroke-dasharray="4 3"/><polygon points="58,6 52,3 52,9" fill="#64748b"/></svg></div>';
 }
@@ -6932,7 +6954,7 @@ async function openLocationIn3D(locationUuid) {
             await initiate3DViewer(locationUuid, null);
         } catch (err) {
             console.error('[3D-VIEW] Error:', err);
-            alert('Fehler beim Laden der 3D-Ansicht: ' + err.message);
+            alert(ITAM_I18N.error_loading_3d_view + ': ' + err.message);
         }
     }
 }
@@ -6944,177 +6966,177 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
     container.innerHTML = `
         <div class="viewer3d-layout grid h-full min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
             <div class="min-h-0 overflow-y-auto rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Steuerung (Basis)</div>
-                <div class="mb-3 text-xs text-slate-600">Links: drehen | Mitte: verschieben | Rad: zoomen</div>
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">${escapeHtml(ITAM_I18N.controls_basic)}</div>
+                <div class="mb-3 text-xs text-slate-600">${escapeHtml(ITAM_I18N.controls_hint)}</div>
 
                 <div class="mb-3 grid grid-cols-2 gap-2">
-                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('front')">Front</button>
-                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('rear')">Rear</button>
-                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('left')">Left</button>
-                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('right')">Right</button>
-                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('top')">Top</button>
-                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('iso')">Iso</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('front')">${escapeHtml(ITAM_I18N.camera_front)}</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('rear')">${escapeHtml(ITAM_I18N.camera_rear)}</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('left')">${escapeHtml(ITAM_I18N.camera_left)}</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('right')">${escapeHtml(ITAM_I18N.camera_right)}</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('top')">${escapeHtml(ITAM_I18N.camera_top)}</button>
+                    <button type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" onclick="set3DCameraPreset('iso')">${escapeHtml(ITAM_I18N.camera_iso)}</button>
                 </div>
 
                 <div class="grid gap-3">
 
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Kabel-Preset</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.cable_preset)}</span>
                 <select id="viewer3dCablePreset" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DCablePreset(this.value)">
-                    <option value="all">Alle</option>
-                    <option value="power">Nur Power</option>
-                    <option value="fiber">Nur Fiber</option>
-                    <option value="copper">Nur Copper</option>
-                    <option value="minimal">Minimal Fokus</option>
+                    <option value="all">${escapeHtml(ITAM_I18N.all)}</option>
+                    <option value="power">${escapeHtml(ITAM_I18N.only_power)}</option>
+                    <option value="fiber">${escapeHtml(ITAM_I18N.only_fiber)}</option>
+                    <option value="copper">${escapeHtml(ITAM_I18N.only_copper)}</option>
+                    <option value="minimal">${escapeHtml(ITAM_I18N.minimal_focus)}</option>
                 </select>
             </label>
 
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Achsen-Lock</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.axis_lock)}</span>
                 <select id="viewer3dAxisLock" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DAxisLock(this.value)">
-                    <option value="free">Frei</option>
-                    <option value="horizontal">Horizontal Orbit</option>
+                    <option value="free">${escapeHtml(ITAM_I18N.free)}</option>
+                    <option value="horizontal">${escapeHtml(ITAM_I18N.horizontal_orbit)}</option>
                 </select>
             </label>
 
             ${isRoomMode ? `
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Rack-Fokus (Room)</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.rack_focus_room)}</span>
                 <select id="viewer3dRoomFocusRack" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DRoomFocusRack(this.value)">
-                    <option value="">Automatisch (alle Racks)</option>
+                    <option value="">${escapeHtml(ITAM_I18N.automatic_all_racks)}</option>
                 </select>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dRoomFocusDevicesOnlyToggle" onchange="toggle3DFeature('roomFocusDevicesOnly', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Nur fokussiertes Rack mit Geraeten</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.only_focused_rack_with_devices)}</span>
             </label>
             ` : ''}
             
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dPortsToggle" checked onchange="toggle3DFeature('ports', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Ports anzeigen</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.show_ports)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dPortLabelsToggle" checked onchange="toggle3DFeature('portLabels', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Port-Beschriftung</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.port_labels)}</span>
             </label>
             
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCablesToggle" checked onchange="toggle3DFeature('cables', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Kabel anzeigen</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.show_cables)}</span>
             </label>
             
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableLabelsToggle" checked onchange="toggle3DFeature('cableLabels', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Kabel-Beschriftung</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.cable_labels)}</span>
             </label>
 
             <details class="viewer-expert-menu rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-                <summary class="text-xs font-bold uppercase tracking-wide text-slate-600">Expertenmenue</summary>
+                <summary class="text-xs font-bold uppercase tracking-wide text-slate-600">${escapeHtml(ITAM_I18N.expert_menu)}</summary>
                 <div class="mt-3 grid gap-3">
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dHoverLabelsOnlyToggle" checked onchange="toggle3DFeature('hoverLabelsOnly', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Beschriftung nur bei Hover</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.labels_on_hover_only)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dRenderAllCablesToggle" checked onchange="toggle3DFeature('renderAllCables', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Alle Kabel rendern</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.render_all_cables)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dRackEarsToggle" checked onchange="toggle3DFeature('rackEars', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Rackohren anzeigen</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.show_rack_ears)}</span>
             </label>
             
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dLoadOverlayToggle" onchange="toggle3DFeature('loadOverlay', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Last-Overlay anzeigen</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.show_load_overlay)}</span>
             </label>
 
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Overlay-Metrik</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.overlay_metric)}</span>
                 <select id="viewer3dMetric" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="change3DMetric(this.value)">
-                    <option value="weight">Gewicht (kg)</option>
-                    <option value="power">Power (W)</option>
-                    <option value="thermal">Thermal (W)</option>
+                    <option value="weight">${escapeHtml(ITAM_I18N.weight_kg)}</option>
+                    <option value="power">${escapeHtml(ITAM_I18N.power_w)}</option>
+                    <option value="thermal">${escapeHtml(ITAM_I18N.thermal_w)}</option>
                 </select>
             </label>
 
             ${isRoomMode ? `
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Chunk Size</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.chunk_size)}</span>
                 <input type="number" id="viewer3dFetchChunkSize" min="10" step="10" value="80" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
             </label>
 
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Target Chunks</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.target_chunks)}</span>
                 <input type="number" id="viewer3dFetchTargetChunks" min="1" step="1" value="8" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
             </label>
 
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Max Concurrency</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.max_concurrency)}</span>
                 <input type="number" id="viewer3dFetchConcurrency" min="1" step="1" value="4" class="rounded-lg border border-slate-300 bg-white px-3 py-2" onchange="set3DFetchTuning()">
             </label>
             ` : ''}
 
             <label class="flex flex-col gap-1 text-sm">
-                <span class="font-semibold text-slate-700">Kabel nur fuer Geraete</span>
+                <span class="font-semibold text-slate-700">${escapeHtml(ITAM_I18N.cables_only_for_devices)}</span>
                 <select id="viewer3dSelectedDevices" multiple size="6" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onchange="set3DSelectedDevices()"></select>
-                <span class="text-xs text-slate-500">Mehrfachauswahl moeglich. Alternativ im Viewer auf ein Geraet klicken, wenn nicht alle Kabel gerendert werden.</span>
+                <span class="text-xs text-slate-500">${escapeHtml(ITAM_I18N.cables_only_for_devices_hint)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableMetaLabelsToggle" checked onchange="toggle3DFeature('cableMetaLabels', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Kabel-Metadaten</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.cable_metadata)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableFiberToggle" checked onchange="toggle3DFeature('cableFiber', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Fiber</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.fiber)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableCopperToggle" checked onchange="toggle3DFeature('cableCopper', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Copper/CAT</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.copper_cat)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCablePowerToggle" checked onchange="toggle3DFeature('cablePower', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Power</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.power)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableTrunkToggle" checked onchange="toggle3DFeature('cableTrunk', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Trunks</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.trunks)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dCableRearAwareToggle" onchange="toggle3DFeature('cableRearAware', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Rear-aware Routing</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.rear_aware_routing)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dComMarkerToggle" onchange="toggle3DFeature('comMarker', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Last-Schwerpunktmarker</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.load_center_marker)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dTransparentRackToggle" onchange="toggle3DFeature('rackTransparent', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Rack halbtransparent</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.rack_semi_transparent)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dDoorsToggle" checked onchange="toggle3DFeature('doorsOpen', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Türen geöffnet</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.doors_open)}</span>
             </label>
 
             <label class="flex items-end gap-2">
                 <input type="checkbox" id="viewer3dSidePanelsToggle" onchange="toggle3DFeature('sidePanelsOpen', this.checked)" class="h-4 w-4">
-                <span class="text-sm font-semibold text-slate-700">Seitenwände geöffnet</span>
+                <span class="text-sm font-semibold text-slate-700">${escapeHtml(ITAM_I18N.side_panels_open)}</span>
             </label>
 
                 </div>
@@ -7123,10 +7145,10 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 </div>
 
                 <div id="viewer3dStatus" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-600">
-                    3D-Viewer wird geladen...
+                    ${escapeHtml(ITAM_I18N.viewer_loading)}
                 </div>
                 <div id="viewer3dUpsSummary" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-600">
-                    USV/PDU Auslastung wird geladen...
+                    ${escapeHtml(ITAM_I18N.ups_pdu_utilization_loading)}
                 </div>
             </div>
 
@@ -7172,7 +7194,7 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
             sortedDevices.forEach((device) => {
                 const uuid = String(device?.uuid || '').trim();
                 if (!uuid) return;
-                const deviceName = String(device?.name || '').trim() || `Geraet ${uuid.slice(0, 8)}`;
+                const deviceName = String(device?.name || '').trim() || `${ITAM_I18N.device_label} ${uuid.slice(0, 8)}`;
                 const locationLabel = String(device?.locationName || rackNameByUuid.get(String(device?.location || '').trim()) || '').trim();
                 const option = document.createElement('option');
                 option.value = uuid;
@@ -7238,9 +7260,9 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                 const outer = rack.geometry?.outer || {};
                 const inner = rack.geometry?.inner || {};
                 if (isRoomMode) {
-                    statusEl.textContent = `Raum geladen | Racks: ${viewer.state.liveRacks?.length || 0} | Devices: ${viewer.state.liveDevices?.length || 0} | Cables: ${viewer.state.liveConnections?.length || 0}`;
+                    statusEl.textContent = `${ITAM_I18N.room_loaded} | Racks: ${viewer.state.liveRacks?.length || 0} | ${ITAM_I18N.devices_label}: ${viewer.state.liveDevices?.length || 0} | ${ITAM_I18N.cables_label}: ${viewer.state.liveConnections?.length || 0}`;
                 } else {
-                    statusEl.textContent = `Rack geladen | UUID: ${rack.uuid} | Outer: ${outer.x || '-'}x${outer.y || '-'}x${outer.z || '-'} | Inner: ${inner.x || '-'}x${inner.y || '-'}x${inner.z || '-'} | Cables: ${viewer.state.liveConnections?.length || 0}`;
+                    statusEl.textContent = `${ITAM_I18N.rack_loaded} | UUID: ${rack.uuid} | ${ITAM_I18N.outer_label}: ${outer.x || '-'}x${outer.y || '-'}x${outer.z || '-'} | ${ITAM_I18N.inner_label}: ${inner.x || '-'}x${inner.y || '-'}x${inner.z || '-'} | ${ITAM_I18N.cables_label}: ${viewer.state.liveConnections?.length || 0}`;
                 }
             }
         }
@@ -7284,7 +7306,7 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
             });
 
             if (powerSources.length === 0) {
-                upsSummaryEl.textContent = 'Keine USV/PDU im aktuellen 3D-Ausschnitt.';
+                upsSummaryEl.textContent = ITAM_I18N.no_ups_pdu_in_current_3d_view;
             } else {
                 const html = powerSources.map((source) => {
                     const sourceUuid = String(source?.uuid || '').trim();
@@ -7344,28 +7366,28 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
                     const capacityW = Number(source?.powerOutputW || 0);
                     const pct = capacityW > 0 ? (totalLoadW / capacityW) * 100 : null;
                     const width = pct === null ? 0 : Math.min(Math.max(pct, 0), 100);
-                    const pctText = pct === null ? 'n/a' : `${pct.toFixed(1)}%`;
+                    const pctText = pct === null ? ITAM_I18N.not_available_short : `${pct.toFixed(1)}%`;
 
                     return `<div class="mb-2 rounded border border-slate-200 bg-white p-2">`
                         + `<div class="text-xs font-semibold text-slate-800">${escapeHtml(String(source?.name || sourceUuid))}</div>`
                         + `<div class="mt-1 grid grid-cols-3 gap-2 text-[11px] text-slate-600">`
-                        + `<div>Last: <strong>${escapeHtml(totalLoadW.toFixed(1))} W</strong></div>`
-                        + `<div>Kap.: <strong>${capacityW > 0 ? `${escapeHtml(capacityW.toFixed(1))} W` : '--'}</strong></div>`
-                        + `<div>Verbraucher: <strong>${escapeHtml(consumerCount)}</strong></div>`
+                        + `<div>${escapeHtml(ITAM_I18N.load_label)}: <strong>${escapeHtml(totalLoadW.toFixed(1))} W</strong></div>`
+                        + `<div>${escapeHtml(ITAM_I18N.capacity_short_label)}: <strong>${capacityW > 0 ? `${escapeHtml(capacityW.toFixed(1))} W` : '--'}</strong></div>`
+                        + `<div>${escapeHtml(ITAM_I18N.consumers_label)}: <strong>${escapeHtml(consumerCount)}</strong></div>`
                         + `</div>`
                         + `<div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200"><div class="h-full ${pct !== null && pct > 100 ? 'bg-red-600' : 'bg-blue-600'}" style="width:${width}%"></div></div>`
-                        + `<div class="mt-1 text-[11px] text-slate-600">Auslastung: ${escapeHtml(pctText)}</div>`
+                        + `<div class="mt-1 text-[11px] text-slate-600">${escapeHtml(ITAM_I18N.utilization_label)}: ${escapeHtml(pctText)}</div>`
                         + `</div>`;
                 }).join('');
 
-                upsSummaryEl.innerHTML = `<div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">USV/PDU Auslastung (3D)</div>${html}`;
+                upsSummaryEl.innerHTML = `<div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">${escapeHtml(ITAM_I18N.ups_pdu_utilization_3d)}</div>${html}`;
             }
         }
 
         if (isRoomMode) {
             const roomFocusSelect = document.getElementById('viewer3dRoomFocusRack');
             if (roomFocusSelect && Array.isArray(viewer.state?.liveRacks)) {
-                roomFocusSelect.innerHTML = '<option value="">Automatisch (alle Racks)</option>';
+                roomFocusSelect.innerHTML = `<option value="">${escapeHtml(ITAM_I18N.automatic_all_racks)}</option>`;
                 viewer.state.liveRacks.forEach(rack => {
                     const option = document.createElement('option');
                     option.value = String(rack.uuid || '');
@@ -7529,7 +7551,7 @@ async function initiate3DViewer(locationUuid, rackSeedRow = null) {
 
 function openJournalEntryModal() {
     if (!currentDetailsRowData) {
-        alert('Keine Zeile ausgewählt.');
+        alert(ITAM_I18N.no_row_selected);
         return;
     }
     document.getElementById('journalEntryCaption').value = '';
@@ -7547,7 +7569,7 @@ function closeJournalEntryModal() {
 
 function openLifecycleEntryModal() {
     if (!currentDetailsRowData) {
-        alert('Keine Zeile ausgewählt.');
+        alert(ITAM_I18N.no_row_selected);
         return;
     }
 
@@ -7570,7 +7592,7 @@ function closeLifecycleEntryModal() {
 
 function openFileUploadModal() {
     if (!currentDetailsRowData) {
-        alert('Keine Zeile ausgewählt.');
+        alert(ITAM_I18N.no_row_selected);
         return;
     }
     document.getElementById('fileUploadInput').value = '';
@@ -7598,8 +7620,8 @@ function updateFileSelection() {
     
     if (file) {
         const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        document.getElementById('fileUploadFileName').textContent = `Name: ${file.name}`;
-        document.getElementById('fileUploadFileSize').textContent = `Größe: ${sizeMB} MB`;
+        document.getElementById('fileUploadFileName').textContent = `${ITAM_I18N.file_selected_label}: ${file.name}`;
+        document.getElementById('fileUploadFileSize').textContent = `${ITAM_I18N.file_size_label}: ${sizeMB} MB`;
         feedback.classList.remove('hidden');
     } else {
         feedback.classList.add('hidden');
@@ -7608,7 +7630,7 @@ function updateFileSelection() {
 
 // Delete entry
 function deleteEntry(uuid, rowData) {
-    if (confirm('Möchten Sie diesen Eintrag und alle zugehörigen Daten wirklich löschen?')) {
+    if (confirm(ITAM_I18N.confirm_delete_entry)) {
         fetch('<?php echo PORTFLOW_HOSTNAME; ?>' + '/includes/forms.json')
         .then(response => response.json())
         .then(data => {
@@ -7697,7 +7719,7 @@ function saveUserColumnPreferences(table, selectedColumns) {
 // Journal entry submission
 async function submitJournalEntry() {
     if (!currentDetailsRowData) {
-        alert('Keine Zeile ausgew\u00e4hlt.');
+        alert(ITAM_I18N.no_row_selected);
         return;
     }
 
@@ -7705,7 +7727,7 @@ async function submitJournalEntry() {
     const description = document.getElementById('journalEntryDescription').value.trim();
 
     if (!caption) {
-        alert('Bitte geben Sie einen Titel ein.');
+        alert(ITAM_I18N.prompt_enter_title);
         return;
     }
 
@@ -7714,7 +7736,7 @@ async function submitJournalEntry() {
         const baseUuid = String(currentDetailsRowData[`${baseTable}_uuid`] || currentDetailsRowData.uuid || '').trim();
 
         if (!baseTable || !baseUuid) {
-            alert('Konnte Basis-Tabelle oder UUID nicht bestimmen.');
+            alert(ITAM_I18N.error_resolve_base_reference);
             return;
         }
 
@@ -7737,7 +7759,7 @@ async function submitJournalEntry() {
         const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
 
         if (!metadataUuid) {
-            alert('Metadaten konnten nicht erstellt werden.');
+            alert(ITAM_I18N.error_metadata_create_failed);
             return;
         }
 
@@ -7757,23 +7779,23 @@ async function submitJournalEntry() {
         const journalResult = await journalResponse.json();
 
         if (!journalResult || !journalResult[0]) {
-            alert('Journaleintrag konnte nicht erstellt werden.');
+            alert(ITAM_I18N.error_journal_create_failed);
             return;
         }
 
         closeJournalEntryModal();
         // Reload details to show new journal entry
         await openDetailsPopup(currentDetailsRowData);
-        alert('Journaleintrag erfolgreich erstellt!');
+        alert(ITAM_I18N.success_journal_created);
     } catch (error) {
         console.error('Fehler beim Erstellen des Journaleintrags:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
 async function submitLifecycleEntry() {
     if (!currentDetailsRowData) {
-        alert('Keine Zeile ausgewählt.');
+        alert(ITAM_I18N.no_row_selected);
         return;
     }
 
@@ -7783,22 +7805,22 @@ async function submitLifecycleEntry() {
     const description = document.getElementById('lifecycleEntryDescription').value.trim();
 
     if (!eventType) {
-        alert('Bitte waehlen Sie einen Event-Typ.');
+        alert(ITAM_I18N.prompt_choose_event_type);
         return;
     }
     if (!valueDate) {
-        alert('Bitte geben Sie ein Datum an.');
+        alert(ITAM_I18N.prompt_enter_date);
         return;
     }
     if (!caption) {
-        alert('Bitte geben Sie einen Titel ein.');
+        alert(ITAM_I18N.prompt_enter_title);
         return;
     }
 
     try {
         const deviceUuid = String(currentDetailsRowData.device_uuid || currentDetailsRowData.uuid || '').trim();
         if (!deviceUuid) {
-            alert('Konnte Geraet-UUID nicht bestimmen.');
+            alert(ITAM_I18N.error_resolve_device_uuid);
             return;
         }
 
@@ -7817,7 +7839,7 @@ async function submitLifecycleEntry() {
         const metadataResult = await metadataResponse.json();
         const metadataUuid = metadataResult && metadataResult[0] && metadataResult[0].uuid;
         if (!metadataUuid) {
-            alert('Lifecycle-Metadaten konnten nicht erstellt werden.');
+            alert(ITAM_I18N.error_lifecycle_metadata_create_failed);
             return;
         }
 
@@ -7833,7 +7855,7 @@ async function submitLifecycleEntry() {
 
         const lifecycleResult = await lifecycleResponse.json();
         if (!lifecycleResult || !lifecycleResult[0]) {
-            alert('Lifecycle-Eintrag konnte nicht erstellt werden.');
+            alert(ITAM_I18N.error_lifecycle_create_failed);
             return;
         }
 
@@ -7841,14 +7863,14 @@ async function submitLifecycleEntry() {
         await openDetailsPopup(currentDetailsRowData);
     } catch (error) {
         console.error('Fehler beim Erstellen des Lifecycle-Eintrags:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
 // File upload submission
 async function submitFileUpload() {
     if (!currentDetailsRowData) {
-        alert('Keine Zeile ausgewählt.');
+        alert(ITAM_I18N.no_row_selected);
         return;
     }
 
@@ -7857,7 +7879,7 @@ async function submitFileUpload() {
     const description = document.getElementById('fileUploadDescription').value.trim();
 
     if (!file) {
-        alert('Bitte wählen Sie eine Datei aus.');
+        alert(ITAM_I18N.prompt_choose_file);
         return;
     }
 
@@ -7876,7 +7898,7 @@ async function submitFileUpload() {
         const baseUuid = String(currentDetailsRowData[`${baseTable}_uuid`] || currentDetailsRowData.uuid || '').trim();
 
         if (!baseTable || !baseUuid) {
-            alert('Konnte Basis-Tabelle oder UUID nicht bestimmen.');
+            alert(ITAM_I18N.error_resolve_base_reference);
             submitBtn.disabled = false;
             cancelBtn.disabled = false;
             progressDiv.style.display = 'none';
@@ -7903,7 +7925,7 @@ async function submitFileUpload() {
                         const uploadResult = JSON.parse(responseText);
 
                         if (!uploadResult || !uploadResult.file_url) {
-                            alert('Datei konnte nicht hochgeladen werden.');
+                            alert(ITAM_I18N.error_file_upload_failed);
                             submitBtn.disabled = false;
                             cancelBtn.disabled = false;
                             progressDiv.style.display = 'none';
@@ -7925,11 +7947,11 @@ async function submitFileUpload() {
                             closeFileUploadModal();
                             // Reload details to show new attachment
                             openDetailsPopup(currentDetailsRowData);
-                            alert('Datei erfolgreich hochgeladen!');
+                            alert(ITAM_I18N.success_file_uploaded);
                             resolve();
                         }).catch((error) => {
                             console.error('Fehler beim Speichern der Metadaten:', error);
-                            alert('Datei hochgeladen, aber Metadaten konnten nicht gespeichert werden.');
+                            alert(ITAM_I18N.error_metadata_save_failed_after_upload);
                             submitBtn.disabled = false;
                             cancelBtn.disabled = false;
                             progressDiv.style.display = 'none';
@@ -7937,21 +7959,21 @@ async function submitFileUpload() {
                         });
                     } catch (parseError) {
                         console.error('JSON Parse Error Response:', xhr.responseText);
-                        alert('Fehler beim Verarbeiten der Antwort: ' + parseError.message + '\n\nServer antwort (siehe Konsole): ' + xhr.responseText.substring(0, 200));
+                        alert(ITAM_I18N.error_response_processing + ': ' + parseError.message + '\n\n' + xhr.responseText.substring(0, 200));
                         submitBtn.disabled = false;
                         cancelBtn.disabled = false;
                         progressDiv.style.display = 'none';
                         reject(parseError);
                     }
                 } else {
-                    let errorMsg = 'Datei konnte nicht hochgeladen werden.';
+                    let errorMsg = ITAM_I18N.error_file_upload_failed;
                     try {
                         const errorResult = JSON.parse(xhr.responseText);
                         if (errorResult && errorResult.error) {
                             errorMsg = errorResult.error;
                         }
                     } catch (e) {
-                        errorMsg = 'Server Error: ' + xhr.responseText.substring(0, 200);
+                        errorMsg = ITAM_I18N.error_upload_request + ': ' + xhr.responseText.substring(0, 200);
                     }
                     alert(errorMsg);
                     submitBtn.disabled = false;
@@ -7962,11 +7984,11 @@ async function submitFileUpload() {
             });
 
             xhr.addEventListener('error', () => {
-                alert('Ein Fehler ist aufgetreten beim Upload.');
+                alert(ITAM_I18N.error_upload_failed);
                 submitBtn.disabled = false;
                 cancelBtn.disabled = false;
                 progressDiv.style.display = 'none';
-                reject(new Error('Upload failed'));
+                reject(new Error(ITAM_I18N.error_upload_failed));
             });
 
             xhr.addEventListener('abort', () => {
@@ -7974,7 +7996,7 @@ async function submitFileUpload() {
                 submitBtn.disabled = false;
                 cancelBtn.disabled = false;
                 progressDiv.style.display = 'none';
-                reject(new Error('Upload aborted'));
+                reject(new Error(ITAM_I18N.error_upload_aborted));
             });
 
             const formData = new FormData();
@@ -7988,7 +8010,7 @@ async function submitFileUpload() {
         });
     } catch (error) {
         console.error('Fehler beim Hochladen der Datei:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
         const submitBtn = document.getElementById('fileUploadSubmitBtn');
         const cancelBtn = document.getElementById('fileUploadCancelBtn');
         submitBtn.disabled = false;
@@ -8037,7 +8059,7 @@ function closeEditLifecycleModal() {
 
 async function submitEditJournal() {
     if (!currentEditingJournalUuid) {
-        alert('Keine Journal-Metadaten-UUID gefunden.');
+        alert(ITAM_I18N.error_no_journal_uuid);
         return;
     }
 
@@ -8057,18 +8079,18 @@ async function submitEditJournal() {
         if (response.ok) {
             closeEditJournalModal();
             await openDetailsPopup(currentDetailsRowData);
-            alert('Journaleintrag erfolgreich aktualisiert!');
+            alert(ITAM_I18N.success_journal_updated);
         } else {
-            alert('Fehler beim Aktualisieren des Journaleintrags.');
+            alert(ITAM_I18N.error_journal_update_failed);
         }
     } catch (error) {
         console.error('Fehler beim Aktualisieren:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
 async function deleteJournalEntry(journalUuid) {
-    if (!confirm('Möchten Sie diesen Journaleintrag wirklich löschen?')) {
+    if (!confirm(ITAM_I18N.confirm_delete_journal_entry)) {
         return;
     }
 
@@ -8079,19 +8101,19 @@ async function deleteJournalEntry(journalUuid) {
 
         if (response.ok) {
             await openDetailsPopup(currentDetailsRowData);
-            alert('Journaleintrag erfolgreich gelöscht!');
+            alert(ITAM_I18N.success_journal_deleted);
         } else {
-            alert('Fehler beim Löschen des Journaleintrags.');
+            alert(ITAM_I18N.error_journal_delete_failed);
         }
     } catch (error) {
         console.error('Fehler beim Löschen:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
 async function submitEditLifecycle() {
     if (!currentEditingLifecycleUuid || !currentEditingLifecycleMetadataUuid) {
-        alert('Kein Lifecycle-Eintrag ausgewählt.');
+        alert(ITAM_I18N.error_no_lifecycle_selected);
         return;
     }
 
@@ -8101,7 +8123,7 @@ async function submitEditLifecycle() {
     const description = document.getElementById('editLifecycleDescription').value.trim();
 
     if (!eventType || !valueDate || !caption) {
-        alert('Bitte Typ, Datum und Titel angeben.');
+        alert(ITAM_I18N.prompt_lifecycle_required_fields);
         return;
     }
 
@@ -8128,16 +8150,16 @@ async function submitEditLifecycle() {
             closeEditLifecycleModal();
             await openDetailsPopup(currentDetailsRowData);
         } else {
-            alert('Fehler beim Aktualisieren des Lifecycle-Eintrags.');
+            alert(ITAM_I18N.error_lifecycle_update_failed);
         }
     } catch (error) {
         console.error('Fehler beim Aktualisieren des Lifecycle-Eintrags:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
 async function deleteLifecycleEntry(lifecycleUuid, metadataUuid) {
-    if (!confirm('Moechten Sie diesen Lifecycle-Eintrag wirklich loeschen?')) {
+    if (!confirm(ITAM_I18N.confirm_delete_lifecycle_entry)) {
         return;
     }
 
@@ -8156,11 +8178,11 @@ async function deleteLifecycleEntry(lifecycleUuid, metadataUuid) {
         if (response.ok) {
             await openDetailsPopup(currentDetailsRowData);
         } else {
-            alert('Fehler beim Loeschen des Lifecycle-Eintrags.');
+            alert(ITAM_I18N.error_lifecycle_delete_failed);
         }
     } catch (error) {
         console.error('Fehler beim Loeschen des Lifecycle-Eintrags:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
@@ -8183,7 +8205,7 @@ function closeEditFileModal() {
 
 async function submitEditFile() {
     if (!currentEditingMetadataUuid) {
-        alert('Keine Datei-UUID gefunden.');
+        alert(ITAM_I18N.error_no_file_uuid);
         return;
     }
 
@@ -8201,18 +8223,18 @@ async function submitEditFile() {
         if (response.ok) {
             closeEditFileModal();
             await openDetailsPopup(currentDetailsRowData);
-            alert('Anlage erfolgreich aktualisiert!');
+            alert(ITAM_I18N.success_file_updated);
         } else {
-            alert('Fehler beim Aktualisieren der Anlage.');
+            alert(ITAM_I18N.error_file_update_failed);
         }
     } catch (error) {
         console.error('Fehler beim Aktualisieren:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 
 async function deleteFile(metadataUuid) {
-    if (!confirm('Möchten Sie diese Datei wirklich löschen?')) {
+    if (!confirm(ITAM_I18N.confirm_delete_file)) {
         return;
     }
 
@@ -8223,13 +8245,13 @@ async function deleteFile(metadataUuid) {
 
         if (response.ok) {
             await openDetailsPopup(currentDetailsRowData);
-            alert('Datei erfolgreich gelöscht!');
+            alert(ITAM_I18N.success_file_deleted);
         } else {
-            alert('Fehler beim Löschen der Datei.');
+            alert(ITAM_I18N.error_file_delete_failed);
         }
     } catch (error) {
         console.error('Fehler beim Löschen:', error);
-        alert('Ein Fehler ist aufgetreten: ' + error.message);
+        alert(ITAM_I18N.error_upload_request + ': ' + error.message);
     }
 }
 </script>
