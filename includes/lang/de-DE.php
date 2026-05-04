@@ -18,7 +18,7 @@ if (isset($_GET['nav'])) {
             ],
             'panels' => [
                 ['type' => 'journal', 'title' => 'Journal'],
-                ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
+                ['type' => 'attachments', 'title' => 'Anhänge & Bilder']
             ]
         ],
         'columns' => [
@@ -77,7 +77,7 @@ if (isset($_GET['nav'])) {
             ],
             'panels' => [
                 ['type' => 'journal', 'title' => 'Journal'],
-                ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
+                ['type' => 'attachments', 'title' => 'Anhänge & Bilder']
             ]
         ],
         'columns' => [
@@ -118,7 +118,7 @@ if (isset($_GET['nav'])) {
             ],
             'panels' => [
                 ['type' => 'journal', 'title' => 'Journal'],
-                ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
+                ['type' => 'attachments', 'title' => 'Anhänge & Bilder']
             ]
         ],
         'columns' => [
@@ -176,10 +176,10 @@ if (isset($_GET['nav'])) {
                 'device_metadata_specification'
             ],
             'panels' => [
-                ['type' => 'scripts', 'title' => 'Letzte Skript-Ausfuehrungen'],
+                ['type' => 'scripts', 'title' => 'Letzte Skript-Ausführungen'],
                 ['type' => 'journal', 'title' => 'Journal'],
                 ['type' => 'lifecycle', 'title' => 'Lifecycle'],
-                ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
+                ['type' => 'attachments', 'title' => 'Anhänge & Bilder']
             ]
         ],
         'columns' => [
@@ -266,7 +266,7 @@ if (isset($_GET['nav'])) {
             ],
             'panels' => [
                 ['type' => 'journal', 'title' => 'Journal'],
-                ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
+                ['type' => 'attachments', 'title' => 'Anhänge & Bilder']
             ]
         ],
         'columns' => [
@@ -352,7 +352,7 @@ if (isset($_GET['nav'])) {
             'device_port_vlan_tagged' => 'Tagged (Ist)',
             'device_port_vlan_expected_tagged' => 'Tagged (Soll)',
             'device_port_vlan_device_port_metadata_caption' => 'Port',
-            'device_port_vlan_device_port_device_metadata_caption' => 'Geraet',
+            'device_port_vlan_device_port_device_metadata_caption' => 'Gerät',
             'device_port_vlan_vlan_vlan' => 'VLAN-ID (Ist)',
             'device_port_vlan_vlan_metadata_caption' => 'VLAN Bezeichnung (Ist)',
             'device_port_vlan_expected_vlan_vlan' => 'VLAN-ID (Soll)',
@@ -383,7 +383,7 @@ if (isset($_GET['nav'])) {
             ],
             'panels' => [
                 ['type' => 'journal', 'title' => 'Journal'],
-                ['type' => 'attachments', 'title' => 'Anhaenge & Bilder']
+                ['type' => 'attachments', 'title' => 'Anhänge & Bilder']
             ]
         ],
         'columns' => [
@@ -618,10 +618,10 @@ if (isset($_GET['nav'])) {
         $lang['transfer_import_skipped'] = 'übersprungen';
         $lang['transfer_duplicate_title'] = 'Gleichnamiger Eintrag gefunden';
         $lang['transfer_duplicate_copy'] = 'Es gibt bereits einen Eintrag mit dieser Caption';
-        $lang['transfer_duplicate_apply_all'] = 'Entscheidung fuer diese Caption merken';
+        $lang['transfer_duplicate_apply_all'] = 'Entscheidung für diese Caption merken';
         $lang['transfer_duplicate_keep'] = 'Alten Eintrag behalten';
-        $lang['transfer_duplicate_replace'] = 'Alten Eintrag ueberschreiben';
-        $lang['transfer_duplicate_create'] = 'Zusaetzlichen Eintrag erstellen';
+        $lang['transfer_duplicate_replace'] = 'Alten Eintrag überschreiben';
+        $lang['transfer_duplicate_create'] = 'Zusätzlichen Eintrag erstellen';
 
         return $lang;
     }

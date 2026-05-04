@@ -6368,7 +6368,7 @@ async function buildDetailsPanelContent(panel, rowData) {
             && String(rowData.device_uuid || '').trim() !== '';
 
         if (!isSwitchDevice) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Skript-Ausfuehrungen fuer diesen Eintrag.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Skript-Ausführungen für diesen Eintrag.</div>';
         }
 
         const entries = await loadSwitchScriptHistory(
@@ -6381,7 +6381,7 @@ async function buildDetailsPanelContent(panel, rowData) {
         );
 
         if (entries.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Ausfuehrungseintraege vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Ausführungen vorhanden.</div>';
         }
 
         return entries.map((entry) => {
@@ -6400,7 +6400,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'journal') {
         const entries = await loadJournalEntriesForRow(rowData);
         if (entries.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Journal-Eintraege vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Journal-Einträge vorhanden.</div>';
         }
 
         return entries.map((entry) => {
@@ -6430,7 +6430,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'lifecycle') {
         const entries = await loadLifecycleEntriesForRow(rowData);
         if (entries.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Lifecycle-Eintraege vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Lifecycle-Einträge vorhanden.</div>';
         }
 
         return entries.map((entry) => {
@@ -6454,7 +6454,7 @@ async function buildDetailsPanelContent(panel, rowData) {
                 + (rowDescription !== '--' && rowDescription !== '' ? `<div class="mt-2 whitespace-pre-wrap text-xs text-slate-700">${escapeHtml(rowDescription)}</div>` : '')
                 + `<div class="mt-2 flex gap-2">`
                 + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-blue-500 px-2 py-1 text-xs text-white hover:bg-blue-600" onclick="openEditLifecycleModal('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}', '${escapeHtml(rowTypeValue).replace(/'/g, "\\'")}', '${escapeHtml(rowDate).replace(/'/g, "\\'")}', '${escapeHtml(rowTitle).replace(/'/g, "\\'")}', '${escapeHtml(rowDescription).replace(/'/g, "\\'")}')" title="Bearbeiten"><i data-lucide="edit-2" class="h-3 w-3"></i> Bearbeiten</button>`
-                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteLifecycleEntry('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}')" title="Loeschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Loeschen</button>`
+                + `<button type="button" class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600" onclick="deleteLifecycleEntry('${escapeHtml(lifecycleUuid)}', '${escapeHtml(lifecycleMetadataUuid)}')" title="Löschen"><i data-lucide="trash-2" class="h-3 w-3"></i> Löschen</button>`
                 + `</div>`
                 + `</div>`;
         }).join('');
@@ -6463,7 +6463,7 @@ async function buildDetailsPanelContent(panel, rowData) {
     if (panelType === 'attachments') {
         const attachments = await loadAttachmentMetadataForRow(rowData);
         if (attachments.length === 0) {
-            return '<div class="itam-details-empty text-sm text-slate-500">Keine Anhaenge vorhanden.</div>';
+            return '<div class="itam-details-empty text-sm text-slate-500">Keine Anhänge vorhanden.</div>';
         }
 
         return attachments.map((item) => {
@@ -6832,7 +6832,7 @@ function renderTopologyTab(rowData) {
     wrap.appendChild(card);
     const trace = document.createElement('div');
     trace.className = 'rounded-xl border border-slate-200 bg-white p-3';
-    trace.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Klicke einen Port fuer den Kabelverlauf</div><div id="topologyInlineTrace" class="text-sm text-slate-500">Noch kein Port gewaehlt.</div>';
+    trace.innerHTML = '<div class="mb-2 text-sm font-bold text-slate-900">Kabelverlauf</div><div id="topologyInlineTrace" class="text-sm text-slate-500">Noch kein Port gewaehlt.</div>';
     wrap.appendChild(trace);
     container.appendChild(wrap);
 

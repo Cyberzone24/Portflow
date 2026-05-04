@@ -21,7 +21,7 @@ if (!in_array($limit, [50, 100, 500, 1000], true)) {
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
             <h1 class="text-2xl font-bold text-slate-900">Port View</h1>
-            <p class="text-sm text-slate-500">Verdichtete Portansicht mit Ketten-Aggregation.</p>
+            <p class="text-sm text-slate-500">Kompakte Portübersicht von Switch bis Endgerät</p>
         </div>
         <form id="searchForm" class="flex min-w-[18rem] flex-1 items-center justify-end gap-2">
             <input
