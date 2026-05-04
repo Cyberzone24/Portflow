@@ -336,12 +336,16 @@ class API {
                 continue;
             }
 
-            if (($segments[0] ?? '') === 'api') {
-                array_shift($segments);
+            $apiIndex = array_search('api', $segments, true);
+            if ($apiIndex !== false) {
+                $segments = array_slice($segments, $apiIndex + 1);
             }
-            if (($segments[0] ?? '') === 'index.php') {
-                array_shift($segments);
+
+            $scriptIndex = array_search('index.php', $segments, true);
+            if ($scriptIndex !== false) {
+                $segments = array_slice($segments, $scriptIndex + 1);
             }
+
             if (!empty($segments)) {
                 return array_values($segments);
             }
