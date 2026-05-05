@@ -248,14 +248,40 @@ def _collect_expected_device(
     return {"caption": caption, "type": str(dtype).strip().lower()}
 
 
+def _collect_force_flag(
+    args: argparse.Namespace,
+    *,
+    existing: bool = False,
+    interactive: bool = True,
+) -> bool:
+    force_arg = getattr(args, "force", None)
+    if force_arg is not None:
+        return bool(force_arg)
+    if interactive:
+        return bool(Confirm.ask("Konflikte beim Sync überschreiben?", default=existing))
+    return bool(existing)
+
+
 def _payload_from_record_interactive(record: queue.Record, args: argparse.Namespace) -> dict[str, Any]:
     payload = dict(record.payload or {})
-    room = str(args.room or payload.get("room") or Prompt.ask("Raumnummer", default=str(payload.get("room") or ""))).strip()
-    outlet_input = str(args.outlet or payload.get("recorded_outlet_port") or payload.get("outlet_caption") or Prompt.ask("Dose / Netzwerkport", default=str(payload.get("recorded_outlet_port") or payload.get("outlet_caption") or ""))).strip()
+    room_default = str(payload.get("room") or "")
+    if args.room is not None:
+        room = str(args.room).strip()
+    else:
+        room = str(Prompt.ask("Raumnummer", default=room_default)).strip()
+
+    outlet_default = str(payload.get("recorded_outlet_port") or payload.get("outlet_caption") or "")
+    if args.outlet is not None:
+        outlet_input = str(args.outlet).strip()
+    else:
+        outlet_input = str(Prompt.ask("Dose / Netzwerkport", default=outlet_default)).strip()
+
     outlet_caption, outlet_ports, recorded_outlet_port = _normalize_outlet(
         outlet_input,
         preferred_recorded_port=str(args.recorded_port or payload.get("recorded_outlet_port") or ""),
     )
+    if room == "":
+        raise SystemExit("Raumnummer darf nicht leer sein.")
     if not outlet_ports:
         raise SystemExit("Dose / Netzwerkport darf nicht leer sein.")
     if len(outlet_ports) > 1 and not args.recorded_port and recorded_outlet_port == outlet_ports[0] and outlet_input == outlet_caption:
@@ -269,6 +295,7 @@ def _payload_from_record_interactive(record: queue.Record, args: argparse.Namesp
         existing=payload.get("expected_device") if isinstance(payload.get("expected_device"), dict) else None,
         interactive=True,
     )
+    force_value = _collect_force_flag(args, existing=bool(payload.get("force")), interactive=True)
 
     payload.update(
         {
@@ -284,6 +311,10 @@ def _payload_from_record_interactive(record: queue.Record, args: argparse.Namesp
         payload.pop("expected_device", None)
     else:
         payload["expected_device"] = expected_device
+    if force_value:
+        payload["force"] = True
+    else:
+        payload.pop("force", None)
     return payload
 
 
@@ -558,6 +589,9 @@ def build_parser() -> argparse.ArgumentParser:
     edit_parser.add_argument("--recorded-port")
     edit_parser.add_argument("--expected-device")
     edit_parser.add_argument("--expected-type")
+    edit_force_group = edit_parser.add_mutually_exclusive_group()
+    edit_force_group.add_argument("--force", dest="force", action="store_true", default=None, help="Overwrite conflicting connections on the server")
+    edit_force_group.add_argument("--no-force", dest="force", action="store_false", help="Do not overwrite conflicting connections on the server")
     edit_parser.set_defaults(func=cmd_edit)
 
     delete_parser = sub.add_parser("delete", help="Delete a queued record locally")

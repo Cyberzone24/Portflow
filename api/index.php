@@ -404,6 +404,17 @@ class API {
             return;
         }
 
+        if ($_SERVER['REQUEST_METHOD'] === 'GET' && $firstSegment === 'portview_chains') {
+            $this->requireAuthenticatedSession('Portflow API');
+            if (!$this->checkAccessRights('portview')) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+                return;
+            }
+            require __DIR__ . '/portview_chains.php';
+            return;
+        }
+
         // Persist per-user table column visibility/order.
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && $firstSegment === 'user_table_columns') {
             require __DIR__ . '/user_table_columns.php';

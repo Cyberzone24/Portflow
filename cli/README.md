@@ -101,7 +101,7 @@ pfcli status            # config + queue summary
 pfcli list              # all records
 pfcli list --status failed
 pfcli show 12           # inspect one local record in detail
-pfcli edit 12           # fix room / outlet / office device before retrying sync
+pfcli edit 12           # re-edit all local data except the saved LLDP scan before retrying sync
 pfcli delete 12         # remove a wrong local record
 pfcli purge             # remove already-synced records
 ```
@@ -141,6 +141,7 @@ pfcli record \
 ### Local editing and failed syncs
 
 - Failed sync records stay in the local queue and can be corrected with `pfcli edit <id>`.
+- `pfcli edit <id>` re-prompts all locally editable fields except LLDP data: room, outlet / recorded port, optional office device, and the overwrite flag.
 - `pfcli show <id>` prints the stored room, outlet, recorded port, reserved sister port, and office device.
 - If LLDP was skipped, the switch and switch-port fields remain empty in the local record and in `pfcli list`.
 - `pfcli delete <id>` removes wrong local entries.

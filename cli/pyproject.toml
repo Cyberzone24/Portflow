@@ -1,6 +1,6 @@
 [project]
 name = "portflow-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Portflow on-site CLI: capture LLDP, record patchpanel↔switch links, sync to Portflow API."
 readme = "README.md"
 requires-python = ">=3.10"

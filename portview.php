@@ -2059,27 +2059,23 @@ if ($__pf_nav_had_cfg) {
         }
     }
 
+    async function fetchPortviewChains() {
+        const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/portview_chains');
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.error || data?.details || (PORTVIEW_I18N.portview_fetch_failed + ': portview_chains'));
+        }
+        return Array.isArray(data.items) ? data.items : [];
+    }
+
     async function loadTable() {
         renderTableHeader();
 
-        const params = new URLSearchParams({
-            table: 'portview',
-            limit: '5000',
-            page: '1'
-        });
-
         try {
-            const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/?' + params.toString());
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                throw new Error(data?.error || data?.details || (PORTVIEW_I18N.portview_fetch_failed + ': portview'));
-            }
-
             const tbody = document.getElementById('portviewTableBody');
             tbody.innerHTML = '';
 
-            const items = Array.isArray(data.items) ? data.items : [];
-            allChainsCache = buildChains(items);
+            allChainsCache = await fetchPortviewChains();
 
             const baseSearchIndex = buildSearchIndex(allChainsCache);
             const fullPortEntries = await ensureFullPortSearchEntries();
