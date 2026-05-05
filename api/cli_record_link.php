@@ -101,7 +101,10 @@ function cli_unique_strings(array $values): array
         if ($text === '') {
             continue;
         }
-        $key = strtolower($text);
+        $key = cli_port_caption_match_key($text);
+        if ($key === '') {
+            $key = strtolower($text);
+        }
         if (isset($seen[$key])) {
             continue;
         }
@@ -109,6 +112,36 @@ function cli_unique_strings(array $values): array
         $result[] = $text;
     }
     return $result;
+}
+
+function cli_port_caption_match_key(string $caption): string
+{
+    $normalized = strtolower(preg_replace('/\s+/', '', trim($caption)) ?? '');
+    if ($normalized === '') {
+        return '';
+    }
+
+    return preg_replace_callback(
+        '/\d+/',
+        static function (array $matches): string {
+            $digits = ltrim((string)($matches[0] ?? ''), '0');
+            return $digits === '' ? '0' : $digits;
+        },
+        $normalized
+    ) ?? $normalized;
+}
+
+function cli_filter_rows_by_port_caption(array $rows, string $caption): array
+{
+    $matchKey = cli_port_caption_match_key($caption);
+    if ($matchKey === '') {
+        return [];
+    }
+
+    return array_values(array_filter($rows, static function ($row) use ($matchKey): bool {
+        return is_array($row)
+            && cli_port_caption_match_key((string)($row['port_caption'] ?? '')) === $matchKey;
+    }));
 }
 
 function cli_expand_outlet_ports(string $caption): array
@@ -348,6 +381,24 @@ function cli_find_patchpanel_port(DatabaseAdapter $db, string $caption, ?string 
         ['caption' => $caption]
     );
     if (!is_array($rows) || empty($rows)) {
+        $rows = $db->db_query(
+            "SELECT dp.uuid AS port_uuid,
+                    dp.metadata AS port_metadata_uuid,
+                    pm.caption AS port_caption,
+                    d.uuid AS device_uuid,
+                    d.metadata AS device_metadata_uuid,
+                    dm.caption AS device_caption,
+                    d.location AS location_uuid
+               FROM device_port dp
+               JOIN metadata pm ON pm.uuid = dp.metadata
+               JOIN device d ON d.uuid = dp.device
+               JOIN metadata dm ON dm.uuid = d.metadata
+              WHERE d.type = 'patchpanel'
+              LIMIT 1000"
+        );
+        $rows = is_array($rows) ? cli_filter_rows_by_port_caption($rows, $caption) : [];
+    }
+    if (!is_array($rows) || empty($rows)) {
         return null;
     }
     $bestRow = cli_pick_best_location_row($db, $rows, 'location_uuid', $referenceLocationUuid, $buildingUuid, 'port_uuid');
@@ -377,6 +428,24 @@ function cli_find_outlet_device_by_ports(DatabaseAdapter $db, array $captions, ?
               LIMIT 20",
             ['caption' => $caption]
         );
+        if (!is_array($rows) || empty($rows)) {
+            $rows = $db->db_query(
+                "SELECT dp.uuid AS port_uuid,
+                        dp.metadata AS port_metadata_uuid,
+                        pm.caption AS port_caption,
+                        d.uuid AS device_uuid,
+                        d.metadata AS device_metadata_uuid,
+                        dm.caption AS device_caption,
+                        d.location AS location_uuid
+                   FROM device_port dp
+                   JOIN metadata pm ON pm.uuid = dp.metadata
+                   JOIN device d ON d.uuid = dp.device
+                   JOIN metadata dm ON dm.uuid = d.metadata
+                  WHERE d.type IN ('net_outlet', 'outlet')
+                  LIMIT 1000"
+            );
+            $rows = is_array($rows) ? cli_filter_rows_by_port_caption($rows, (string)$caption) : [];
+        }
         if (!is_array($rows) || empty($rows)) {
             continue;
         }
@@ -445,6 +514,10 @@ function cli_load_outlet_ports(DatabaseAdapter $db, string $deviceUuid): array
             continue;
         }
         $result[strtolower($caption)] = $row;
+        $normalizedKey = cli_port_caption_match_key($caption);
+        if ($normalizedKey !== '' && !isset($result[$normalizedKey])) {
+            $result[$normalizedKey] = $row;
+        }
     }
     return $result;
 }
@@ -926,6 +999,146 @@ function cli_find_office_conflicts(DatabaseAdapter $db, string $sourcePortUuid, 
     return is_array($rows) ? $rows : [];
 }
 
+function cli_is_generic_expected_device_caption(string $caption, string $deviceType = ''): bool
+{
+    $normalizedCaption = strtolower(trim($caption));
+    if ($normalizedCaption === '') {
+        return true;
+    }
+
+    $genericCaptions = [
+        'notebook',
+        'desktop',
+        'thinclient',
+        'telefon',
+        'phone',
+        'drucker',
+        'printer',
+        'accesspoint',
+        'server',
+        'switch',
+        'router',
+        'firewall',
+        'loadbalancer',
+        'storage',
+        'sensor',
+        'ups',
+        'usv',
+        'pdu',
+        'device',
+        'geraet',
+        'gerät',
+    ];
+
+    $normalizedType = strtolower(trim($deviceType));
+    if ($normalizedType !== '') {
+        $genericCaptions[] = $normalizedType;
+    }
+
+    return in_array($normalizedCaption, $genericCaptions, true);
+}
+
+function cli_find_connected_office_device_for_outlet(DatabaseAdapter $db, string $outletPortUuid): ?array
+{
+    $rows = $db->db_query(
+        "SELECT DISTINCT d.uuid,
+                d.metadata,
+                d.location,
+                d.type,
+                m.caption,
+                dp.uuid AS port_uuid,
+                dp.metadata AS port_metadata_uuid
+           FROM connection c
+           JOIN device_port dp ON dp.uuid = CASE
+                WHEN c.device_port_source = :outlet THEN c.device_port_destination
+                WHEN c.device_port_destination = :outlet THEN c.device_port_source
+                WHEN c.expected_device_port_source = :outlet THEN c.expected_device_port_destination
+                ELSE c.expected_device_port_source
+           END
+           JOIN device d ON d.uuid = dp.device
+           JOIN metadata m ON m.uuid = d.metadata
+          WHERE (
+                    c.device_port_source = :outlet
+                 OR c.device_port_destination = :outlet
+                 OR c.expected_device_port_source = :outlet
+                 OR c.expected_device_port_destination = :outlet
+          )
+            AND COALESCE(d.type, '') NOT IN ('patchpanel', 'net_outlet', 'outlet', 'coupler')
+          LIMIT 1",
+        ['outlet' => $outletPortUuid]
+    );
+
+    return cli_first_row($rows);
+}
+
+function cli_find_reusable_expected_device(
+    DatabaseAdapter $db,
+    string $outletPortUuid,
+    string $caption,
+    string $deviceType,
+    ?string $roomUuid,
+    string $deviceMac = ''
+): ?array {
+    $existingOutletDevice = cli_find_connected_office_device_for_outlet($db, $outletPortUuid);
+    if ($existingOutletDevice !== null) {
+        return $existingOutletDevice;
+    }
+
+    $normalizedMac = strtolower(trim($deviceMac));
+    if ($normalizedMac !== '') {
+        $macRows = $db->db_query(
+            "SELECT d.uuid,
+                    d.metadata,
+                    d.location,
+                    d.type,
+                    m.caption,
+                    dp.uuid AS port_uuid,
+                    dp.metadata AS port_metadata_uuid
+               FROM device_port dp
+               JOIN device d ON d.uuid = dp.device
+               JOIN metadata m ON m.uuid = d.metadata
+              WHERE LOWER(COALESCE(dp.mac_address, '')) = LOWER(:mac)
+              LIMIT 20",
+            ['mac' => $normalizedMac]
+        );
+        if (is_array($macRows)) {
+            foreach ($macRows as $macRow) {
+                if ($roomUuid !== null && ($macRow['location'] ?? null) === $roomUuid) {
+                    return $macRow;
+                }
+            }
+            $firstMacRow = cli_first_row($macRows);
+            if ($firstMacRow !== null) {
+                return $firstMacRow;
+            }
+        }
+    }
+
+    if (cli_is_generic_expected_device_caption($caption, $deviceType)) {
+        return null;
+    }
+
+    $deviceRows = $db->db_query(
+        "SELECT d.uuid, d.metadata, d.location, d.type, m.caption
+           FROM device d
+           JOIN metadata m ON m.uuid = d.metadata
+          WHERE LOWER(m.caption) = LOWER(:caption)
+          LIMIT 20",
+        ['caption' => $caption]
+    );
+    if (!is_array($deviceRows) || empty($deviceRows)) {
+        return null;
+    }
+
+    foreach ($deviceRows as $deviceRow) {
+        if ($roomUuid !== null && ($deviceRow['location'] ?? null) === $roomUuid) {
+            return $deviceRow;
+        }
+    }
+
+    return count($deviceRows) === 1 ? $deviceRows[0] : null;
+}
+
 $db = new DatabaseAdapter();
 $logger = new Logger();
 
@@ -1082,16 +1295,16 @@ if (is_array($body['expected_device'] ?? null)) {
     $deviceMac = strtolower(trim((string)($expected['mac'] ?? '')));
 
     if ($deviceCaption !== '') {
-        $deviceRows = $db->db_query(
-            "SELECT d.uuid, d.metadata, d.location, d.type, m.caption
-               FROM device d
-               JOIN metadata m ON m.uuid = d.metadata
-              WHERE LOWER(m.caption) = LOWER(:caption)
-              LIMIT 1",
-            ['caption' => $deviceCaption]
+        $deviceRow = cli_find_reusable_expected_device(
+            $db,
+            $outletPortUuid,
+            $deviceCaption,
+            $deviceType,
+            $room['uuid'] ?? null,
+            $deviceMac
         );
-        $deviceRow = cli_first_row($deviceRows);
         $deviceCreated = false;
+        $devicePortUuid = (string)($deviceRow['port_uuid'] ?? '');
 
         if ($deviceRow === null) {
             $metadataUuid = cli_create_metadata($db, $deviceCaption, $userUuid);
@@ -1111,6 +1324,7 @@ if (is_array($body['expected_device'] ?? null)) {
                 'caption' => $deviceCaption,
             ];
             $deviceCreated = true;
+            $devicePortUuid = '';
         } else {
             if (($room['uuid'] ?? null) !== null && ($deviceRow['location'] ?? null) !== ($room['uuid'] ?? null)) {
                 $db->db_query(
@@ -1133,12 +1347,18 @@ if (is_array($body['expected_device'] ?? null)) {
             }
         }
 
-        $portRows = $db->db_query(
-            'SELECT uuid FROM device_port WHERE device = :device ORDER BY uuid LIMIT 1',
-            ['device' => $deviceRow['uuid']]
-        );
-        $portRow = cli_first_row($portRows);
-        if ($portRow === null) {
+        if ($devicePortUuid === '') {
+            $portRows = $db->db_query(
+                'SELECT uuid FROM device_port WHERE device = :device ORDER BY uuid LIMIT 1',
+                ['device' => $deviceRow['uuid']]
+            );
+            $portRow = cli_first_row($portRows);
+            if ($portRow !== null) {
+                $devicePortUuid = (string)$portRow['uuid'];
+            }
+        }
+
+        if ($devicePortUuid === '') {
             $portMetadataUuid = cli_create_metadata($db, 'eth0', $userUuid);
             $rows = $db->db_query(
                 'INSERT INTO device_port (device, metadata, mac_address, type) VALUES (:device, :metadata, :mac, :type) RETURNING uuid',
@@ -1149,7 +1369,6 @@ if (is_array($body['expected_device'] ?? null)) {
                 cli_fail(500, 'Failed to create end device port');
             }
         } else {
-            $devicePortUuid = (string)$portRow['uuid'];
             $portMetaRows = $db->db_query('SELECT metadata FROM device_port WHERE uuid = :uuid LIMIT 1', ['uuid' => $devicePortUuid]);
             cli_activate_metadata($db, cli_first_row($portMetaRows)['metadata'] ?? null);
             if ($deviceMac !== '') {
