@@ -1873,6 +1873,21 @@
         return ['ok' => true, 'message' => 'Einstellungen wurden gespeichert.'];
     }
 
+    function configBuildSystemFormData(): array {
+        return [
+            'log_level' => configNormalizeEnvValue((string)($_POST['log_level'] ?? (defined('LOG_LEVEL') ? LOG_LEVEL : '1')))
+        ];
+    }
+
+    function configValidateSystem(array $formData): array {
+        $logLevel = trim((string)($formData['log_level'] ?? ''));
+        if (!preg_match('/^[0-4]$/', $logLevel)) {
+            return ['ok' => false, 'message' => settings_t('settings_config_log_level_invalid')];
+        }
+
+        return ['ok' => true, 'message' => ''];
+    }
+
     function configBuildDbFormData(): array {
         return [
             'db_type' => configNormalizeEnvValue((string)($_POST['db_type'] ?? DB_TYPE)),
@@ -2762,6 +2777,40 @@
                 configSetFeedback('db', (bool)$dbTestResult['ok'], (string)$dbTestResult['message'], $dbFormData);
                 $logger->log('database configuration test executed', $dbTestResult['ok'] ? 1 : 2, echoToWeb: true);
                 header('Location: ?site=configuration&tab=system#cfg-db');
+                break;
+            case 'config_server_save':
+                if ($role !== 'admin') {
+                    $logger->log('user is not admin', 2, echoToWeb: true);
+                    header('Location: ?site=appearance');
+                    die();
+                }
+
+                if (!$auth->csrf_check()) {
+                    $logger->log('csrf token invalid for server configuration save', 2, echoToWeb: true);
+                    header('Location: ?site=configuration&tab=system');
+                    die();
+                }
+
+                $systemFormData = configBuildSystemFormData();
+                $systemValidationResult = configValidateSystem($systemFormData);
+                if (!$systemValidationResult['ok']) {
+                    configSetFeedback('server', false, (string)$systemValidationResult['message'], $systemFormData);
+                    header('Location: ?site=configuration&tab=system#cfg-server');
+                    break;
+                }
+
+                $systemWriteResult = configWriteEnvValues([
+                    'LOG_LEVEL' => $systemFormData['log_level']
+                ]);
+
+                configSetFeedback('server', (bool)$systemWriteResult['ok'], (string)$systemWriteResult['message'], $systemFormData);
+                $logger->log('server configuration save executed', $systemWriteResult['ok'] ? 1 : 3, echoToWeb: true);
+                if ($systemWriteResult['ok']) {
+                    logAutomationChange($db_adapter, 'UPDATE', 'configuration_server_save', [
+                        'log_level' => (int)$systemFormData['log_level']
+                    ]);
+                }
+                header('Location: ?site=configuration&tab=system#cfg-server');
                 break;
             case 'config_db_save':
                 if ($role !== 'admin') {
@@ -5371,6 +5420,10 @@ switch ($site) {
         $schedulerValues = array_merge($schedulerDefaults, is_array($cfgFormData['scheduler'] ?? null) ? $cfgFormData['scheduler'] : []);
         $schedulerStatus = is_array($automationSettings['scheduler_status'] ?? null) ? $automationSettings['scheduler_status'] : [];
         $securityCheck = configBuildSystemSecurityCheck();
+        $systemDefaults = [
+            'log_level' => defined('LOG_LEVEL') ? (string)LOG_LEVEL : '1',
+        ];
+        $systemValues = array_merge($systemDefaults, is_array($cfgFormData['server'] ?? null) ? $cfgFormData['server'] : []);
         $updaterDefaults = configGetUpdateStatus(false);
         $updaterValues = array_merge($updaterDefaults, is_array($cfgFormData['updater'] ?? null) ? $cfgFormData['updater'] : []);
         $updaterStateValues = configReadUpdaterState();
@@ -5427,6 +5480,27 @@ switch ($site) {
         echo '<div class="h-fit w-full p-2 space-y-6">';
 
         echo '<div class="cfg-section-system' . ($activeConfigTab !== 'system' ? ' hidden' : '') . '">';
+    echo '<section id="cfg-server">';
+    echo '<div class="text-xl font-bold pb-1">' . settings_t('settings_config_server_title') . '</div>';
+    echo '<p class="text-sm text-gray-500 pb-4">' . settings_t('settings_config_server_desc') . '</p>';
+    echo $renderFeedback($cfgFeedback, 'server');
+    echo '<form action="?set=config_server_save" method="post" class="m-0">';
+    echo '<input type="hidden" name="csrf" value="' . escapeSettingValue((string)$csrf) . '">';
+    echo '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+    echo '<div><label class="block mb-2" for="cfg_log_level">' . settings_t('settings_config_log_level') . '</label><select id="cfg_log_level" name="log_level" class="w-full py-2 px-3">';
+    echo '<option value="0"' . ((string)$systemValues['log_level'] === '0' ? ' selected' : '') . '>DEBUG</option>';
+    echo '<option value="1"' . ((string)$systemValues['log_level'] === '1' ? ' selected' : '') . '>INFO</option>';
+    echo '<option value="2"' . ((string)$systemValues['log_level'] === '2' ? ' selected' : '') . '>WARN</option>';
+    echo '<option value="3"' . ((string)$systemValues['log_level'] === '3' ? ' selected' : '') . '>ERROR</option>';
+    echo '<option value="4"' . ((string)$systemValues['log_level'] === '4' ? ' selected' : '') . '>NONE</option>';
+    echo '</select><div class="mt-2 text-xs text-gray-500">' . settings_t('settings_config_log_level_hint') . '</div></div>';
+    echo '</div>';
+    echo '<div class="pt-4 flex flex-wrap gap-3">';
+    echo '<button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white">Speichern</button>';
+    echo '</div>';
+    echo '</form>';
+    echo '</section>';
+
         echo '<section id="cfg-security">';
         echo '<div class="flex flex-wrap items-start justify-between gap-3 pb-3">';
         echo '<div><div class="text-xl font-bold pb-1">' . settings_t('settings_config_security_title') . '</div><p class="text-sm text-gray-500">' . settings_t('settings_config_security_desc') . '</p></div>';

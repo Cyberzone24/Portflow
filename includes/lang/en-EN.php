@@ -863,6 +863,11 @@ if (isset($_GET['nav'])) {
         $lang['settings_inventory_individual_key_required'] = 'Individual key authentication requires an SSH key.';
         $lang['settings_inventory_json_invalid'] = 'Switch inventory JSON is invalid.';
         $lang['settings_inventory_json_entry_invalid'] = 'Switch inventory entry #{index} is invalid.';
+        $lang['settings_config_server_title'] = 'Server';
+        $lang['settings_config_server_desc'] = 'Controls global runtime options that are loaded directly from the .env file.';
+        $lang['settings_config_log_level'] = 'Log level';
+        $lang['settings_config_log_level_hint'] = '0=DEBUG, 1=INFO, 2=WARN, 3=ERROR, 4=NONE';
+        $lang['settings_config_log_level_invalid'] = 'Log level must be between 0 and 4.';
         $lang['settings_config_security_title'] = 'System / Security check';
         $lang['settings_config_security_desc'] = 'Checks local permissions and tests whether sensitive paths are actually blocked through the active webserver.';
         $lang['settings_config_checked_at'] = 'Checked';
