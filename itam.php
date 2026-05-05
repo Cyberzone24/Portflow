@@ -169,7 +169,7 @@
                 </div>
             </div>
             <div class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-                <div class="itam-table-scroll h-full w-full overflow-y-auto">
+                <div class="h-full w-full overflow-y-auto">
                     <table class="static w-full min-w-full table-auto rounded-lg text-left text-sm text-gray-500 shadow-md">
                         <thead class="bg-white text-gray-800 top-0 sticky z-1"></thead>
                         <tbody></tbody>

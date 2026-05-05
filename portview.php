@@ -21,9 +21,155 @@ $portviewLocale = strtolower(substr($portviewLanguage, 0, 2));
 if ($portviewLocale === '') {
     $portviewLocale = 'en';
 }
+
+$portviewDefaultColumnsFromNav = [];
+$__pf_nav_file = __DIR__ . '/includes/lang/' . ($portviewLocale === 'de' ? 'de-DE.php' : 'en-EN.php');
+$__pf_nav_prev_get = $_GET['nav'] ?? null;
+$__pf_nav_had_get = array_key_exists('nav', $_GET);
+$__pf_nav_prev_cfg = $nav ?? null;
+$__pf_nav_had_cfg = isset($nav);
+
+if (is_file($__pf_nav_file)) {
+    $_GET['nav'] = '1';
+    ob_start();
+    include $__pf_nav_file;
+    ob_end_clean();
+
+    if (isset($nav['portview']['default']) && is_array($nav['portview']['default'])) {
+        $portviewDefaultColumnsFromNav = array_values($nav['portview']['default']);
+    }
+}
+
+if ($__pf_nav_had_get) {
+    $_GET['nav'] = $__pf_nav_prev_get;
+} else {
+    unset($_GET['nav']);
+}
+
+if ($__pf_nav_had_cfg) {
+    $nav = $__pf_nav_prev_cfg;
+} else {
+    unset($nav);
+}
 ?>
 
-<div class="mx-4 mb-4 mt-0 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
+<style>
+    #portviewApp,
+    #chainDetailDialog {
+        color: var(--pf-text);
+    }
+
+    #portviewApp {
+        background: var(--pf-surface-alt);
+        border-color: var(--pf-border);
+    }
+
+    #portviewApp .bg-white,
+    #chainDetailDialog .bg-white {
+        background-color: var(--pf-surface-alt) !important;
+    }
+
+    #portviewApp .bg-slate-50,
+    #portviewApp .bg-slate-100,
+    #chainDetailDialog .bg-slate-50,
+    #chainDetailDialog .bg-slate-100 {
+        background-color: var(--pf-surface-soft) !important;
+    }
+
+    #portviewApp .border-slate-300,
+    #portviewApp .border-slate-200,
+    #portviewApp .border-slate-100,
+    #chainDetailDialog .border-slate-300,
+    #chainDetailDialog .border-slate-200,
+    #chainDetailDialog .border-slate-100 {
+        border-color: var(--pf-border) !important;
+    }
+
+    #portviewApp .text-slate-900,
+    #portviewApp .text-slate-800,
+    #portviewApp .text-slate-700,
+    #portviewApp .text-gray-800,
+    #portviewApp .text-gray-500,
+    #chainDetailDialog .text-slate-900,
+    #chainDetailDialog .text-slate-800,
+    #chainDetailDialog .text-slate-700,
+    #chainDetailDialog .text-gray-800,
+    #chainDetailDialog .text-gray-500 {
+        color: var(--pf-text) !important;
+    }
+
+    #portviewApp .text-slate-600,
+    #portviewApp .text-slate-500,
+    #portviewApp .text-slate-400,
+    #chainDetailDialog .text-slate-600,
+    #chainDetailDialog .text-slate-500,
+    #chainDetailDialog .text-slate-400 {
+        color: var(--pf-muted) !important;
+    }
+
+    #portviewApp .hover\:bg-slate-50:hover,
+    #portviewApp .hover\:bg-slate-100:hover,
+    #portviewApp .hover\:bg-white:hover,
+    #chainDetailDialog .hover\:bg-slate-50:hover,
+    #chainDetailDialog .hover\:bg-slate-100:hover,
+    #chainDetailDialog .hover\:bg-white:hover {
+        background-color: var(--pf-hover) !important;
+    }
+
+    #portviewApp input:not([type="checkbox"]),
+    #portviewApp select,
+    #chainDetailDialog input:not([type="checkbox"]),
+    #chainDetailDialog select {
+        background-color: var(--pf-surface-alt);
+        color: var(--pf-text);
+        border-color: var(--pf-border);
+    }
+
+    #portviewApp input::placeholder,
+    #chainDetailDialog input::placeholder {
+        color: var(--pf-muted);
+    }
+
+    #portviewApp .pv-table-scroll {
+        scrollbar-gutter: stable both-edges;
+    }
+
+    #portviewApp .pv-table {
+        min-width: 90rem;
+    }
+
+    #portviewApp .pv-table thead,
+    #portviewApp .pv-table thead tr,
+    #portviewApp .pv-table thead th {
+        background: var(--pf-surface-soft) !important;
+        color: var(--pf-text) !important;
+        border-color: var(--pf-border) !important;
+    }
+
+    #portviewApp .pv-table thead button {
+        color: var(--pf-text) !important;
+    }
+
+    #portviewApp .pv-table thead button:hover {
+        background: var(--pf-hover) !important;
+    }
+
+    #portviewApp .pv-status-icon {
+        line-height: 1;
+    }
+
+    #portviewApp .pv-status-icon svg,
+    #portviewApp .pv-status-icon i {
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    #portviewApp .pv-status-label {
+        color: var(--pf-text);
+    }
+</style>
+
+<div id="portviewApp" class="mx-4 mb-4 mt-0 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
             <h1 class="text-2xl font-bold text-slate-900"><?php echo $lang['portview_page_title']; ?></h1>
@@ -44,6 +190,10 @@ if ($portviewLocale === '') {
                 <i data-lucide="search"></i>
             </button>
         </form>
+        <button id="customizeColumnsButton" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100" title="<?php echo $lang['columns_customize']; ?>">
+            <i data-lucide="columns-3" class="h-4 w-4"></i>
+            <span><?php echo $lang['columns_customize']; ?></span>
+        </button>
         <button id="exportCsvButton" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100" title="<?php echo $lang['transfer_export_csv']; ?>">
             <i data-lucide="file-down" class="h-4 w-4"></i>
             <span><?php echo $lang['transfer_export_csv']; ?></span>
@@ -100,9 +250,9 @@ if ($portviewLocale === '') {
     </div>
 
     <div class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-        <div class="h-full w-full overflow-x-auto overflow-y-auto">
-            <table class="w-full min-w-[1800px] table-auto text-left text-sm text-gray-500 shadow-md">
-                <thead id="portviewTableHead" class="sticky top-0 z-10 bg-white text-gray-800"></thead>
+        <div class="pv-table-scroll h-full w-full">
+            <table class="pv-table static w-full table-auto rounded-lg text-left text-sm text-gray-500 shadow-md">
+                <thead id="portviewTableHead" class="bg-white text-gray-800 top-0 sticky z-1"></thead>
                 <tbody id="portviewTableBody"></tbody>
             </table>
         </div>
@@ -142,12 +292,20 @@ if ($portviewLocale === '') {
 (function () {
     const PORTVIEW_I18N = <?php echo json_encode($lang, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
     const PORTVIEW_LOCALE = <?php echo json_encode($portviewLocale, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const PORTVIEW_USER_SETTINGS = <?php
+        $__pf_portview_raw = $_SESSION['settings'] ?? null;
+        $__pf_portview_settings = is_array($__pf_portview_raw)
+            ? $__pf_portview_raw
+            : (is_string($__pf_portview_raw) && $__pf_portview_raw !== '' ? (json_decode($__pf_portview_raw, true) ?: []) : []);
+        echo json_encode($__pf_portview_settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ?>;
     const PORTVIEW_SEARCH_PLACEHOLDER = `${PORTVIEW_I18N.search} ...`;
     const PORTVIEW_PICKER_KIND_LABELS = {
         locations: PORTVIEW_I18N.portview_picker_kind_location,
         devices: PORTVIEW_I18N.portview_picker_kind_device,
         ports: PORTVIEW_I18N.portview_picker_kind_port
     };
+    const PORTVIEW_TABLE_KEY = 'portview';
 
     let currentSort = '';
     let currentOrder = 'asc';
@@ -173,7 +331,7 @@ if ($portviewLocale === '') {
         vlan: ''
     };
 
-    const PORTVIEW_COLUMNS = [
+    const PORTVIEW_COLUMN_DEFINITIONS = [
         { key: 'statusValue', label: PORTVIEW_I18N.portview_column_status },
         { key: 'switchCaption', label: PORTVIEW_I18N.portview_column_switch },
         { key: 'switchPortCaption', label: PORTVIEW_I18N.portview_column_switch_port },
@@ -185,16 +343,74 @@ if ($portviewLocale === '') {
         { key: 'wallplatePortCaption', label: PORTVIEW_I18N.portview_column_wallplate_port },
         { key: 'endpointCaption', label: PORTVIEW_I18N.portview_column_endpoint },
         { key: 'endpointPortCaption', label: PORTVIEW_I18N.portview_column_endpoint_port },
+        { key: 'endpointIp', label: PORTVIEW_I18N.portview_column_ip },
         { key: 'endpointHostname', label: PORTVIEW_I18N.portview_column_hostname },
         { key: 'endpointMac', label: PORTVIEW_I18N.portview_column_mac },
         { key: 'vlanTaggedText', label: PORTVIEW_I18N.portview_column_vlan_tagged },
         { key: 'vlanUntaggedText', label: PORTVIEW_I18N.portview_column_vlan_untagged }
     ];
+    const PORTVIEW_COLUMN_MAP = new Map(PORTVIEW_COLUMN_DEFINITIONS.map((column) => [column.key, column]));
+    const PORTVIEW_ALL_COLUMNS = PORTVIEW_COLUMN_DEFINITIONS.map((column) => column.key);
+    const PORTVIEW_FALLBACK_DEFAULT_COLUMNS = [
+        'statusValue',
+        'switchCaption',
+        'switchPortCaption',
+        'patchpanelCaption',
+        'patchpanelPortCaption',
+        'roomCaption',
+        'wallplateCaption',
+        'wallplatePortCaption',
+        'endpointCaption',
+        'endpointPortCaption',
+        'endpointIp',
+        'endpointHostname',
+        'endpointMac',
+        'vlanTaggedText',
+        'vlanUntaggedText'
+    ];
+    const PORTVIEW_SERVER_DEFAULT_COLUMNS = <?php echo json_encode($portviewDefaultColumnsFromNav, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const PORTVIEW_DEFAULT_COLUMNS = (() => {
+        const source = Array.isArray(PORTVIEW_SERVER_DEFAULT_COLUMNS) && PORTVIEW_SERVER_DEFAULT_COLUMNS.length > 0
+            ? PORTVIEW_SERVER_DEFAULT_COLUMNS
+            : PORTVIEW_FALLBACK_DEFAULT_COLUMNS;
+        const filtered = source.filter((column) => PORTVIEW_ALL_COLUMNS.includes(String(column || '')));
+        return filtered.length > 0 ? filtered : PORTVIEW_FALLBACK_DEFAULT_COLUMNS.slice();
+    })();
+    let visibleColumnKeys = loadStoredPortviewColumns(PORTVIEW_DEFAULT_COLUMNS);
 
     function formatMessage(template, replacements = {}) {
         return String(template || '').replace(/\{(\w+)\}/g, (match, key) => {
             return Object.prototype.hasOwnProperty.call(replacements, key) ? String(replacements[key]) : match;
         });
+    }
+
+    function sanitizePortviewColumns(columns, fallback = PORTVIEW_DEFAULT_COLUMNS) {
+        const allowed = new Set(PORTVIEW_ALL_COLUMNS);
+        const sanitized = Array.isArray(columns)
+            ? columns.filter((column) => allowed.has(String(column || '')))
+            : [];
+        return sanitized.length > 0 ? sanitized : fallback.slice();
+    }
+
+    function getVisiblePortviewColumns() {
+        return sanitizePortviewColumns(visibleColumnKeys).map((key) => PORTVIEW_COLUMN_MAP.get(key)).filter(Boolean);
+    }
+
+    function loadStoredPortviewColumns(defaultColumns) {
+        const live = window.__pfTableUserColumns && window.__pfTableUserColumns[PORTVIEW_TABLE_KEY];
+        if (Array.isArray(live) && live.length > 0) {
+            return sanitizePortviewColumns(live, defaultColumns);
+        }
+
+        if (window.__pfTableUserColumnsReset && window.__pfTableUserColumnsReset[PORTVIEW_TABLE_KEY]) {
+            return defaultColumns.slice();
+        }
+
+        const stored = PORTVIEW_USER_SETTINGS && PORTVIEW_USER_SETTINGS.tables && PORTVIEW_USER_SETTINGS.tables[PORTVIEW_TABLE_KEY];
+        if (!Array.isArray(stored) || stored.length === 0) {
+            return defaultColumns.slice();
+        }
+        return sanitizePortviewColumns(stored, defaultColumns);
     }
 
     function summaryText(totalCount) {
@@ -223,26 +439,58 @@ if ($portviewLocale === '') {
 
     function deviceIcon(deviceType) {
         const type = String(deviceType ?? '').trim().toLowerCase();
-        if (type.includes('phone')) {
-            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.86 19.86 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.89.33 1.76.63 2.58a2 2 0 0 1-.45 2.11L8 9.71a16 16 0 0 0 6.29 6.29l1.3-1.29a2 2 0 0 1 2.11-.45c.82.3 1.69.51 2.58.63A2 2 0 0 1 22 16.92z"/></svg>';
+        const matches = (...needles) => needles.some((needle) => type.includes(needle));
+        let icon = 'help-circle';
+
+        if (!type) {
+            return `<i data-lucide="${icon}" class="h-4 w-4"></i>`;
         }
-        if (type.includes('laptop') || type.includes('notebook')) {
-            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>';
+
+        if (matches('patchpanel')) {
+            icon = 'rectangle-ellipsis';
+        } else if (matches('net_outlet', 'outlet', 'coupler')) {
+            icon = 'ethernet-port';
+        } else if (matches('phone', 'telefon')) {
+            icon = 'phone';
+        } else if (matches('notebook', 'laptop')) {
+            icon = 'laptop';
+        } else if (matches('thinclient')) {
+            icon = 'monitor-smartphone';
+        } else if (matches('desktop', 'computer', 'pc')) {
+            icon = 'pc-case';
+        } else if (matches('accesspoint', 'access point', 'wifi')) {
+            icon = 'wifi';
+        } else if (matches('printer', 'drucker')) {
+            icon = 'printer';
+        } else if (matches('switch')) {
+            icon = 'network';
+        } else if (matches('server')) {
+            icon = 'server';
+        } else if (matches('router')) {
+            icon = 'router';
+        } else if (matches('firewall')) {
+            icon = 'brick-wall-fire';
+        } else if (matches('loadbalancer', 'load balancer')) {
+            icon = 'loader-circle';
+        } else if (matches('storage', 'nas', 'san')) {
+            icon = 'hard-drive';
+        } else if (matches('sensor')) {
+            icon = 'thermometer';
+        } else if (matches('ups')) {
+            icon = 'battery-full';
+        } else if (matches('monitor', 'tv', 'display')) {
+            icon = 'monitor';
         }
-        if (type.includes('computer') || type.includes('pc') || type.includes('desktop')) {
-            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/><path d="M12 18v2"/></svg>';
-        }
-        if (type.includes('printer')) {
-            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V4h12v5"/><rect x="6" y="14" width="12" height="6" rx="2"/><path d="M6 11H5a2 2 0 0 0-2 2v2h18v-2a2 2 0 0 0-2-2h-1"/></svg>';
-        }
-        if (type.includes('tv') || type.includes('monitor')) {
-            return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/></svg>';
-        }
-        return '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
+
+        return `<i data-lucide="${icon}" class="h-4 w-4"></i>`;
     }
 
     function speedLabel(speedRaw) {
         const value = String(speedRaw ?? '').trim();
+        const numeric = parseMaybeNumber(value);
+        const normalized = numeric === null
+            ? value
+            : (Number.isInteger(numeric) ? String(numeric) : String(numeric));
         const map = {
             '100': '100 Mbit/s',
             '1000': '1 Gbit/s',
@@ -252,8 +500,8 @@ if ($portviewLocale === '') {
             '40000': '40 Gbit/s',
             '100000': '100 Gbit/s'
         };
-        if (!value) return '--';
-        return map[value] || (value + ' Mbit/s');
+        if (!normalized) return '--';
+        return map[normalized] || (normalized + ' Mbit/s');
     }
 
     function parseMaybeNumber(value) {
@@ -488,10 +736,19 @@ if ($portviewLocale === '') {
         return Array.from(merged.values());
     }
 
+    function isOutletInfrastructureType(deviceType) {
+        return ['net_outlet', 'outlet', 'coupler'].includes(String(deviceType || '').toLowerCase());
+    }
+
+    function isInfrastructureType(deviceType) {
+        return ['switch', 'patchpanel', 'net_outlet', 'outlet', 'coupler'].includes(String(deviceType || '').toLowerCase());
+    }
+
     function summarizeChain(chain) {
         let switchConn = null;
         let coreConn = null;
         let endpointConn = null;
+        let directSwitchConn = null;
 
         for (const conn of chain) {
             const srcType = String(conn.src_device_type || '').toLowerCase();
@@ -499,23 +756,30 @@ if ($portviewLocale === '') {
 
             if ((srcType === 'switch' && dstType === 'patchpanel') || (srcType === 'patchpanel' && dstType === 'switch')) {
                 switchConn = conn;
-            } else if ((srcType === 'patchpanel' && dstType === 'net_outlet') || (srcType === 'net_outlet' && dstType === 'patchpanel')) {
+            } else if ((srcType === 'patchpanel' && isOutletInfrastructureType(dstType)) || (isOutletInfrastructureType(srcType) && dstType === 'patchpanel')) {
                 coreConn = conn;
-            } else if (!['switch', 'patchpanel', 'net_outlet'].includes(srcType) || !['switch', 'patchpanel', 'net_outlet'].includes(dstType)) {
+            } else if ((srcType === 'switch' && isOutletInfrastructureType(dstType)) || (isOutletInfrastructureType(srcType) && dstType === 'switch')) {
+                directSwitchConn = conn;
+            } else if (!isInfrastructureType(srcType) || !isInfrastructureType(dstType)) {
                 endpointConn = conn;
             }
         }
 
-        const endpointSideIsSrc = endpointConn && !['switch', 'patchpanel', 'net_outlet'].includes(String(endpointConn.src_device_type || '').toLowerCase());
+        if (!switchConn && directSwitchConn) {
+            switchConn = directSwitchConn;
+        }
+
+        const displayEndpointConn = endpointConn || (switchConn && directSwitchConn && switchConn.connection_uuid !== directSwitchConn.connection_uuid ? directSwitchConn : null);
+        const endpointSideIsSrc = displayEndpointConn && !isOutletInfrastructureType(displayEndpointConn.src_device_type || '');
         const roomCaption = coreConn ? (String(coreConn.src_device_type || '').toLowerCase() === 'patchpanel' ? coreConn.dst_location_caption : coreConn.src_location_caption) : '--';
-        const endpointType = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_type : endpointConn.dst_device_type) : '';
+        const endpointType = displayEndpointConn ? (endpointSideIsSrc ? displayEndpointConn.src_device_type : displayEndpointConn.dst_device_type) : '';
         const vlanTagged = switchConn ? (String(switchConn.src_device_type || '').toLowerCase() === 'switch' ? switchConn.src_vlan_tagged : switchConn.dst_vlan_tagged) : '';
         const vlanUntagged = switchConn ? (String(switchConn.src_device_type || '').toLowerCase() === 'switch' ? switchConn.src_vlan_untagged : switchConn.dst_vlan_untagged) : '';
 
         return {
             switchConn,
             coreConn,
-            endpointConn,
+            endpointConn: displayEndpointConn,
             roomCaption,
             endpointType,
             vlanTagged: vlanTagged ? String(vlanTagged) : '',
@@ -531,7 +795,7 @@ if ($portviewLocale === '') {
 
         const switchSideIsSrc = switchConn && String(switchConn.src_device_type || '').toLowerCase() === 'switch';
         const coreSideIsSrc = coreConn && String(coreConn.src_device_type || '').toLowerCase() === 'patchpanel';
-        const endpointSideIsSrc = endpointConn && !['switch', 'patchpanel', 'net_outlet'].includes(String(endpointConn.src_device_type || '').toLowerCase());
+        const endpointSideIsSrc = endpointConn && !isInfrastructureType(endpointConn.src_device_type || '');
 
         const switchCaption = switchConn ? (switchSideIsSrc ? switchConn.src_device_caption : switchConn.dst_device_caption) : '--';
         const switchPortCaption = switchConn ? (switchSideIsSrc ? switchConn.src_port_caption : switchConn.dst_port_caption) : '--';
@@ -545,15 +809,18 @@ if ($portviewLocale === '') {
         const endpointCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_caption : endpointConn.dst_device_caption) : '--';
         const endpointType = endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_type : endpointConn.dst_device_type) : '';
         const endpointPortCaption = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_caption : endpointConn.dst_port_caption) : '--';
+        const endpointIp = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_ip : endpointConn.dst_port_ip) : '--';
         const endpointHostname = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_hostname : endpointConn.dst_port_hostname) : '--';
         const endpointMac = endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_mac : endpointConn.dst_port_mac) : '--';
         const cableName = (switchConn && switchConn.cable_name) || (coreConn && coreConn.cable_name) || (endpointConn && endpointConn.cable_name) || '--';
+        const switchPortSpeed = switchConn ? (switchSideIsSrc ? switchConn.src_port_speed : switchConn.dst_port_speed) : '';
         const connectionSpeed = (switchConn && switchConn.connection_speed) || (coreConn && coreConn.connection_speed) || (endpointConn && endpointConn.connection_speed) || '';
+        const displaySpeed = switchPortSpeed || connectionSpeed;
 
         return {
             summary,
             statusValue: statusValue === null || statusValue === undefined ? '' : String(statusValue),
-            speedLabelText: speedLabel(connectionSpeed),
+            speedLabelText: speedLabel(displaySpeed),
             switchCaption: String(switchCaption || '--'),
             switchPortCaption: String(switchPortCaption || '--'),
             patchpanelCaption: String(patchpanelCaption || '--'),
@@ -565,6 +832,7 @@ if ($portviewLocale === '') {
             endpointCaption: String(endpointCaption || '--'),
             endpointType: String(endpointType || ''),
             endpointPortCaption: String(endpointPortCaption || '--'),
+            endpointIp: String(endpointIp || '--'),
             endpointHostname: String(endpointHostname || '--'),
             endpointMac: String(endpointMac || '--'),
             vlanTaggedText: switchVlanTagged ? String(switchVlanTagged) : '--',
@@ -618,7 +886,7 @@ if ($portviewLocale === '') {
             return;
         }
 
-        const cells = PORTVIEW_COLUMNS.map((column) => {
+        const cells = getVisiblePortviewColumns().map((column) => {
             const isActive = currentSort === column.key;
             const icon = isActive
                 ? (currentOrder === 'asc' ? 'arrow-up' : 'arrow-down')
@@ -687,25 +955,39 @@ if ($portviewLocale === '') {
     function buildRowForChain(chain, index) {
         const row = getChainTableData(chain);
         const iconClass = deviceIcon(row.endpointType);
-        const statusCell = `<span class="inline-flex items-center gap-2 ${statusClass(row.statusValue)}">${iconClass}<span class="text-slate-700">${escapeHtml(row.speedLabelText)}</span></span>`;
+        const statusCell = `<span class="inline-flex items-center gap-2 ${statusClass(row.statusValue)}"><span class="pv-status-icon inline-flex items-center justify-center">${iconClass}</span><span class="pv-status-label">${escapeHtml(row.speedLabelText)}</span></span>`;
+        const cellValues = {
+            statusValue: statusCell,
+            switchCaption: escapeHtml(row.switchCaption),
+            switchPortCaption: escapeHtml(row.switchPortCaption),
+            patchpanelCaption: escapeHtml(row.patchpanelCaption),
+            patchpanelPortCaption: escapeHtml(row.patchpanelPortCaption),
+            cableName: escapeHtml(row.cableName),
+            roomCaption: escapeHtml(row.roomCaption),
+            wallplateCaption: escapeHtml(row.wallplateCaption),
+            wallplatePortCaption: escapeHtml(row.wallplatePortCaption),
+            endpointCaption: escapeHtml(row.endpointCaption),
+            endpointPortCaption: escapeHtml(row.endpointPortCaption),
+            endpointIp: escapeHtml(row.endpointIp),
+            endpointHostname: escapeHtml(row.endpointHostname),
+            endpointMac: escapeHtml(row.endpointMac),
+            vlanTaggedText: escapeHtml(row.vlanTaggedText),
+            vlanUntaggedText: escapeHtml(row.vlanUntaggedText)
+        };
+        const cellClasses = {
+            statusValue: 'px-3 py-2.5 font-medium align-top whitespace-nowrap',
+            vlanTaggedText: 'px-3 py-2.5 text-xs align-top whitespace-nowrap',
+            vlanUntaggedText: 'px-3 py-2.5 text-xs align-top whitespace-nowrap'
+        };
+        const cells = getVisiblePortviewColumns().map((column) => {
+            const className = cellClasses[column.key] || 'px-3 py-2.5 align-top whitespace-nowrap';
+            const content = Object.prototype.hasOwnProperty.call(cellValues, column.key) ? cellValues[column.key] : '--';
+            return `<td class="${className}">${content}</td>`;
+        }).join('');
 
         return `
             <tr class="cursor-pointer border-b border-slate-200 transition hover:bg-slate-50" data-chain-index="${index}" onclick="window.portViewApp.openChainDetail(${index})">
-                <td class="px-3 py-2.5 font-medium align-top whitespace-nowrap">${statusCell}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.switchCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.switchPortCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.patchpanelCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.patchpanelPortCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.cableName)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.roomCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.wallplateCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.wallplatePortCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointPortCaption)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointHostname)}</td>
-                <td class="px-3 py-2.5 align-top whitespace-nowrap">${escapeHtml(row.endpointMac)}</td>
-                <td class="px-3 py-2.5 text-xs align-top whitespace-nowrap">${escapeHtml(row.vlanTaggedText)}</td>
-                <td class="px-3 py-2.5 text-xs align-top whitespace-nowrap">${escapeHtml(row.vlanUntaggedText)}</td>
+                ${cells}
             </tr>
         `;
     }
@@ -1257,7 +1539,7 @@ if ($portviewLocale === '') {
         const chains = [];
         const usedUuids = new Set();
 
-        const deviceTypeOf = (conn, side) => String(conn?.[side + '_device_type'] ?? '');
+        const deviceTypeOf = (conn, side) => String(conn?.[side + '_device_type'] ?? '').toLowerCase();
         const portUuidOf = (conn, side) => {
             const value = conn?.[side + '_port_uuid'] ?? null;
             return value !== null && value !== '' ? String(value) : null;
@@ -1308,8 +1590,8 @@ if ($portviewLocale === '') {
                 if (
                     endpointConn === null
                     && wallplatePortUuid !== null
-                    && ((candidateSrcPort === wallplatePortUuid && !['patchpanel', 'net_outlet', 'switch'].includes(candidateDstType))
-                        || (candidateDstPort === wallplatePortUuid && !['patchpanel', 'net_outlet', 'switch'].includes(candidateSrcType)))
+                    && ((candidateSrcPort === wallplatePortUuid && !['patchpanel', 'net_outlet', 'outlet', 'coupler'].includes(candidateDstType))
+                        || (candidateDstPort === wallplatePortUuid && !['patchpanel', 'net_outlet', 'outlet', 'coupler'].includes(candidateSrcType)))
                 ) {
                     endpointConn = candidate;
                 }
@@ -1488,29 +1770,31 @@ if ($portviewLocale === '') {
         const coreSideIsSrc = coreConn && String(coreConn.src_device_type || '').toLowerCase() === 'patchpanel';
         const endpointSideIsSrc = endpointConn && !['switch', 'patchpanel', 'net_outlet'].includes(String(endpointConn.src_device_type || '').toLowerCase());
 
-        const row = [
-            switchConn ? (switchSideIsSrc ? switchConn.src_port_status : switchConn.dst_port_status) : '--',
-            switchConn ? (switchSideIsSrc ? switchConn.src_device_caption : switchConn.dst_device_caption) : '--',
-            switchConn ? (switchSideIsSrc ? switchConn.src_port_caption : switchConn.dst_port_caption) : '--',
-            coreConn ? (coreSideIsSrc ? coreConn.src_device_caption : coreConn.dst_device_caption) : '--',
-            coreConn ? (coreSideIsSrc ? coreConn.src_port_caption : coreConn.dst_port_caption) : '--',
-            (switchConn && switchConn.cable_name) || (coreConn && coreConn.cable_name) || (endpointConn && endpointConn.cable_name) || '--',
-            summary.roomCaption || '--',
-            coreConn ? (coreSideIsSrc ? coreConn.dst_device_caption : coreConn.src_device_caption) : '--',
-            coreConn ? (coreSideIsSrc ? coreConn.dst_port_caption : coreConn.src_port_caption) : '--',
-            endpointConn ? (endpointSideIsSrc ? endpointConn.src_device_caption : endpointConn.dst_device_caption) : '--',
-            endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_caption : endpointConn.dst_port_caption) : '--',
-            endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_hostname : endpointConn.dst_port_hostname) : '--',
-            endpointConn ? (endpointSideIsSrc ? endpointConn.src_port_mac : endpointConn.dst_port_mac) : '--',
-            summary.vlanTagged || '--',
-            summary.vlanUntagged || '--'
-        ];
+        const row = getChainTableData(chain);
+        const csvValues = {
+            statusValue: row.statusValue,
+            switchCaption: row.switchCaption,
+            switchPortCaption: row.switchPortCaption,
+            patchpanelCaption: row.patchpanelCaption,
+            patchpanelPortCaption: row.patchpanelPortCaption,
+            cableName: row.cableName,
+            roomCaption: row.roomCaption,
+            wallplateCaption: row.wallplateCaption,
+            wallplatePortCaption: row.wallplatePortCaption,
+            endpointCaption: row.endpointCaption,
+            endpointPortCaption: row.endpointPortCaption,
+            endpointIp: row.endpointIp,
+            endpointHostname: row.endpointHostname,
+            endpointMac: row.endpointMac,
+            vlanTaggedText: row.vlanTaggedText,
+            vlanUntaggedText: row.vlanUntaggedText
+        };
 
-        return row.map(csvEscape).join(',');
+        return getVisiblePortviewColumns().map((column) => csvEscape(csvValues[column.key] ?? '')).join(',');
     }
 
     function exportVisibleChainsAsCsv() {
-        const header = PORTVIEW_COLUMNS.map((column) => column.label);
+        const header = getVisiblePortviewColumns().map((column) => column.label);
 
         const csvLines = [header.map(csvEscape).join(',')];
         visibleChainsCache.forEach((chain) => {
@@ -1526,6 +1810,179 @@ if ($portviewLocale === '') {
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
+    }
+
+    function ensurePortviewSortKeyVisible() {
+        const visible = new Set(sanitizePortviewColumns(visibleColumnKeys));
+        if (currentSort && !visible.has(currentSort)) {
+            currentSort = '';
+            currentOrder = 'asc';
+        }
+    }
+
+    function buildPortviewColumnPickerRow(key, label, checked) {
+        const row = document.createElement('div');
+        row.className = 'pf-col-row flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 hover:bg-slate-50';
+        row.draggable = true;
+        row.dataset.colKey = key;
+        row.innerHTML = `
+            <span class="cursor-grab text-slate-400 hover:text-slate-600" title="${escapeHtml(PORTVIEW_I18N.drag_label)}"><i data-lucide="grip-vertical" class="h-4 w-4"></i></span>
+            <input type="checkbox" class="pf-col-check h-4 w-4 rounded border-slate-300" ${checked ? 'checked' : ''} />
+            <code class="text-[10px] text-slate-400">${escapeHtml(key)}</code>
+            <span class="ml-1 flex-1 text-sm text-slate-800">${escapeHtml(label)}</span>
+        `;
+        row.addEventListener('dragstart', (event) => {
+            row.classList.add('opacity-50');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', key);
+        });
+        row.addEventListener('dragend', () => row.classList.remove('opacity-50'));
+        row.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+        });
+        row.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const sourceKey = event.dataTransfer.getData('text/plain');
+            if (!sourceKey || sourceKey === key) {
+                return;
+            }
+            const list = row.parentElement;
+            const sourceElement = list.querySelector('.pf-col-row[data-col-key="' + CSS.escape(sourceKey) + '"]');
+            if (!sourceElement) {
+                return;
+            }
+            const rect = row.getBoundingClientRect();
+            const before = (event.clientY - rect.top) < (rect.height / 2);
+            list.insertBefore(sourceElement, before ? row : row.nextSibling);
+        });
+        return row;
+    }
+
+    function closePortviewColumnPicker() {
+        const modal = document.getElementById('pf-column-picker');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+    }
+
+    function openPortviewColumnPicker() {
+        const current = sanitizePortviewColumns(visibleColumnKeys);
+        const selectedSet = new Set(current);
+        const ordered = current.filter((key) => PORTVIEW_COLUMN_MAP.has(key))
+            .concat(PORTVIEW_ALL_COLUMNS.filter((key) => !selectedSet.has(key)));
+
+        let modal = document.getElementById('pf-column-picker');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'pf-column-picker';
+            modal.className = 'fixed inset-0 z-[1200] hidden items-center justify-center bg-slate-900/70 p-4';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="flex h-full max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-700"><i data-lucide="columns-3" class="h-4 w-4"></i></span>
+                        <div>
+                            <div class="text-sm font-bold text-slate-900">${escapeHtml(PORTVIEW_I18N.columns_customize)}</div>
+                            <div class="text-xs text-slate-500">${escapeHtml(PORTVIEW_TABLE_KEY)}</div>
+                        </div>
+                    </div>
+                    <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-slate-800 hover:bg-slate-400" data-action="close-portview-columns" aria-label="${escapeHtml(PORTVIEW_I18N.button_close)}"><i data-lucide="x" class="h-4 w-4"></i></button>
+                </div>
+                <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600">${escapeHtml(PORTVIEW_I18N.columns_hint)}</div>
+                <div id="pf-column-picker-list" class="flex-1 overflow-auto p-3 space-y-1"></div>
+                <div class="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+                    <button type="button" data-action="reset-portview-columns" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"><i data-lucide="rotate-ccw" class="mr-1 inline-block h-3.5 w-3.5"></i>${escapeHtml(PORTVIEW_I18N.columns_reset)}</button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" data-action="cancel-portview-columns" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100">${escapeHtml(PORTVIEW_I18N.cancel)}</button>
+                        <button type="button" data-action="save-portview-columns" class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">${escapeHtml(PORTVIEW_I18N.save)}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        const list = document.getElementById('pf-column-picker-list');
+        list.innerHTML = '';
+        ordered.forEach((key) => {
+            const column = PORTVIEW_COLUMN_MAP.get(key);
+            if (column) {
+                list.appendChild(buildPortviewColumnPickerRow(key, column.label, selectedSet.has(key)));
+            }
+        });
+
+        modal.querySelector('[data-action="close-portview-columns"]').addEventListener('click', closePortviewColumnPicker);
+        modal.querySelector('[data-action="cancel-portview-columns"]').addEventListener('click', closePortviewColumnPicker);
+        modal.querySelector('[data-action="reset-portview-columns"]').addEventListener('click', () => resetPortviewColumnPicker());
+        modal.querySelector('[data-action="save-portview-columns"]').addEventListener('click', () => savePortviewColumnPicker());
+
+        if (window.lucide && window.lucide.createIcons) {
+            window.lucide.createIcons({ nodes: [modal] });
+        }
+    }
+
+    async function persistPortviewColumnPicker(columns) {
+        try {
+            const response = await fetch('<?php echo PORTFLOW_HOSTNAME; ?>/api/user_table_columns', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ table: PORTVIEW_TABLE_KEY, columns })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.error) {
+                throw new Error(payload.error || ('HTTP ' + response.status));
+            }
+
+            if (!window.__pfTableUserColumns) {
+                window.__pfTableUserColumns = {};
+            }
+            if (!window.__pfTableUserColumnsReset) {
+                window.__pfTableUserColumnsReset = {};
+            }
+
+            if (Array.isArray(payload.columns) && payload.columns.length > 0) {
+                visibleColumnKeys = sanitizePortviewColumns(payload.columns);
+                window.__pfTableUserColumns[PORTVIEW_TABLE_KEY] = visibleColumnKeys.slice();
+                delete window.__pfTableUserColumnsReset[PORTVIEW_TABLE_KEY];
+            } else {
+                visibleColumnKeys = PORTVIEW_DEFAULT_COLUMNS.slice();
+                delete window.__pfTableUserColumns[PORTVIEW_TABLE_KEY];
+                window.__pfTableUserColumnsReset[PORTVIEW_TABLE_KEY] = true;
+            }
+
+            ensurePortviewSortKeyVisible();
+            closePortviewColumnPicker();
+            loadTable();
+        } catch (error) {
+            alert(PORTVIEW_I18N.columns_save_failed + ': ' + (error.message || error));
+        }
+    }
+
+    async function savePortviewColumnPicker() {
+        const list = document.getElementById('pf-column-picker-list');
+        if (!list) {
+            closePortviewColumnPicker();
+            return;
+        }
+        const picked = [];
+        list.querySelectorAll('.pf-col-row').forEach((row) => {
+            const checkbox = row.querySelector('.pf-col-check');
+            if (checkbox && checkbox.checked) {
+                picked.push(row.dataset.colKey);
+            }
+        });
+        await persistPortviewColumnPicker(picked);
+    }
+
+    async function resetPortviewColumnPicker() {
+        await persistPortviewColumnPicker(null);
     }
 
     function populateFilters(chains) {
@@ -1647,7 +2104,11 @@ if ($portviewLocale === '') {
                     tbody.innerHTML += buildRowForChain(chain, index);
                 });
             } else {
-                tbody.innerHTML = '<tr><td colspan="15" class="p-4 text-center text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_no_entries) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="' + String(getVisiblePortviewColumns().length) + '" class="p-4 text-center text-slate-500">' + escapeHtml(PORTVIEW_I18N.portview_no_entries) + '</td></tr>';
+            }
+
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons({ nodes: [tbody] });
             }
 
             document.getElementById('count').textContent = `${PORTVIEW_I18N.datasets}: ${totalCount}`;
@@ -1895,7 +2356,12 @@ if ($portviewLocale === '') {
         window.portViewApp.exportCsv();
     });
 
+    document.getElementById('customizeColumnsButton').addEventListener('click', () => {
+        openPortviewColumnPicker();
+    });
+
     bindFilterControls();
+    ensurePortviewSortKeyVisible();
 
     // Initial load
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
