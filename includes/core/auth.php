@@ -767,13 +767,13 @@ class Auth {
                 'activation_code' => 'activated'
             ]);
             $result = !empty($result) ? $result[0] : null;
-            $this->logger->log('checking if local user exists and account is activated');
+            $this->logger->log('checking if local user exists and account is activated', 0);
 
             if (empty($result)) {
                 return false;
             }
 
-            $this->logger->log('local user exists and account is activated', 1);
+            $this->logger->log('local user exists and account is activated', 0);
 
             $this->uuid = $result['uuid'];
             $this->password_db = $result['password'];
@@ -942,7 +942,7 @@ class Auth {
             $query = "SELECT uuid, email, activation_code, settings, login_attempts, last_login_attempt FROM users WHERE username = :username AND login_provider = :login_provider LIMIT 1";
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'login_provider' => 'ldap']);
             $result = !empty($result) ? $result[0] : null;
-            $this->logger->log('checking if user exists in database');
+            $this->logger->log('checking if user exists in database', 0);
 
             if (!empty($result)) {
                 $this->logger->log('user exists in database', 1);
@@ -1073,7 +1073,7 @@ class Auth {
             $this->local_signon('forgot_password');
 
             $userRow = $this->findLocalUserForPasswordResetRequest();
-            $this->logger->log('checking if local user with username and e-mail exists');
+            $this->logger->log('checking if local user with username and e-mail exists', 0);
 
             if ($userRow !== null) {
                 $token = bin2hex(random_bytes(32));
@@ -1222,7 +1222,7 @@ class Auth {
         
             // execute query
             $result = $this->db_adapter->db_query($query, ['username' => $this->username, 'email' => $this->email]);
-            $this->logger->log("checking if user '$this->username' exists");
+            $this->logger->log("checking if user '$this->username' exists", 0);
         
             foreach ($result as $row) {
                 if (!empty($row['uuid'])) {

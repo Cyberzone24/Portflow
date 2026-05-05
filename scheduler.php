@@ -235,7 +235,7 @@ try {
         exit(0);
     }
 
-    $logger->log('Scheduler: Starting tasks [' . implode(', ', $enabledTasks) . ']', 1);
+    $logger->log('Scheduler: Starting tasks [' . implode(', ', $enabledTasks) . ']', 0);
 
     if ($taskConfig['snmp_scan_enabled'] && schedulerShouldRunSnmpScan($taskConfig, $storedSettings)) {
         $snmpExitCode = schedulerRunSnmpScanAll($db, $automationStore, $logger, $startTime);
@@ -245,7 +245,7 @@ try {
     } elseif ($taskConfig['snmp_scan_enabled']) {
         $logger->log(
             'Scheduler: SNMP scan skipped because interval_minutes=' . (int)($taskConfig['snmp_scan']['interval_minutes'] ?? 60) . ' is not due yet',
-            1
+            0
         );
     }
 
