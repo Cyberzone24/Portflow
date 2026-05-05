@@ -432,6 +432,32 @@ def cmd_sync(args: argparse.Namespace) -> int:
         console.print("Nothing to sync.")
         return 0
 
+    if not args.dry_run:
+        with api.ApiClient(cfg) as client:
+            auth_ok, auth_message = client.ping()
+            if not auth_ok:
+                console.print(f"[red]✗ Sync login failed:[/] {auth_message}")
+                return 1
+
+            ok = 0
+            fail = 0
+            for record in items:
+                try:
+                    response = client.post_record_link(record.payload)
+                    queue.mark_synced(record.id, str(response.get("summary") or "ok"))
+                    console.print(f"[green]✓[/] #{record.id}  {response.get('summary') or 'ok'}")
+                    ok += 1
+                except api.ApiError as exc:
+                    queue.mark_failed(record.id, f"HTTP {exc.status}: {exc.body}")
+                    console.print(f"[red]✗[/] #{record.id}  HTTP {exc.status}  {exc.body}")
+                    fail += 1
+                except Exception as exc:
+                    queue.mark_failed(record.id, str(exc))
+                    console.print(f"[red]✗[/] #{record.id}  {exc}")
+                    fail += 1
+            console.print(f"[bold]Done.[/] synced={ok} failed={fail}")
+            return 0 if fail == 0 else 1
+
     ok = 0
     fail = 0
     for record in items:

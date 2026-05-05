@@ -137,6 +137,7 @@ pfcli record \
 7. Before starting LLDP capture, the CLI asks whether an LLDP scan should be run at all. This avoids waiting for the timeout on deliberately empty ports.
 8. If LLDP data is available, sync also resolves the upstream switch and creates the patchpanel-to-switch link alongside the patchpanel-to-room-outlet link.
 9. The record is queued locally. There is no extra sync prompt after capture.
+10. `pfcli sync` authenticates once at the start of the run and reuses that API session for all record uploads in the same sync process.
 
 ### Local editing and failed syncs
 
